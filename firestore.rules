@@ -164,7 +164,7 @@ service cloud.firestore {
 
     // ---------- órdenes y extensiones: solo las escribe el Worker ----------
     match /orders/{id} {
-      allow read: if isSuper() || (signedIn() && resource.data.photographerUid == uid());
+      allow read: if isSuper() || (signedIn() && (resource.data.photographerUid == uid() || resource.data.buyerUid == uid()));
       allow write: if false;
     }
     match /extensions/{id} {

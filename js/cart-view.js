@@ -4,6 +4,7 @@ import { $, $$, esc, fmtMoney, fmtDate } from './util.js';
 import { cart } from './cart.js';
 import { computeTotals, bestPrice } from './pricing.js';
 import { loadSettings } from './data.js';
+import { currentUser, openLogin } from './account.js';
 
 const cache = new Map();
 function cachedGet(path) {
@@ -32,6 +33,7 @@ export async function renderCart(app) {
     <p class="muted">Cada fotógrafo cobra por separado: vas a hacer un pago por cada bloque.</p>
     ${data.map(g => groupHtml(g, settings)).join('')}`;
 
+  $$('[data-login]', app).forEach(b => b.onclick = () => openLogin('Ingresá con Google o tu email para comprar. Tus fotos van a quedar guardadas en Mis compras.'));
   $$('[data-rm]', app).forEach(b => b.onclick = () => { cart.remove(b.dataset.rm); renderCart(app); });
   $$('[data-rmg]', app).forEach(b => b.onclick = () => {
     const [eid, uid] = b.dataset.rmg.split('|');
@@ -74,8 +76,9 @@ function groupHtml(g, settings) {
       ${tip ? `<div class="notice small">💡 ${tip}</div>` : ''}
       ${g.ev.demo ? '<div class="notice warn small">👀 Son fotos de un evento de ejemplo: no se pueden comprar.</div>' : ''}
       <div class="row end">
-        <span class="muted small">Los pagos con Mercado Pago se habilitan muy pronto.</span>
-        <button class="btn primary" disabled>Pagar ${fmtMoney(t.total)}</button>
+        ${currentUser()
+          ? `<span class="muted small">Los pagos con Mercado Pago se habilitan muy pronto.</span><button class="btn primary" disabled>Pagar ${fmtMoney(t.total)}</button>`
+          : `<span class="muted small">Ingresá para comprar: tus fotos quedan siempre en Mis compras.</span><button class="btn primary" data-login>Ingresar para pagar</button>`}
       </div>
     </section>`;
 }

@@ -274,3 +274,16 @@ dialog .dlg-foot { padding: 14px 18px; border-top: 1px solid var(--border); disp
 footer.site .credit { margin-top: 6px; font-size: .8rem; }
 footer.site .credit a { color: var(--accent); text-decoration: none; font-weight: 600; }
 footer.site .credit a:hover { text-decoration: underline; }
+
+/* ---------- cuenta del comprador ---------- */
+.avatar.xs { width: 22px; height: 22px; font-size: .7rem; }
+.acct-btn { gap: 6px; }
+.acct-btn .acct-icon { display: none; }
+@media (max-width: 520px) {
+  .hide-sm { display: none !important; }
+  .acct-btn .acct-label { display: none; }
+  .acct-btn .acct-icon { display: inline; }
+}
+.order-row:hover { border-color: var(--accent); }
+footer.site .foot-links { margin-top: 8px; font-size: .85rem; }
+footer.site .foot-links a { color: var(--muted); }

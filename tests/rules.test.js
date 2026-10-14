@@ -210,3 +210,18 @@ test('portfolio: slot dentro del límite del plan', async () => {
   await assertSucceeds(setDoc(doc(user('ana'), 'portfolio/ana_150'), pf('ana', 150)));
   await assertSucceeds(getDoc(doc(as(), 'portfolio/ana_150')));
 });
+
+// ---------- compradores
+test('comprador lee sus pedidos y no los ajenos', async () => {
+  await env.withSecurityRulesDisabled(async ctx => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'orders/o1'), { buyerUid: 'cliente1', photographerUid: 'ana', status: 'approved' });
+    await setDoc(doc(db, 'orders/o2'), { buyerUid: 'cliente2', photographerUid: 'ana', status: 'approved' });
+  });
+  await assertSucceeds(getDoc(doc(user('cliente1'), 'orders/o1')));
+  await assertFails(getDoc(doc(user('cliente1'), 'orders/o2')));
+  await assertSucceeds(getDocs(query(collection(user('cliente1'), 'orders'), where('buyerUid', '==', 'cliente1'))));
+  await assertFails(getDocs(query(collection(user('cliente1'), 'orders'), where('buyerUid', '==', 'cliente2'))));
+  await assertSucceeds(getDoc(doc(user('ana'), 'orders/o2')));  // el fotógrafo ve sus ventas
+  await assertFails(setDoc(doc(user('cliente1'), 'orders/o3'), { buyerUid: 'cliente1', status: 'approved' }));
+});

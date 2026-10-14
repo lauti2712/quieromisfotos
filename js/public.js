@@ -9,6 +9,7 @@ import { loadTaxonomy, tagPills, loadSettings, isPro, portfolioLimit } from './d
 import { openViewer } from './viewer.js';
 import { mountGallery } from './gallery.js';
 import { renderCart } from './cart-view.js';
+import { renderAccount } from './account.js';
 import { cart } from './cart.js';
 
 const updateCartBadge = () => {
@@ -24,6 +25,8 @@ const app = $('#app');
 const PAGE = 24;
 
 window.addEventListener('hashchange', route);
+// Al ingresar/salir se re-dibujan las vistas que dependen de la cuenta.
+window.addEventListener('account:change', () => { const p = parseHash().parts[0]; if (p === 'cuenta' || p === 'carrito') route(); });
 route();
 
 function route() {
@@ -33,6 +36,7 @@ function route() {
   if (parts[0] === 'evento' && parts[1]) return renderEvent(parts[1]);
   if (parts[0] === 'f' && parts[1]) return renderProfile(parts[1]);
   if (parts[0] === 'carrito') return renderCart(app);
+  if (parts[0] === 'cuenta') return renderAccount(app);
   if (parts[0] === 'fotografos') return renderDirectory();
   return renderHome();
 }
