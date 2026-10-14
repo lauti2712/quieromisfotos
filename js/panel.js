@@ -201,6 +201,7 @@ function navItems() {
     { href: '#/admin/config', label: '⚙️ Plataforma' },
     { group: 'Mi cuenta' },
     { href: '#/perfil', label: '👤 Perfil' },
+    { href: 'index.html#/cuenta', label: '🛒 Mis compras', external: true },
   ];
   return [
     { href: '#/inicio', label: '🏠 Inicio' },
