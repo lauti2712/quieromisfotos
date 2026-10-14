@@ -52,7 +52,8 @@ p { margin: 0 0 .8em; }
 .topbar { position: sticky; top: 0; z-index: 20; background: var(--surface); border-bottom: 1px solid var(--border); }
 .topbar .inner { max-width: 1200px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 12px; }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 800; text-decoration: none; letter-spacing: -.02em; font-size: 1.1rem; }
-.brand .logo { width: 30px; height: 30px; border-radius: 9px; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-size: 16px; }
+.brand .logo { width: 30px; height: 30px; border-radius: 9px; display: block; flex: none; }
+.brand .mis { color: var(--accent); }
 .topbar .spacer { flex: 1; }
 .container { max-width: 1200px; margin: 0 auto; padding: 20px 16px 60px; }
 footer.site { text-align: center; color: var(--muted); font-size: .85rem; padding: 30px 16px; }

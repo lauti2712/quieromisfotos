@@ -74,6 +74,10 @@ npx wrangler secret put UPLOAD_SECRET
 npx wrangler deploy
 ```
 
+## Logo
+
+`assets/`: `logo.svg` (ícono), `logo-horizontal.svg` (ícono + "quieromisfotos"), `favicon.svg`, PNG para celular y `og-image.png` (imagen al compartir links). Los PNG se regeneran con `python3 tools/make-logo.py`.
+
 ## Ejemplo (demo)
 
 Hay un fotógrafo y un evento de ejemplo (`demo: true`) para que quien entre vea cómo funciona. Las imágenes están en `demo/`, se generan con `tools/make-demo.py` y se sirven desde GitHub Pages.
