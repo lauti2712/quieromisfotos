@@ -134,15 +134,21 @@ put(f'users/{UID}', {
              {'type': 'Lente', 'name': 'Sony FE 70-200mm f/2.8 GM II'}, {'type': 'Lente', 'name': 'Sony FE 24-70mm f/2.8 GM II'},
              {'type': 'Lente', 'name': 'Sony FE 400mm f/2.8 GM'}, {'type': 'Drone', 'name': 'DJI Air 3'},
              {'type': 'Flash / iluminación', 'name': 'Godox V1'}],
-    'plan': 'pro', 'proUntil': datetime.datetime(2099, 1, 1, tzinfo=datetime.timezone.utc),
+    'plan': 'web', 'proUntil': datetime.datetime(2099, 1, 1, tzinfo=datetime.timezone.utc),
     'mpConnected': False, 'mpUserId': None,
     'defaults': {'price': 2500, 'packs': [{'qty': 3, 'price': 6000}, {'qty': 5, 'price': 9000}], 'feeMode': 'buyer'},
     'watermark': {'type': 'text', 'text': 'www.quieromisfotos.com.ar', 'position': 'both', 'opacity': 0.35},
+    'site': {'template': 'oscura', 'accent': '#ff5a1f', 'tagline': 'Fotografía deportiva en Rosario y alrededores', 'heroUrl': f'{IMG}/pf-0_p.jpg{V}',
+             'clean': False, 'showEvents': True,
+             'services': [{'name': 'Cobertura de partido', 'detail': 'Hasta 2 horas · 80 fotos editadas', 'price': '$35.000'},
+                          {'name': 'Torneo completo', 'detail': 'Todo el día · fotos a la venta para las familias', 'price': 'Consultar'},
+                          {'name': 'Book deportivo', 'detail': '1 hora · 30 fotos editadas', 'price': '$40.000'}]},
     'createdAt': NOW,
 })
 for i in range(6):
     put(f'portfolio/{UID}_{i}', {'photographerUid': UID, 'slot': i, 'url': f'{IMG}/pf-{i}_p.jpg{V}', 'thumbUrl': f'{IMG}/pf-{i}_t.jpg{V}',
                                  'width': 1600, 'height': 1067, 'caption': ['Final de torneo', 'Festejo', 'Entrada en calor', 'Jugada', 'Equipo', 'Atardecer en la cancha'][i],
+                                 'album': ['Rugby', 'Fútbol', 'Rugby', 'Fútbol', 'Hockey', 'Hockey'][i],
                                  'order': i, 'demo': True, 'createdAt': NOW})
 
 # ---------------------------------------------------------------- evento + set + fotos
