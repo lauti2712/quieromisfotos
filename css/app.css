@@ -287,3 +287,10 @@ footer.site .credit a:hover { text-decoration: underline; }
 .order-row:hover { border-color: var(--accent); }
 footer.site .foot-links { margin-top: 8px; font-size: .85rem; }
 footer.site .foot-links a { color: var(--muted); }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 8px; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; display: grid; gap: 4px; }
+.stat strong { font-size: 1.4rem; }
+.order-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+@media (max-width: 640px) { .order-grid { grid-template-columns: repeat(2, 1fr); } }
+.order-item { display: grid; gap: 6px; }
+.order-item img { width: 100%; aspect-ratio: 3/2; object-fit: cover; border-radius: 8px; background: var(--surface-2); }

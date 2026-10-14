@@ -64,3 +64,16 @@ export async function deleteAsset(key) {
   const s = await uploadSession(null);
   await apiDelete(`/asset?key=${encodeURIComponent(key)}`, s.token);
 }
+
+// POST JSON autenticado con el usuario actual. Devuelve el JSON o lanza Error con el mensaje del servidor.
+export async function apiPost(path, body = {}) {
+  const idToken = await auth.currentUser.getIdToken();
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(data.error || `Error ${res.status}`), { status: res.status });
+  return data;
+}

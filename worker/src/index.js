@@ -8,6 +8,17 @@
 //   DELETE /photo/{eid}/{pid}          X-Upload-Token                         borra muestra, miniatura y original
 //   GET    /public/{key}                                                      sirve qmf-public (si no hay dominio público)
 //
+// Fase 4 — pagos (Mercado Pago marketplace):
+//   POST   /mp/connect-url             Bearer (fotógrafo)                     -> { url } de autorización OAuth
+//   GET    /mp/callback                ?code&state                            guarda tokens y vuelve al panel
+//   POST   /mp/disconnect              Bearer (fotógrafo)
+//   POST   /checkout                   Bearer (comprador) {eventId, photographerUid, photoIds}  -> { orderId, initPoint }
+//   POST   /mp/webhook?o={orderId}     aviso de MP (se verifica consultando el pago)
+//   POST   /orders/{id}/sync           Bearer (comprador) {paymentId?}        consulta el pago a MP
+//   POST   /orders/{id}/checkout       Bearer (comprador)                     reintentar pago
+//   POST   /orders/{id}/downloads      Bearer (comprador)                     -> links de 15 min
+//   GET    /dl/{token}                                                        descarga del original
+//
 // Claves en R2:
 //   qmf-public:  e/{eid}/{uid}/{pid}_p.jpg  (muestra)   e/{eid}/{uid}/{pid}_t.jpg  (miniatura)
 //                u/{uid}/{kind}-{rand}.jpg  (avatar/logo/portada)
@@ -15,7 +26,9 @@
 
 import { verifyIdToken, getDocAsUser } from './firebase.js';
 import { signToken, verifyToken } from './tokens.js';
-import { json, httpError } from './http.js';
+import { json, httpError, apiUrl } from './http.js';
+import { connectUrl, callback, disconnect } from './mp.js';
+import { checkout, webhook, syncOrder, retryCheckout, downloadLinks, download } from './orders.js';
 
 const MAX = { preview: 6e6, thumb: 1e6, original: 80e6, avatar: 3e6, logo: 2e6, cover: 6e6, portfolio: 6e6 };
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
@@ -49,6 +62,18 @@ async function route(req, env, ctx) {
   if (m === 'PUT' && parts[0] === 'asset' && parts.length === 2) return uploadAsset(req, env, parts[1]);
   if (m === 'DELETE' && parts[0] === 'photo' && parts.length === 3) return deletePhoto(req, env, parts[1], parts[2]);
   if (m === 'DELETE' && url.pathname === '/asset') return deleteAsset(req, env, url.searchParams.get('key') || '');
+
+  if (m === 'POST' && url.pathname === '/mp/connect-url') return connectUrl(req, env);
+  if (m === 'GET' && url.pathname === '/mp/callback') return callback(req, env);
+  if (m === 'POST' && url.pathname === '/mp/disconnect') return disconnect(req, env);
+  if (m === 'POST' && url.pathname === '/mp/webhook') return webhook(req, env);
+  if (m === 'POST' && url.pathname === '/checkout') return checkout(req, env);
+  if (m === 'POST' && parts[0] === 'orders' && parts.length === 3 && ID_RE.test(parts[1])) {
+    if (parts[2] === 'sync') return syncOrder(req, env, parts[1]);
+    if (parts[2] === 'checkout') return retryCheckout(req, env, parts[1]);
+    if (parts[2] === 'downloads') return downloadLinks(req, env, parts[1]);
+  }
+  if (m === 'GET' && parts[0] === 'dl' && parts.length === 2) return download(req, env, parts[1]);
   throw httpError(404, 'No encontrado');
 }
 
@@ -166,7 +191,7 @@ async function servePublic(req, env, ctx, key) {
 
 // ------------------------------------------------------------------ helpers
 function publicBase(req, env) {
-  return (env.PUBLIC_BASE_URL || `${new URL(req.url).origin}/public`).replace(/\/$/, '');
+  return (env.PUBLIC_BASE_URL || `${apiUrl(env, req)}/public`).replace(/\/$/, '');
 }
 
 function corsHeaders(req, env) {

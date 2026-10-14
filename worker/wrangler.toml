@@ -5,6 +5,7 @@ workers_dev = false
 routes = [{ pattern = "qmf-api.solucionescotidianas.com.ar", custom_domain = true }]
 
 [vars]
+API_URL = "https://qmf-api.solucionescotidianas.com.ar"
 FIREBASE_PROJECT_ID = "quieromisfotos-71629"
 ALLOWED_ORIGINS = "https://solucionescotidianas.com.ar,https://quieromisfotos.com.ar,https://www.quieromisfotos.com.ar,http://localhost:5175"
 # Dominio público del bucket qmf-public (custom domain de R2). Si está vacío, el Worker sirve /public/*.
@@ -12,6 +13,8 @@ PUBLIC_BASE_URL = "https://qmf-fotos.solucionescotidianas.com.ar"
 # Mercado Pago (aplicación "Quiero Mis Fotos", modo marketplace)
 MP_CLIENT_ID = "7944412158224473"
 MP_REDIRECT_URI = "https://qmf-api.solucionescotidianas.com.ar/mp/callback"
+# "1" mientras se prueba con cuentas de prueba de MP; vaciar al salir a producción
+MP_TEST_MODE = "1"
 
 [[r2_buckets]]
 binding = "PUBLIC"

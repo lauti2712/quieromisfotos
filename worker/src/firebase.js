@@ -47,6 +47,13 @@ export async function verifyIdToken(token, env) {
   return claims;
 }
 
+// Lee y verifica el ID token del header Authorization. Devuelve los claims (sub = uid).
+export async function requireUser(req, env) {
+  const idToken = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+  if (!idToken) throw httpError(401, 'Falta autenticación');
+  return verifyIdToken(idToken, env);
+}
+
 function firestoreBase(env) {
   const root = env.FIREBASE_EMULATOR ? 'http://127.0.0.1:8085' : 'https://firestore.googleapis.com';
   return `${root}/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents`;

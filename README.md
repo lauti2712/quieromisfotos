@@ -97,7 +97,7 @@ python3 tools/seed-demo.py prod --delete   # borrar
 1. ✅ Base: auth, roles, alta y aprobación de fotógrafos, etiquetas, eventos, sets y sub-álbumes, sitio público con filtros.
 2. ✅ Fotos: Worker (qmf-api.solucionescotidianas.com.ar), R2 (fotos públicas en qmf-fotos.solucionescotidianas.com.ar), marca de agua en el navegador, subida masiva, galería con visor.
 3. ✅ Carrito: agrupado por fotógrafo + evento, packs (combinación más barata, `js/pricing.js` compartido con el Worker), comisión y sugerencia de pack.
-4. Pagos: OAuth de Mercado Pago, checkout, webhook, descargas firmadas, mail.
+4. ✅ Pagos (en modo prueba): vinculación OAuth de MP, checkout con marketplace_fee, webhook verificado contra la API de MP, página del pedido con sincronización, descargas con links firmados de 15 min, ventas del fotógrafo. Sin mail: el comprador tiene cuenta y ve todo en Mis compras.
 5. Retención: cron, avisos, borrado y extensiones pagas.
 6. Superadmin: métricas.
 

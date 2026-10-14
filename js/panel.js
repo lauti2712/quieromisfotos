@@ -13,7 +13,7 @@ import {
 import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, tagPills, SERVICES, isPro } from './data.js';
 import { viewPortfolio } from './panel-portfolio.js';
 import { drawWatermark, drawSampleScene, DEFAULT_WATERMARK } from './watermark.js';
-import { uploadAsset } from './api.js';
+import { uploadAsset, apiPost } from './api.js';
 import { resizeToJpeg } from './image-proc.js';
 import { mountPhotos } from './panel-photos.js';
 
@@ -483,19 +483,73 @@ function viewConfig() {
 }
 
 // ================================================================ Mercado Pago
-function viewMp() {
+async function viewMp() {
+  const { query: q } = parseHash();
+  if (q.get('mp')) {
+    // Volvimos de Mercado Pago: refrescar el perfil (el Worker marcó mpConnected).
+    const snap = await getDoc(doc(db, 'users', S.user.uid));
+    S.profile = snap.data();
+    if (q.get('mp') === 'ok') toast('¡Mercado Pago vinculado!');
+    else toast(q.get('m') || 'No se pudo vincular Mercado Pago', 'error');
+    history.replaceState(null, '', '#/mp');
+  }
   const p = S.profile;
   $('#view').innerHTML = `
     <h1>Mercado Pago</h1>
     <div class="card stack">
-      <div class="row"><strong>Estado:</strong> ${p.mpConnected ? '<span class="pill ok">Vinculada</span>' : '<span class="pill warn">Sin vincular</span>'}</div>
+      <div class="row"><strong>Estado:</strong> ${p.mpConnected ? '<span class="pill ok">Vinculada</span>' : '<span class="pill warn">Sin vincular</span>'}
+        ${p.mpConnected && p.mpUserId ? `<span class="muted small">Cuenta MP #${esc(p.mpUserId)}</span>` : ''}</div>
       <p class="muted">Los pagos de tus fotos se acreditan directamente en tu cuenta de Mercado Pago. La plataforma retiene automáticamente su comisión (${S.settings.feePercent}%). Vincular tu cuenta es obligatorio para vender.</p>
-      <div><button class="btn primary" disabled>Vincular Mercado Pago</button> <span class="muted small">Disponible próximamente.</span></div>
+      <div class="row">
+        ${p.mpConnected
+          ? '<button class="btn" id="mp-connect">Volver a vincular</button><button class="btn ghost danger" id="mp-disconnect">Desvincular</button>'
+          : '<button class="btn primary" id="mp-connect">Vincular Mercado Pago</button>'}
+      </div>
+      <p class="muted small" style="margin:0">Te vamos a llevar a Mercado Pago para que autorices a Quiero Mis Fotos a cobrar en tu nombre. Nunca vemos tu contraseña.</p>
     </div>`;
+  $('#mp-connect').onclick = async e => {
+    e.target.disabled = true;
+    try { const { url } = await apiPost('/mp/connect-url'); location.href = url; }
+    catch (err) { e.target.disabled = false; toast(errMsg(err), 'error'); }
+  };
+  $('#mp-disconnect')?.addEventListener('click', async e => {
+    if (!confirm('¿Desvincular tu cuenta de Mercado Pago? No vas a poder vender hasta volver a vincularla.')) return;
+    e.target.disabled = true;
+    try { await apiPost('/mp/disconnect'); S.profile.mpConnected = false; toast('Mercado Pago desvinculado'); viewMp(); }
+    catch (err) { e.target.disabled = false; toast(errMsg(err), 'error'); }
+  });
 }
 
-function viewSales() {
-  $('#view').innerHTML = `<h1>Ventas</h1><div class="card"><div class="empty">Todavía no hay ventas. Las ventas aparecen acá cuando se habiliten los pagos.</div></div>`;
+async function viewSales() {
+  const snap = await getDocs(query(collection(db, 'orders'), where('photographerUid', '==', S.user.uid), orderBy('createdAt', 'desc'), limit(300)));
+  const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const paid = orders.filter(o => o.status === 'approved');
+  const net = o => (o.subtotal || 0) - (o.feeMode === 'buyer' ? 0 : (o.platformFee || 0));
+  const byEvent = new Map();
+  for (const o of paid) {
+    const e = byEvent.get(o.eventId) || { name: o.eventName, count: 0, photos: 0, total: 0, net: 0 };
+    e.count++; e.photos += o.count || 0; e.total += o.total || 0; e.net += net(o);
+    byEvent.set(o.eventId, e);
+  }
+  const STATUS = { approved: ['Pagado', 'ok'], pending: ['Pendiente', 'warn'], rejected: ['Rechazado', 'danger'], refunded: ['Reembolsado', ''] };
+  $('#view').innerHTML = `
+    <h1>Ventas</h1>
+    <div class="stats">
+      <div class="stat"><span class="muted small">Ventas pagadas</span><strong>${paid.length}</strong></div>
+      <div class="stat"><span class="muted small">Fotos vendidas</span><strong>${paid.reduce((a, o) => a + (o.count || 0), 0)}</strong></div>
+      <div class="stat"><span class="muted small">Neto para vos</span><strong>${fmtMoney(paid.reduce((a, o) => a + net(o), 0))}</strong></div>
+    </div>
+    <p class="muted small">El neto es después de la comisión de la plataforma y antes de la comisión de Mercado Pago, que se descuenta en tu cuenta de MP.</p>
+    ${byEvent.size ? `<div class="card"><h2>Por evento</h2><div class="table-wrap"><table class="list">
+      <tr><th>Evento</th><th>Ventas</th><th>Fotos</th><th>Cobrado</th><th>Neto</th></tr>
+      ${[...byEvent.values()].map(e => `<tr><td>${esc(e.name)}</td><td>${e.count}</td><td>${e.photos}</td><td>${fmtMoney(e.total)}</td><td>${fmtMoney(e.net)}</td></tr>`).join('')}
+    </table></div></div>` : ''}
+    <div class="card"><h2>Últimos pedidos</h2>
+      ${orders.length ? `<div class="table-wrap"><table class="list">
+        <tr><th>Fecha</th><th>Evento</th><th>Comprador</th><th>Fotos</th><th>Total</th><th>Estado</th></tr>
+        ${orders.map(o => { const [l, c] = STATUS[o.status] || [o.status, '']; return `<tr><td>${esc(fmtTs(o.createdAt))}</td><td>${esc(o.eventName)}</td><td>${esc(o.buyerName || o.buyerEmail || '')}</td><td>${o.count}</td><td>${fmtMoney(o.total)}</td><td><span class="pill ${c}">${l}</span></td></tr>`; }).join('')}
+      </table></div>` : '<div class="empty">Todavía no tenés ventas.</div>'}
+    </div>`;
 }
 
 // ================================================================ eventos (fotógrafo)
@@ -767,6 +821,7 @@ function renderSetEditor(ev, set, reload) {
   box.innerHTML = `
     <div class="card stack">
       <h2>Mi set en este evento</h2>
+      ${S.profile.mpConnected ? '' : '<div class="notice warn">Para que puedan comprar tus fotos tenés que <a href="#/mp">vincular Mercado Pago</a>.</div>'}
       <div class="row">
         <span class="pill">📷 ${set.photoCount || 0} fotos</span>
         <span class="pill">${expires ? `Originales disponibles hasta ${esc(expires)}` : `Vence ${S.settings.retentionDays} días después de subir las fotos`}</span>

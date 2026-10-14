@@ -1,10 +1,11 @@
 // Página del carrito: un bloque por fotógrafo + evento, con desglose de packs y comisión.
 import { db, doc, getDoc } from './fb.js';
-import { $, $$, esc, fmtMoney, fmtDate } from './util.js';
+import { $, $$, esc, fmtMoney, fmtDate, toast, errMsg } from './util.js';
 import { cart } from './cart.js';
 import { computeTotals, bestPrice } from './pricing.js';
 import { loadSettings } from './data.js';
 import { currentUser, openLogin } from './account.js';
+import { apiPost } from './api.js';
 
 const cache = new Map();
 function cachedGet(path) {
@@ -33,6 +34,19 @@ export async function renderCart(app) {
     <p class="muted">Cada fotógrafo cobra por separado: vas a hacer un pago por cada bloque.</p>
     ${data.map(g => groupHtml(g, settings)).join('')}`;
 
+  $$('[data-pay]', app).forEach(b => b.onclick = async () => {
+    const g = groups.find(x => x.key === b.dataset.pay);
+    b.disabled = true; b.textContent = 'Preparando el pago…';
+    try {
+      const { initPoint } = await apiPost('/checkout', {
+        eventId: g.eventId, photographerUid: g.photographerUid, photoIds: g.items.map(i => i.photoId),
+      });
+      location.href = initPoint;
+    } catch (e) {
+      b.disabled = false; b.textContent = 'Reintentar pago';
+      toast(errMsg(e), 'error');
+    }
+  });
   $$('[data-login]', app).forEach(b => b.onclick = () => openLogin('Ingresá con Google o tu email para comprar. Tus fotos van a quedar guardadas en Mis compras.'));
   $$('[data-rm]', app).forEach(b => b.onclick = () => { cart.remove(b.dataset.rm); renderCart(app); });
   $$('[data-rmg]', app).forEach(b => b.onclick = () => {
@@ -76,8 +90,10 @@ function groupHtml(g, settings) {
       ${tip ? `<div class="notice small">💡 ${tip}</div>` : ''}
       ${g.ev.demo ? '<div class="notice warn small">👀 Son fotos de un evento de ejemplo: no se pueden comprar.</div>' : ''}
       <div class="row end">
-        ${currentUser()
-          ? `<span class="muted small">Los pagos con Mercado Pago se habilitan muy pronto.</span><button class="btn primary" disabled>Pagar ${fmtMoney(t.total)}</button>`
+        ${g.ev.demo
+          ? `<button class="btn primary" disabled>Pagar ${fmtMoney(t.total)}</button>`
+          : currentUser()
+          ? `<span class="muted small">Pagás con Mercado Pago: tarjeta, débito o dinero en cuenta.</span><button class="btn primary" data-pay="${g.key}">Pagar ${fmtMoney(t.total)}</button>`
           : `<span class="muted small">Ingresá para comprar: tus fotos quedan siempre en Mis compras.</span><button class="btn primary" data-login>Ingresar para pagar</button>`}
       </div>
     </section>`;

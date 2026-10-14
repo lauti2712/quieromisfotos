@@ -10,6 +10,7 @@ import { openViewer } from './viewer.js';
 import { mountGallery } from './gallery.js';
 import { renderCart } from './cart-view.js';
 import { renderAccount } from './account.js';
+import { renderOrder } from './order-view.js';
 import { cart } from './cart.js';
 
 const updateCartBadge = () => {
@@ -26,7 +27,7 @@ const PAGE = 24;
 
 window.addEventListener('hashchange', route);
 // Al ingresar/salir se re-dibujan las vistas que dependen de la cuenta.
-window.addEventListener('account:change', () => { const p = parseHash().parts[0]; if (p === 'cuenta' || p === 'carrito') route(); });
+window.addEventListener('account:change', () => { const p = parseHash().parts[0]; if (p === 'cuenta' || p === 'carrito' || p === 'pedido') route(); });
 route();
 
 function route() {
@@ -37,6 +38,7 @@ function route() {
   if (parts[0] === 'f' && parts[1]) return renderProfile(parts[1]);
   if (parts[0] === 'carrito') return renderCart(app);
   if (parts[0] === 'cuenta') return renderAccount(app);
+  if (parts[0] === 'pedido' && parts[1]) return renderOrder(app, parts[1], parseHash().query);
   if (parts[0] === 'fotografos') return renderDirectory();
   return renderHome();
 }
