@@ -38,7 +38,10 @@ export async function callback(req, env) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       client_id: env.MP_CLIENT_ID, client_secret: env.MP_CLIENT_SECRET, grant_type: 'authorization_code',
-      code, redirect_uri: env.MP_REDIRECT_URI, ...(env.MP_TEST_MODE === '1' ? { test_token: true } : {}),
+      code, redirect_uri: env.MP_REDIRECT_URI,
+      // test_token pide credenciales sandbox (TEST-…): MP las está discontinuando y su checkout deja el botón Pagar deshabilitado.
+      // Para probar se usan las credenciales normales de una cuenta de prueba (plata ficticia en el checkout común).
+      ...(env.MP_SANDBOX_TOKEN === '1' ? { test_token: true } : {}),
     }),
   });
   const d = await res.json().catch(() => ({}));
