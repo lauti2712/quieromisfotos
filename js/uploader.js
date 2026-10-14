@@ -1,5 +1,5 @@
 // Cola de subida masiva: procesa (Web Worker) y sube muestra, miniatura y original; crea el doc en `photos`.
-import { db, doc, collection, writeBatch, increment, serverTimestamp, Timestamp } from './fb.js';
+import { db, doc, collection, writeBatch, increment, serverTimestamp, Timestamp, getDoc } from './fb.js';
 import { uploadSession, invalidateSession, putBlob } from './api.js';
 import { processFile } from './image-proc.js';
 
@@ -67,6 +67,11 @@ export function createUploader({ eventId, uid, wm, logo = null, onChange, onPhot
 
   async function runItem(it) {
     it.status = 'processing'; it.error = ''; it.loaded = 0; emit();
+    // Reintento: si el intento anterior llegó a guardar la foto (se cortó la conexión justo después), ya está.
+    if (it.pid && (await getDoc(doc(db, 'photos', it.pid)).catch(() => null))?.exists()) {
+      it.status = 'done'; it.loaded = it.file.size; emit();
+      return;
+    }
     const r = await process(it.file);
     const s = await uploadSession(eventId);
     const pid = it.pid || (it.pid = doc(collection(db, 'photos')).id);
