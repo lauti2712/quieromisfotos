@@ -22,7 +22,9 @@ export async function viewPortfolio(view, { uid, profile, settings }) {
         <strong>Arrastrá fotos acá o tocá para elegirlas</strong>
         <span class="muted small">Se guarda una versión web (1600px); el original no se sube.</span>
       </label>
-      <p class="muted small" style="margin:0">Se aplica tu marca de agua (www.quieromisfotos.com.ar${wantsLogo(profile.watermark) ? ' + tu logo' : ''}).</p>
+      <p class="muted small" style="margin:0">${wantsLogo(profile.watermark)
+        ? 'Se aplica la marca de agua del sitio (www.quieromisfotos.com.ar) en mosaico y <strong>tu logo en el centro</strong>.'
+        : 'Se aplica la marca de agua del sitio (www.quieromisfotos.com.ar). Si querés sumar <strong>tu logo en el centro</strong>, activalo en <a href="#/config">Precios y marca</a>.'}</p>
       <div id="pf-progress" class="small muted"></div>
     </div>
     <div class="card"><div class="photo-grid" id="pf-grid"></div></div>`;

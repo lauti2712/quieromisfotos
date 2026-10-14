@@ -24,6 +24,10 @@ export function mpPlanOf(user, settings) {
   return plans.find(p => p.id === user?.mpReleasePlan) || plans[0];
 }
 
+// Equipo del fotógrafo (sección "Cámaras" del perfil).
+export const GEAR_TYPES = ['Cámara', 'Lente', 'Drone', 'Flash / iluminación', 'Otro'];
+export const GEAR_PLURAL = { 'Cámara': 'Cámaras', 'Lente': 'Lentes', 'Drone': 'Drones', 'Flash / iluminación': 'Flash / iluminación', 'Otro': 'Otros' };
+
 export const SERVICES = ['Deportes', 'Eventos sociales', 'Retratos / books', 'Institucional', 'Producto', 'Video'];
 
 export function isPro(user) {

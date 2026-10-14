@@ -5,7 +5,7 @@ import {
 import {
   $, $$, esc, fmtDate, parseHash, queryWords, avatarHtml, coverHtml, SOCIALS, toast, errMsg, waLink, normalize,
 } from './util.js';
-import { loadTaxonomy, tagPills, loadSettings, isPro, portfolioLimit } from './data.js';
+import { loadTaxonomy, tagPills, loadSettings, isPro, portfolioLimit, GEAR_TYPES, GEAR_PLURAL } from './data.js';
 import { openViewer } from './viewer.js';
 import { mountGallery } from './gallery.js';
 import { renderCart } from './cart-view.js';
@@ -181,6 +181,20 @@ async function renderEvent(id) {
   mountGallery($('#gallery'), { ev, photographers, sets });
 }
 
+function gearHtml(gear) {
+  const items = (gear || []).filter(g => g.name);
+  if (!items.length) return '';
+  const groups = GEAR_TYPES.map(t => [t, items.filter(g => (GEAR_TYPES.includes(g.type) ? g.type : 'Otro') === t)]).filter(([, l]) => l.length);
+  return `
+    <section class="card" style="margin-bottom:22px">
+      <h2>📷 Cámaras y equipo</h2>
+      <div class="gear-list">${groups.map(([t, l]) => `
+        <div><div class="muted small" style="font-weight:700;text-transform:uppercase;letter-spacing:.04em">${esc(l.length > 1 ? GEAR_PLURAL[t] : t)}</div>
+          ${l.map(g => `<div>${esc(g.name)}</div>`).join('')}</div>`).join('')}
+      </div>
+    </section>`;
+}
+
 async function loadPortfolio(user, settings) {
   const box = $('#p-portfolio');
   try {
@@ -301,6 +315,7 @@ async function renderProfile(slug) {
       </div>
     </div>
     ${user.demo ? '<div class="notice warn">👀 <strong>Perfil de ejemplo.</strong> Así se ve el perfil de un fotógrafo: portfolio, especialidades, contacto y sus eventos.</div>' : ''}
+    ${gearHtml(user.gear)}
     <section id="p-portfolio"></section>
     <h2>Eventos</h2>
     <div id="p-events" class="events-grid"><div class="spinner"></div></div>`;

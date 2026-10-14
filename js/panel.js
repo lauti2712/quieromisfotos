@@ -10,7 +10,7 @@ import {
   $, $$, esc, slugify, SLUG_RE, searchTokens, fmtMoney, fmtDate, fmtTs, todayIso, parseHash,
   toast, errMsg, avatarHtml, coverHtml, SOCIALS, newId, normalize,
 } from './util.js';
-import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, tagPills, SERVICES, isPro, mpPlanOf } from './data.js';
+import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, tagPills, SERVICES, isPro, mpPlanOf, GEAR_TYPES } from './data.js';
 import { sellerNet } from './pricing.js';
 import { viewPortfolio } from './panel-portfolio.js';
 import { drawWatermark, drawSampleScene, DEFAULT_WATERMARK, wantsLogo } from './watermark.js';
@@ -296,6 +296,10 @@ function viewProfile() {
           <button type="button" class="btn sm" id="pf-sport-add">Agregar</button></div>` : ''}</div>
       <div class="field"><span>Tipos de trabajo</span>
         <div class="pills" id="pf-services">${SERVICES.map(v => `<button type="button" class="chip ${(p.services || []).includes(v) ? 'on' : ''}" data-v="${esc(v)}">${esc(v)}</button>`).join('')}</div></div>
+      <h3 style="margin-top:6px">Cámaras</h3>
+      <p class="muted small" style="margin:0">Contá con qué equipo trabajás: cámaras, lentes, drone, iluminación…</p>
+      <div id="pf-gear" class="stack"></div>
+      <button type="button" class="btn sm" id="pf-gear-add" style="justify-self:start">+ Agregar equipo</button>
       <h3 style="margin-top:6px">Contacto y redes</h3>
       <p class="muted small" style="margin:0">Con tu WhatsApp aparece el botón <strong>"Pedir presupuesto"</strong> en tu perfil público.</p>
       <div class="grid2">
@@ -317,6 +321,28 @@ function viewProfile() {
     } catch (err) { toast(errMsg(err), 'error'); }
   });
   $$('#pf-sports .chip, #pf-services .chip').forEach(c => c.onclick = () => c.classList.toggle('on'));
+  // Cámaras / equipo
+  const gear = (p.gear || []).map(g => ({ ...g }));
+  const drawGear = () => {
+    $('#pf-gear').innerHTML = gear.length ? gear.map((g, i) => `
+      <div class="row gear-row">
+        <select data-gi="${i}" data-gk="type" style="width:auto">${GEAR_TYPES.map(t => `<option ${g.type === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
+        <input type="text" data-gi="${i}" data-gk="name" maxlength="60" value="${esc(g.name || '')}" placeholder="${g.type === 'Lente' ? 'Ej: Sony FE 70-200mm f/2.8 GM' : g.type === 'Drone' ? 'Ej: DJI Mini 4 Pro' : 'Ej: Sony A7 IV'}" style="flex:1;min-width:180px">
+        <button type="button" class="btn sm danger" data-grm="${i}" aria-label="Quitar">✕</button>
+      </div>`).join('') : '<p class="muted small" style="margin:0">Todavía no cargaste tu equipo.</p>';
+    $$('#pf-gear [data-gi]').forEach(el => el.oninput = () => {
+      gear[el.dataset.gi][el.dataset.gk] = el.value;
+      if (el.dataset.gk === 'type') drawGear();
+    });
+    $$('#pf-gear [data-grm]').forEach(b => b.onclick = () => { gear.splice(+b.dataset.grm, 1); drawGear(); });
+  };
+  drawGear();
+  $('#pf-gear-add').onclick = () => {
+    if (gear.length >= 20) return toast('Podés cargar hasta 20 equipos.', 'error');
+    gear.push({ type: gear.length ? gear.at(-1).type : 'Cámara', name: '' });
+    drawGear();
+    $$('#pf-gear input').at(-1)?.focus();
+  };
   const addSport = async () => {
     const inp = $('#pf-sport-new');
     const name = inp.value.trim();
@@ -352,6 +378,7 @@ function viewProfile() {
       workZones: $('#pf-workzones').value.trim(),
       specialties: $$('#pf-sports .chip.on').map(c => c.dataset.v),
       services: $$('#pf-services .chip.on').map(c => c.dataset.v),
+      gear: gear.map(g => ({ type: GEAR_TYPES.includes(g.type) ? g.type : 'Otro', name: String(g.name || '').trim().slice(0, 60) })).filter(g => g.name),
     };
     try {
       const b = writeBatch(db);
