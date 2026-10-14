@@ -69,7 +69,8 @@ export async function checkout(req, env) {
       back_urls: { success: back, failure: back, pending: back },
       auto_return: 'approved',
       binary_mode: true,
-      payer: { email: claims.email },
+      // En modo prueba no se manda el email: si es de una cuenta real, MP rechaza el pago por mezclar cuentas de prueba y reales.
+      ...(env.MP_TEST_MODE === '1' ? {} : { payer: { email: claims.email } }),
       statement_descriptor: 'QUIEROMISFOTOS',
       metadata: { order_id: orderId },
       expires: true,
