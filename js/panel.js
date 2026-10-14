@@ -27,6 +27,7 @@ const isApproved = () => S.profile?.status === 'approved';
 onAuthStateChanged(auth, async user => {
   S.user = user;
   $('#logout').style.display = user ? '' : 'none';
+  if (!user) $('#public-profile').style.display = 'none';
   $('#who').textContent = user ? (user.displayName || user.email) : '';
   if (!user) { S.profile = null; return renderLogin(); }
   S.isSuper = user.email === SUPERADMIN_EMAIL && user.emailVerified;
@@ -48,7 +49,16 @@ onAuthStateChanged(auth, async user => {
 
 $('#logout').addEventListener('click', () => signOut(auth));
 
+// Botón del header "Ver mi perfil público" (solo si el perfil está publicado).
+function updatePublicProfileBtn() {
+  const a = $('#public-profile');
+  const ok = S.profile?.slug && (S.profile.status === 'approved');
+  a.style.display = ok ? '' : 'none';
+  if (ok) a.href = `index.html#/f/${encodeURIComponent(S.profile.slug)}`;
+}
+
 function updateRolePill() {
+  updatePublicProfileBtn();
   const p = $('#role-pill');
   const st = S.profile?.status;
   if (S.isSuper) { p.textContent = 'Superadmin'; p.className = 'pill accent'; }
@@ -197,8 +207,10 @@ function navItems() {
     { href: '#/portfolio', label: '🖼️ Portfolio' },
     { group: 'Cuenta' },
     { href: '#/perfil', label: '👤 Perfil' },
+    ...(isApproved() && S.profile.slug ? [{ href: `index.html#/f/${encodeURIComponent(S.profile.slug)}`, label: '👁️ Mi perfil público', external: true, blank: true, mobileOnly: true }] : []),
     { href: '#/config', label: '⚙️ Precios y marca' },
     { href: '#/mp', label: '💳 Mercado Pago' },
+    { href: 'index.html#/cuenta', label: '🛒 Mis compras', external: true },
   ];
 }
 
@@ -220,7 +232,7 @@ function route() {
   if (!nav) return;
   nav.innerHTML = navItems().map(i => i.group
     ? `<div class="group">${i.group}</div>`
-    : (i.need && !isApproved()) ? '' : `<a href="${i.href}" class="${('#/' + key).startsWith(i.href) ? 'on' : ''}">${i.label}</a>`).join('');
+    : (i.need && !isApproved()) ? '' : `<a href="${i.href}" class="${!i.external && ('#/' + key).startsWith(i.href) ? 'on' : ''} ${i.mobileOnly ? 'mobile-only' : ''}" ${i.blank ? 'target="_blank"' : ''}>${i.label}</a>`).join('');
   const view = $('#view');
   view.innerHTML = '<div class="spinner"></div>';
   const [a, b] = parts;

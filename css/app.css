@@ -296,3 +296,6 @@ footer.site .foot-links a { color: var(--muted); }
 .order-item img { width: 100%; aspect-ratio: 3/2; object-fit: cover; border-radius: 8px; background: var(--surface-2); }
 .gear-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
 .gear-row select { min-width: 140px; }
+@media (max-width: 640px) { #public-profile { display: none !important; } }
+.sidenav a.mobile-only { display: none; }
+@media (max-width: 640px) { .sidenav a.mobile-only { display: inline-block; } }

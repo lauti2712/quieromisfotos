@@ -9,8 +9,17 @@ import { $, esc, fmtMoney, fmtTs, toast, errMsg, initials } from './util.js';
 let current = null;
 const waiters = [];
 
-onAuthStateChanged(auth, user => {
+let isPhotographer = false; // la cuenta tiene perfil de fotógrafo (o es superadmin)
+
+onAuthStateChanged(auth, async user => {
   current = user;
+  isPhotographer = false;
+  if (user) {
+    try {
+      const snap = await getDoc(doc(db, 'users', user.uid));
+      isPhotographer = snap.exists() && ['photographer', 'superadmin'].includes(snap.data().role);
+    } catch { /* sin perfil */ }
+  }
   drawHeader();
   if (user) waiters.splice(0).forEach(fn => fn(user));
   window.dispatchEvent(new CustomEvent('account:change', { detail: { user } }));
@@ -21,7 +30,12 @@ export const currentUser = () => current;
 function drawHeader() {
   const el = document.getElementById('acct');
   if (!el) return;
-  el.innerHTML = current
+  // Los fotógrafos van directo a su panel; "Mi cuenta" (compras) es para clientes.
+  document.getElementById('soy-fotografo')?.classList.toggle('hidden', isPhotographer);
+  const avatar = current ? `<span class="avatar xs">${current.photoURL ? `<img src="${esc(current.photoURL)}" alt="" referrerpolicy="no-referrer">` : esc(initials(current.displayName || current.email))}</span>` : '';
+  el.innerHTML = current && isPhotographer
+    ? `<a class="btn sm acct-btn" href="panel.html" aria-label="Mi panel">${avatar}<span class="acct-label">Mi panel</span></a>`
+    : current
     ? `<a class="btn sm acct-btn" href="#/cuenta" aria-label="Mi cuenta"><span class="avatar xs">${current.photoURL ? `<img src="${esc(current.photoURL)}" alt="" referrerpolicy="no-referrer">` : esc(initials(current.displayName || current.email))}</span><span class="acct-label">Mi cuenta</span></a>`
     : '<button class="btn sm acct-btn" id="acct-login"><span class="acct-label">Ingresar</span><span class="acct-icon" aria-hidden="true">👤</span></button>';
   $('#acct-login')?.addEventListener('click', () => openLogin());
@@ -120,30 +134,13 @@ export async function renderAccount(app) {
       </div>
       <button class="btn" id="logout">Salir</button>
     </div>
-    <div id="photog"></div>
     <h2>Mis compras</h2>
     <div id="orders"><div class="spinner"></div></div>
     <p class="muted small" style="margin-top:24px" id="photog-hint">¿Sos fotógrafo? <a href="panel.html">Entrá al panel para vender tus fotos</a>.</p>`;
   $('#logout').onclick = async () => { await signOut(auth); location.hash = '#/'; };
 
-  // Si además es fotógrafo, accesos a su perfil público y a su panel.
-  getDoc(doc(db, 'users', u.uid)).then(snap => {
-    const p = snap.exists() ? snap.data() : null;
-    if (!p || !['photographer', 'superadmin'].includes(p.role)) return;
-    $('#photog-hint')?.remove();
-    const approved = p.status === 'approved';
-    $('#photog').innerHTML = `
-      <div class="card stack" style="margin-bottom:22px">
-        <div class="row" style="justify-content:space-between">
-          <div><strong>📷 Tu cuenta de fotógrafo</strong>
-            <div class="muted small">${approved ? 'Tu perfil está publicado.' : p.status === 'pending' ? 'Pendiente de aprobación: tu perfil se publica cuando te aprueben.' : 'Tu cuenta de fotógrafo está suspendida.'}</div></div>
-          <div class="row">
-            ${approved && p.slug ? `<a class="btn" href="#/f/${esc(p.slug)}">Ver mi perfil público</a>` : ''}
-            <a class="btn primary" href="panel.html">Ir a mi panel</a>
-          </div>
-        </div>
-      </div>`;
-  }).catch(() => {});
+  // Un fotógrafo que entra a "Mis compras" no ve la invitación a vender.
+  if (isPhotographer) $('#photog-hint')?.remove();
 
   try {
     const snap = await getDocs(query(collection(db, 'orders'), where('buyerUid', '==', u.uid), orderBy('createdAt', 'desc'), limit(100)));
