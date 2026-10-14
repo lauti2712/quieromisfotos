@@ -17,6 +17,7 @@ else:
     TOKEN = 'owner'
     IMG = 'http://localhost:5175/demo'
 
+V = '?v=2'  # cache-busting cuando se regeneran las imágenes
 UID = 'demo-fotografo'
 SLUG = 'fotografo-ejemplo'
 EID = 'demo-evento'
@@ -91,6 +92,7 @@ types = [plain(d['fields']) | {'id': d['name'].split('/')[-1]} for d in (req('GE
 deporte = next((t['id'] for t in types if t['name'].lower() == 'deporte'), None)
 existing = [plain(d['fields']) | {'id': d['name'].split('/')[-1]} for d in (req('GET', f'{BASE}/tags?pageSize=500') or {}).get('documents', [])]
 futbol = None
+sport_ids = {}
 if deporte:
     for name in ['Fútbol', 'Hockey', 'Básquet', 'Rugby', 'Vóley']:
         t = next((x for x in existing if x['typeId'] == deporte and x['name'].lower() == name.lower()), None)
@@ -99,6 +101,7 @@ if deporte:
             t = {'id': slug, 'typeId': deporte, 'name': name, 'slug': slug}
             put(f'tags/{slug}', {k: t[k] for k in ('typeId', 'name', 'slug')})
             existing.append(t)
+        sport_ids[name] = t['id']
         if name == 'Fútbol': futbol = t['id']
     put('settings/tags', {
         'types': [{'id': t['id'], 'name': t['name'], 'order': t.get('order', 0)} for t in types],
@@ -116,26 +119,33 @@ put('settings/platform', {'feePercent': plat.get('feePercent', 3), 'retentionDay
 put(f'slugs/{SLUG}', {'uid': UID})
 put(f'users/{UID}', {
     'role': 'photographer', 'status': 'approved', 'demo': True,
-    'displayName': 'Fotógrafo de Ejemplo', 'slug': SLUG, 'avatarUrl': f'{IMG}/avatar.jpg',
-    'bio': 'Este es un perfil de ejemplo para mostrar cómo funciona Quiero Mis Fotos: portfolio, contacto para presupuestos y eventos con fotos a la venta.',
-    'zone': 'Rosario, Santa Fe', 'workZones': 'Rosario y alrededores',
-    'socials': {}, 'specialties': [futbol] if futbol else [], 'services': ['Deportes', 'Eventos sociales'],
+    'displayName': 'Tomás Aguirre Fotografía', 'slug': SLUG, 'avatarUrl': f'{IMG}/avatar.jpg{V}',
+    'bio': ('Fotógrafo deportivo con más de 10 años cubriendo fútbol, hockey y rugby en Rosario y la región. '
+            'Trabajo en torneos de ligas infantiles, juveniles y amateurs, y también en eventos sociales e institucionales.\n\n'
+            '📸 Entrega rápida: las fotos de cada fecha se suben el mismo día.\n'
+            '🏆 Cobertura de torneos completos, con equipo de varios fotógrafos.\n'
+            '💬 Escribime para presupuestos de eventos, books deportivos o fotos de equipo.'),
+    'zone': 'Rosario, Santa Fe',
+    'workZones': 'Rosario, Funes, Roldán, Granadero Baigorria y Villa Gobernador Gálvez',
+    'socials': {'instagram': '@tomasaguirre.foto', 'facebook': 'tomasaguirrefoto', 'whatsapp': '341 555-0100', 'web': 'www.tomasaguirrefoto.com.ar'},
+    'specialties': [sport_ids[n] for n in ('Fútbol', 'Hockey', 'Rugby') if n in sport_ids],
+    'services': ['Deportes', 'Eventos sociales', 'Retratos / books', 'Institucional'],
     'plan': 'pro', 'proUntil': datetime.datetime(2099, 1, 1, tzinfo=datetime.timezone.utc),
     'mpConnected': False, 'mpUserId': None,
     'defaults': {'price': 2500, 'packs': [{'qty': 3, 'price': 6000}, {'qty': 5, 'price': 9000}], 'feeMode': 'buyer'},
-    'watermark': {'type': 'text', 'text': 'Fotógrafo de Ejemplo', 'position': 'both', 'opacity': 0.35},
+    'watermark': {'type': 'text', 'text': 'www.quieromisfotos.com.ar', 'position': 'both', 'opacity': 0.35},
     'createdAt': NOW,
 })
 for i in range(6):
-    put(f'portfolio/{UID}_{i}', {'photographerUid': UID, 'slot': i, 'url': f'{IMG}/pf-{i}_p.jpg', 'thumbUrl': f'{IMG}/pf-{i}_t.jpg',
+    put(f'portfolio/{UID}_{i}', {'photographerUid': UID, 'slot': i, 'url': f'{IMG}/pf-{i}_p.jpg{V}', 'thumbUrl': f'{IMG}/pf-{i}_t.jpg{V}',
                                  'width': 1600, 'height': 1067, 'caption': ['Final de torneo', 'Festejo', 'Entrada en calor', 'Jugada', 'Equipo', 'Atardecer en la cancha'][i],
                                  'order': i, 'demo': True, 'createdAt': NOW})
 
 # ---------------------------------------------------------------- evento + set + fotos
-name, loc = 'Torneo de Ejemplo — Fecha 1', 'Rosario, Santa Fe'
+name, loc = 'Torneo Apertura Infantil — Fecha 1', 'Club Atlético Ejemplo, Rosario'
 put(f'events/{EID}', {
     'name': name, 'date': '2026-10-11', 'location': loc, 'tagIds': [futbol] if futbol else [],
-    'coverUrl': f'{IMG}/cover.jpg', 'status': 'published', 'kind': 'own', 'createdBy': UID,
+    'coverUrl': f'{IMG}/cover.jpg{V}', 'status': 'published', 'kind': 'own', 'createdBy': UID,
     'photographerUids': [UID], 'openToJoin': False, 'demo': True,
     'searchTokens': tokens(name, loc, 'Fútbol', 'ejemplo demo'), 'createdAt': NOW, 'updatedAt': NOW,
 })
@@ -149,7 +159,7 @@ start = datetime.datetime(2026, 10, 11, 15, 0, tzinfo=datetime.timezone.utc)
 for i in range(12):
     put(f'photos/demo-{i:02d}', {
         'eventId': EID, 'photographerUid': UID, 'subalbumId': 'pt' if i < 6 else 'st',
-        'previewUrl': f'{IMG}/ev-{i:02d}_p.jpg', 'thumbUrl': f'{IMG}/ev-{i:02d}_t.jpg',
+        'previewUrl': f'{IMG}/ev-{i:02d}_p.jpg{V}', 'thumbUrl': f'{IMG}/ev-{i:02d}_t.jpg{V}',
         'width': 1600, 'height': 1067, 'bytes': 8_000_000, 'takenAt': start + datetime.timedelta(minutes=7 * i),
         'fileName': f'DEMO_{i + 1:04d}.jpg', 'bibs': [], 'hidden': False, 'originalDeleted': False, 'demo': True, 'createdAt': NOW,
     })

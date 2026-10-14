@@ -64,7 +64,10 @@ def scene(seed, w=W, h=H):
     d.regular_polygon((bx, by, br * .45), 5, fill=(40, 40, 40))
     return img
 
-def watermark(img, text='QUIERO MIS FOTOS · DEMO', opacity=.35):
+WM = 'www.quieromisfotos.com.ar'
+
+
+def watermark(img, text=WM.upper(), opacity=.35):
     w, h = img.size
     layer = Image.new('RGBA', (w * 2, h * 2), (0, 0, 0, 0))
     d = ImageDraw.Draw(layer)
@@ -81,9 +84,9 @@ def watermark(img, text='QUIERO MIS FOTOS · DEMO', opacity=.35):
     layer = layer.rotate(30, resample=Image.BICUBIC).crop((w // 2, h // 2, w // 2 + w, h // 2 + h))
     out = Image.alpha_composite(img.convert('RGBA'), layer)
     d = ImageDraw.Draw(out)
-    big = font(int(min(w, h) * .1))
-    d.text((w / 2, h / 2), 'DEMO', font=big, fill=(255, 255, 255, int(255 * min(.95, opacity * 1.4))), anchor='mm',
-           stroke_width=max(2, int(min(w, h) * .008)), stroke_fill=(0, 0, 0, 140))
+    big = font(int(min(w, h) * .075))
+    d.text((w / 2, h / 2), WM, font=big, fill=(255, 255, 255, int(255 * min(.9, opacity * 1.3))), anchor='mm',
+           stroke_width=max(1, int(min(w, h) * .004)), stroke_fill=(0, 0, 0, 70))
     return out.convert('RGB')
 
 def save(img, name, q):
@@ -100,8 +103,8 @@ for i in range(12):
 # portfolio (6)
 for i in range(6):
     s = scene(500 + i)
-    save(watermark(s, 'FOTÓGRAFO DE EJEMPLO', .3), f'pf-{i}_p.jpg', 80)
-    save(watermark(s.resize((400, int(400 * H / W)), Image.LANCZOS), 'FOTÓGRAFO DE EJEMPLO', .3), f'pf-{i}_t.jpg', 72)
+    save(watermark(s, opacity=.3), f'pf-{i}_p.jpg', 80)
+    save(watermark(s.resize((400, int(400 * H / W)), Image.LANCZOS), opacity=.3), f'pf-{i}_t.jpg', 72)
 
 # portada y avatar
 save(scene(42).resize((1600, 900)), 'cover.jpg', 78)

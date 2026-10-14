@@ -240,7 +240,7 @@ async function renderDirectory() {
           </div>
         </div>`;
     }).join('') : '<div class="empty" style="grid-column:1/-1">No encontramos fotógrafos con esos filtros.</div>';
-    $$('[data-demo-quote]').forEach(b => b.onclick = () => toast('Es un perfil de ejemplo: en un perfil real se abre WhatsApp con el fotógrafo.'));
+    $$('[data-demo-quote]').forEach(b => b.onclick = () => toast('Es un perfil de ejemplo: en un perfil real este botón abre el WhatsApp del fotógrafo.'));
   };
   let t;
   $('#d-q').oninput = e => { clearTimeout(t); t = setTimeout(() => { f.q = e.target.value; draw(); }, 200); };
@@ -288,7 +288,9 @@ async function renderProfile(slug) {
         <div class="row">
           ${user.demo ? '<button class="btn primary" data-demo-quote>💬 Pedir presupuesto</button>'
             : wa ? `<a class="btn primary" target="_blank" rel="noopener" href="${esc(waLink(wa, quoteMsg))}">💬 Pedir presupuesto</a>` : ''}
-          ${socials.map(s => `<a class="btn sm" target="_blank" rel="noopener" href="${esc(s.url(user.socials[s.key]))}">${s.label}</a>`).join('')}
+          ${socials.map(s => user.demo
+            ? `<button class="btn sm" data-demo-quote>${s.label}</button>`
+            : `<a class="btn sm" target="_blank" rel="noopener" href="${esc(s.url(user.socials[s.key]))}">${s.label}</a>`).join('')}
         </div>
       </div>
     </div>
@@ -297,7 +299,7 @@ async function renderProfile(slug) {
     <h2>Eventos</h2>
     <div id="p-events" class="events-grid"><div class="spinner"></div></div>`;
 
-  app.querySelector('[data-demo-quote]')?.addEventListener('click', () => toast('Es un perfil de ejemplo: en un perfil real se abre WhatsApp con el fotógrafo.'));
+  $$('[data-demo-quote]').forEach(b => b.addEventListener('click', () => toast('Es un perfil de ejemplo: en un perfil real este botón abre el contacto del fotógrafo.')));
   loadPortfolio(user, settings);
   try {
     const [snap] = await Promise.all([

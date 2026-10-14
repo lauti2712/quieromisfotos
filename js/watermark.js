@@ -8,7 +8,7 @@ export function drawWatermark(ctx, w, h, wm, logo = null) {
   const opts = { ...DEFAULT_WATERMARK, ...wm };
   const alpha = Math.min(0.9, Math.max(0.05, Number(opts.opacity) || 0.35));
   const useLogo = opts.type === 'logo' && logo;
-  const text = (opts.text || 'Quiero Mis Fotos').toUpperCase();
+  const text = (opts.text || 'www.quieromisfotos.com.ar').toUpperCase();
   const big = Math.max(w, h);
 
   ctx.save();
