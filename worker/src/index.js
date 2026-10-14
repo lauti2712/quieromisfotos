@@ -18,7 +18,7 @@
 //   POST   /orders/{id}/checkout       Bearer (comprador)                     reintentar pago
 //   POST   /orders/{id}/downloads      Bearer (comprador)                     -> links de 15 min
 //   GET    /dl/{token}                                                        descarga del original
-//   POST   /tags                       Bearer (fotógrafo aprobado) {type, name}  alta de deporte sin duplicados
+//   POST   /tags                       Bearer (fotógrafo aprobado) {type, name}  alta de actividad/club/lugar sin duplicados
 //
 // Claves en R2:
 //   qmf-public:  e/{eid}/{uid}/{pid}_p.jpg  (muestra)   e/{eid}/{uid}/{pid}_t.jpg  (miniatura)

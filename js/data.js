@@ -39,7 +39,11 @@ export function portfolioLimit(user, settings) {
   return isPro(user) ? settings.proPortfolioLimit : settings.freePortfolioLimit;
 }
 
-export const INITIAL_TAG_TYPES = ['Deporte', 'Club', 'Categoría', 'Lugar'];
+// Tipos de etiqueta iniciales (ids fijos). "deporte" se muestra como "Actividad".
+export const INITIAL_TAG_TYPES = [{ id: 'deporte', name: 'Actividad' }, { id: 'club', name: 'Club' }, { id: 'lugar', name: 'Lugar' }];
+export const ACTIVITY_TYPE = 'deporte';
+// Tipos en los que los fotógrafos pueden agregar etiquetas nuevas (el Worker valida lo mismo).
+export const USER_TAG_TYPES = ['deporte', 'club', 'lugar'];
 
 let taxonomyPromise = null;
 

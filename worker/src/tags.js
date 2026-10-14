@@ -1,10 +1,10 @@
-// Alta de etiquetas por fotógrafos (por ahora solo deportes). Evita duplicados ignorando
+// Alta de etiquetas por fotógrafos (actividad, club, lugar). Evita duplicados ignorando
 // mayúsculas, acentos y espacios, y actualiza el snapshot settings/tags que lee el sitio.
 import { adminGet, adminSet } from './admin.js';
 import { requireUser } from './firebase.js';
 import { json, httpError } from './http.js';
 
-const ALLOWED_TYPES = ['deporte'];
+const ALLOWED_TYPES = ['deporte', 'club', 'lugar']; // ids de tagTypes ('deporte' se muestra como "Actividad")
 
 const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const slugify = s => norm(s).replace(/ /g, '-').slice(0, 40);
@@ -19,14 +19,14 @@ export async function createTag(req, env) {
   }
   const { type, name } = await req.json().catch(() => ({}));
   const clean = String(name || '').replace(/\s+/g, ' ').trim();
-  if (!ALLOWED_TYPES.includes(norm(type))) throw httpError(400, 'Tipo de etiqueta no permitido');
-  if (clean.length < 2 || clean.length > 30 || !/^[\p{L}\p{N} .'-]+$/u.test(clean)) {
-    throw httpError(400, 'Usá entre 2 y 30 letras o números');
+  if (!ALLOWED_TYPES.includes(String(type || ''))) throw httpError(400, 'Tipo de etiqueta no permitido');
+  if (clean.length < 2 || clean.length > 40 || !/^[\p{L}\p{N} .'()&-]+$/u.test(clean)) {
+    throw httpError(400, 'Usá entre 2 y 40 letras o números');
   }
   const pretty = clean.charAt(0).toUpperCase() + clean.slice(1);
 
   const snap = (await adminGet(env, 'settings/tags')) || { types: [], tags: [] };
-  const typeObj = (snap.types || []).find(t => norm(t.name) === norm(type) || t.id === norm(type));
+  const typeObj = (snap.types || []).find(t => t.id === type);
   if (!typeObj) throw httpError(409, 'No existe el tipo de etiqueta');
   const tags = snap.tags || [];
   const existing = tags.find(t => t.typeId === typeObj.id && norm(t.name) === norm(pretty));

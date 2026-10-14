@@ -225,7 +225,7 @@ async function renderDirectory() {
     getDocs(query(collection(db, 'users'), where('status', '==', 'approved'), limit(500))).catch(() => null),
   ]);
   const all = (snap?.docs || []).map(d => ({ uid: d.id, ...d.data() })).filter(u => u.role === 'photographer');
-  const sportType = tax.types.find(t => normalize(t.name) === 'deporte');
+  const sportType = tax.types.find(t => t.id === 'deporte') || tax.types.find(t => ['deporte', 'actividad'].includes(normalize(t.name)));
   const sports = sportType ? tax.tags.filter(g => g.typeId === sportType.id) : [];
   const f = { q: '', sport: '', service: '' };
 
@@ -234,7 +234,7 @@ async function renderDirectory() {
     <p class="muted">Encontrá un fotógrafo para tu evento, partido o sesión y pedile presupuesto.</p>
     <div class="filters">
       <input class="search" type="text" id="d-q" placeholder="Buscar por nombre o zona…">
-      ${sports.length ? `<select id="d-sport"><option value="">Deporte: todos</option>${sports.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>` : ''}
+      ${sports.length ? `<select id="d-sport"><option value="">Actividad: todas</option>${sports.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>` : ''}
       <select id="d-service"><option value="">Tipo de trabajo: todos</option>${['Deportes', 'Eventos sociales', 'Retratos / books', 'Institucional', 'Producto', 'Video'].map(v => `<option>${esc(v)}</option>`).join('')}</select>
     </div>
     <div id="d-list" class="dir-grid"></div>`;

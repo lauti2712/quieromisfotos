@@ -89,7 +89,7 @@ if delete:
 
 # ---------------------------------------------------------------- etiquetas (deportes reales, útiles)
 types = [plain(d['fields']) | {'id': d['name'].split('/')[-1]} for d in (req('GET', f'{BASE}/tagTypes') or {}).get('documents', [])]
-deporte = next((t['id'] for t in types if t['name'].lower() == 'deporte'), None)
+deporte = next((t['id'] for t in types if t['id'] == 'deporte' or t['name'].lower() in ('deporte', 'actividad')), None)
 existing = [plain(d['fields']) | {'id': d['name'].split('/')[-1]} for d in (req('GET', f'{BASE}/tags?pageSize=500') or {}).get('documents', [])]
 futbol = None
 sport_ids = {}

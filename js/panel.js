@@ -10,7 +10,7 @@ import {
   $, $$, esc, slugify, SLUG_RE, searchTokens, fmtMoney, fmtDate, fmtTs, todayIso, parseHash,
   toast, errMsg, avatarHtml, coverHtml, SOCIALS, newId, normalize,
 } from './util.js';
-import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, tagPills, SERVICES, isPro, mpPlanOf, GEAR_TYPES } from './data.js';
+import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, ACTIVITY_TYPE, USER_TAG_TYPES, tagPills, SERVICES, isPro, mpPlanOf, GEAR_TYPES } from './data.js';
 import { sellerNet } from './pricing.js';
 import { viewPortfolio } from './panel-portfolio.js';
 import { drawWatermark, drawSampleScene, DEFAULT_WATERMARK, wantsLogo } from './watermark.js';
@@ -173,7 +173,7 @@ async function seedPlatform() {
   if (tt.empty) {
     const b = writeBatch(db);
     // Ids fijos: si esto corre dos veces en paralelo no se duplican los tipos.
-    INITIAL_TAG_TYPES.forEach((name, i) => b.set(doc(db, 'tagTypes', slugify(name)), { name, order: i }));
+    INITIAL_TAG_TYPES.forEach((t, i) => b.set(doc(db, 'tagTypes', t.id), { name: t.name, order: i }));
     await b.commit();
     await rebuildTaxonomy();
   }
@@ -288,11 +288,11 @@ function viewProfile() {
         <label class="field">Zona<input type="text" id="pf-zone" maxlength="60" value="${esc(p.zone)}" placeholder="Ciudad, provincia"></label>
         <label class="field">Zonas donde trabajás<input type="text" id="pf-workzones" maxlength="120" value="${esc(p.workZones || '')}" placeholder="Ej: Rosario, Funes, Roldán"></label>
       </div>
-      <label class="field">Bio<textarea id="pf-bio" maxlength="600" placeholder="Contá qué deportes cubrís, tu experiencia…">${esc(p.bio)}</textarea></label>
-      <div class="field"><span>Deportes que cubrís</span>
+      <label class="field">Bio<textarea id="pf-bio" maxlength="600" placeholder="Contá qué actividades cubrís, tu experiencia…">${esc(p.bio)}</textarea></label>
+      <div class="field"><span>Actividades que cubrís</span>
         <div class="pills" id="pf-sports">${sportTags().map(t => `<button type="button" class="chip ${(p.specialties || []).includes(t.id) ? 'on' : ''}" data-v="${t.id}">${esc(t.name)}</button>`).join('')}</div>
         ${isApproved() || S.isSuper ? `<div class="row" style="margin-top:6px">
-          <input type="text" id="pf-sport-new" maxlength="30" placeholder="¿No está tu deporte? Ej: Softball" style="max-width:260px">
+          <input type="text" id="pf-sport-new" maxlength="30" placeholder="¿No está tu actividad? Ej: Softball" style="max-width:260px">
           <button type="button" class="btn sm" id="pf-sport-add">Agregar</button></div>` : ''}</div>
       <div class="field"><span>Tipos de trabajo</span>
         <div class="pills" id="pf-services">${SERVICES.map(v => `<button type="button" class="chip ${(p.services || []).includes(v) ? 'on' : ''}" data-v="${esc(v)}">${esc(v)}</button>`).join('')}</div></div>
@@ -346,10 +346,10 @@ function viewProfile() {
   const addSport = async () => {
     const inp = $('#pf-sport-new');
     const name = inp.value.trim();
-    if (name.length < 2) return toast('Escribí el nombre del deporte.', 'error');
+    if (name.length < 2) return toast('Escribí el nombre de la actividad.', 'error');
     const btn = $('#pf-sport-add'); btn.disabled = true;
     try {
-      const { tag, created } = await apiPost('/tags', { type: 'deporte', name });
+      const { tag, created } = await apiPost('/tags', { type: ACTIVITY_TYPE, name });
       S.tax = await loadTaxonomy(true);
       let chip = $(`#pf-sports .chip[data-v="${tag.id}"]`);
       if (!chip) {
@@ -398,7 +398,7 @@ function viewProfile() {
 }
 
 function sportTags() {
-  const t = S.tax.types.find(x => normalize(x.name) === 'deporte');
+  const t = S.tax.types.find(x => x.id === ACTIVITY_TYPE) || S.tax.types.find(x => ['deporte', 'actividad'].includes(normalize(x.name)));
   return t ? S.tax.tags.filter(g => g.typeId === t.id) : [];
 }
 
@@ -736,11 +736,15 @@ function eventDialog(ev, onSaved) {
     <label class="field">Nombre<input type="text" id="ev-name" required maxlength="100" value="${esc(ev.name)}" placeholder="Ej: Torneo Apertura Sub-14 — Fecha 3"></label>
     <div class="grid2">
       <label class="field">Fecha<input type="date" id="ev-date" required value="${esc(ev.date)}"></label>
-      <label class="field">Lugar<input type="text" id="ev-loc" maxlength="100" value="${esc(ev.location)}" placeholder="Club, ciudad"></label>
+      <label class="field">Sede / dirección<input type="text" id="ev-loc" maxlength="100" value="${esc(ev.location)}" placeholder="Ej: Cancha de Querandí, Santa Fe"></label>
     </div>
     ${tax.types.map(t => {
       const tags = tax.tags.filter(g => g.typeId === t.id);
-      return `<div class="field"><span>${esc(t.name)}</span><div class="pills">${tags.length ? tags.map(g => `<button type="button" class="chip ${sel.has(g.id) ? 'on' : ''}" data-tag="${g.id}">${esc(g.name)}</button>`).join('') : '<span class="muted small">Sin etiquetas cargadas</span>'}</div></div>`;
+      const canAdd = USER_TAG_TYPES.includes(t.id);
+      return `<div class="field"><span>${esc(t.name)}</span>
+        <div class="pills" data-type-pills="${t.id}">${tags.map(g => `<button type="button" class="chip ${sel.has(g.id) ? 'on' : ''}" data-tag="${g.id}">${esc(g.name)}</button>`).join('') || (canAdd ? '' : '<span class="muted small">Sin etiquetas cargadas</span>')}</div>
+        ${canAdd ? `<div class="row" style="margin-top:4px"><input type="text" data-newtag="${t.id}" maxlength="40" placeholder="${tags.length ? '¿No está? Agregá' : 'Agregá'} ${esc(t.name.toLowerCase())}…" style="max-width:260px"><button type="button" class="btn sm" data-addtag="${t.id}">Agregar</button></div>` : ''}
+      </div>`;
     }).join('')}
     <input type="hidden" id="ev-cover" value="${esc(ev.coverUrl)}">
     <div class="field"><span>Portada</span>
@@ -765,7 +769,32 @@ function eventDialog(ev, onSaved) {
     } catch (err) { toast(errMsg(err), 'error'); }
   });
   $('#ev-cover-rm', dlg)?.addEventListener('click', () => { $('#ev-cover', dlg).value = ''; $('#ev-cover-img', dlg).classList.add('hidden'); });
-  $$('[data-tag]', dlg).forEach(c => c.onclick = () => { c.classList.toggle('on'); c.classList.contains('on') ? sel.add(c.dataset.tag) : sel.delete(c.dataset.tag); });
+  const bindChip = c => { c.onclick = () => { c.classList.toggle('on'); c.classList.contains('on') ? sel.add(c.dataset.tag) : sel.delete(c.dataset.tag); }; };
+  $$('[data-tag]', dlg).forEach(bindChip);
+  // Etiquetas nuevas escritas por el fotógrafo (actividad, club, lugar): se crean sin duplicados y quedan para todos.
+  const addTag = async typeId => {
+    const inp = dlg.querySelector(`[data-newtag="${typeId}"]`);
+    const btn = dlg.querySelector(`[data-addtag="${typeId}"]`);
+    const name = inp.value.trim();
+    if (name.length < 2) return toast('Escribí el nombre.', 'error');
+    btn.disabled = true;
+    try {
+      const { tag, created } = await apiPost('/tags', { type: typeId, name });
+      S.tax = await loadTaxonomy(true);
+      let chip = dlg.querySelector(`[data-tag="${tag.id}"]`);
+      if (!chip) {
+        dlg.querySelector(`[data-type-pills="${typeId}"]`).insertAdjacentHTML('beforeend', `<button type="button" class="chip" data-tag="${esc(tag.id)}">${esc(tag.name)}</button>`);
+        chip = dlg.querySelector(`[data-tag="${tag.id}"]`);
+        bindChip(chip);
+      }
+      chip.classList.add('on'); sel.add(tag.id);
+      inp.value = '';
+      if (!created) toast(`"${tag.name}" ya existía: lo marcamos.`);
+    } catch (err) { toast(errMsg(err), 'error'); }
+    btn.disabled = false;
+  };
+  $$('[data-addtag]', dlg).forEach(b => b.onclick = () => addTag(b.dataset.addtag));
+  $$('[data-newtag]', dlg).forEach(i => i.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); addTag(i.dataset.newtag); } });
   $('#ev-save', dlg).onclick = async () => {
     const name = $('#ev-name', dlg).value.trim(), date = $('#ev-date', dlg).value, loc = $('#ev-loc', dlg).value.trim();
     if (!name || !date) return toast('Completá nombre y fecha.', 'error');
