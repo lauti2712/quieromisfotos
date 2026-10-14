@@ -35,6 +35,15 @@ export function queryWords(q) {
 const moneyFmt = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
 export const fmtMoney = n => moneyFmt.format(Math.round(Number(n) || 0));
 
+// Tamaño legible (GB decimales, como factura Cloudflare).
+export function fmtBytes(n) {
+  n = Number(n) || 0;
+  const [v, u] = n >= 1e9 ? [n / 1e9, 'GB'] : n >= 1e6 ? [n / 1e6, 'MB'] : [n / 1e3, 'KB'];
+  return `${v.toLocaleString('es-AR', { maximumFractionDigits: v >= 100 ? 0 : v >= 10 ? 1 : 2 })} ${u}`;
+}
+// Bytes que ocupa el álbum de un fotógrafo en R2 (originales + muestras y miniaturas).
+export const setBytes = set => (set?.bytesOriginal || 0) + (set?.bytesPublic || 0);
+
 export function fmtDate(iso, opts = { day: 'numeric', month: 'short', year: 'numeric' }) {
   if (!iso) return '';
   const [y, m, d] = iso.split('-').map(Number);

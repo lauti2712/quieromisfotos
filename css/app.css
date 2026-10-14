@@ -375,3 +375,24 @@ footer.site .foot-links a { color: var(--muted); }
 .hp.on { border-color: var(--accent); }
 .svc-row { display: grid; grid-template-columns: 1.2fr 1.4fr .8fr auto; gap: 8px; }
 @media (max-width: 640px) { .svc-row { grid-template-columns: 1fr; } }
+
+/* ---------- almacenamiento (superadmin) ---------- */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
+.stat-grid > div { display: flex; flex-direction: column; gap: 2px; }
+.stat-grid .big { font-size: 1.5rem; }
+.meter { height: 10px; border-radius: 99px; background: var(--border); overflow: hidden; }
+.meter > span { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+.meter > span.warn { background: #e0a100; }
+.meter > span.danger { background: var(--danger); }
+.spark { display: flex; align-items: flex-end; gap: 3px; height: 80px; }
+.spark > span { flex: 1; min-width: 2px; background: var(--accent); border-radius: 3px 3px 0 0; opacity: .8; }
+
+/* ---------- ayuda por WhatsApp ---------- */
+.foot-help { margin: 8px 0 4px; }
+.foot-help a { color: #1a9d55; font-weight: 600; white-space: nowrap; }
+.wa-fab { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 80; width: 54px; height: 54px; border-radius: 50%; background: #25d366; color: #fff; display: grid; place-items: center; box-shadow: 0 6px 18px rgba(0,0,0,.22); text-decoration: none; transition: transform .15s; }
+.wa-fab:hover { transform: scale(1.06); }
+.wa-tip { position: absolute; right: 64px; bottom: 50%; transform: translateY(50%); width: max-content; max-width: 240px; background: var(--surface); color: var(--text); border: 1px solid var(--border); box-shadow: var(--shadow); border-radius: 12px; padding: 8px 12px; font-size: .85rem; line-height: 1.3; opacity: 0; pointer-events: none; transition: opacity .15s; }
+.wa-tip b { display: block; color: #1a9d55; margin-top: 2px; }
+@media (hover: hover) { .wa-fab:hover .wa-tip { opacity: 1; } }
+body:has(.lightbox, .intro, dialog[open]) .wa-fab { display: none; }

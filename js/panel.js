@@ -8,7 +8,7 @@ import {
 } from './fb.js';
 import {
   $, $$, esc, slugify, SLUG_RE, searchTokens, fmtMoney, fmtDate, fmtTs, todayIso, parseHash,
-  toast, errMsg, avatarHtml, coverHtml, SOCIALS, newId, normalize,
+  toast, errMsg, avatarHtml, coverHtml, SOCIALS, newId, normalize, fmtBytes, setBytes,
 } from './util.js';
 import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, ACTIVITY_TYPE, USER_TAG_TYPES, tagPills, SERVICES, isPro, mpPlanOf, GEAR_TYPES, PLANS, planOf, siteUrlOf } from './data.js';
 import { viewWeb } from './panel-web.js';
@@ -198,6 +198,7 @@ function navItems() {
     { href: '#/admin/fotografos', label: '👥 Fotógrafos' },
     { href: '#/admin/eventos', label: '🏟️ Eventos' },
     { href: '#/admin/etiquetas', label: '🏷️ Etiquetas' },
+    { href: '#/admin/almacenamiento', label: '💾 Almacenamiento' },
     { href: '#/admin/config', label: '⚙️ Plataforma' },
     { group: 'Mi cuenta' },
     { href: '#/perfil', label: '👤 Perfil' },
@@ -246,6 +247,7 @@ function route() {
     if (b === 'eventos') return run(viewAdminEvents);
     if (b === 'etiquetas') return run(viewAdminTags);
     if (b === 'config') return run(viewAdminConfig);
+    if (b === 'almacenamiento') return run(viewAdminStorage);
     return run(viewAdminPhotographers);
   }
   if (a === 'perfil') return run(viewProfile);
@@ -723,6 +725,7 @@ function setStatsHtml(set) {
   return `
     <div class="set-stats">
       <span class="stat-chip" title="Fotos en el álbum">📷 ${set.photoCount || 0}</span>
+      <span class="stat-chip" title="Espacio que ocupa el álbum (originales + muestras)">💾 ${fmtBytes(setBytes(set))}</span>
       <span class="stat-chip ${set.soldPhotos ? 'ok' : ''}" title="Fotos vendidas">🛒 ${set.soldPhotos || 0} vendida${set.soldPhotos === 1 ? '' : 's'}</span>
       ${exp}
     </div>`;
@@ -933,7 +936,7 @@ async function viewEvent(id) {
     $('#ev-sets').innerHTML = `<div class="card"><h2>Fotógrafos en el evento (${users.length})</h2>
       ${users.length ? users.map(u => {
         const st = sets.get(u.uid) || {};
-        return `<div class="item-row">${avatarHtml(u)}<div class="grow"><strong>${esc(u.displayName || u.uid)}</strong><br><span class="muted small">${fmtMoney(st.price)} por foto · ${st.photoCount || 0} fotos · ${(st.subalbums || []).length} sub-álbumes</span></div></div>`;
+        return `<div class="item-row">${avatarHtml(u)}<div class="grow"><strong>${esc(u.displayName || u.uid)}</strong><br><span class="muted small">${fmtMoney(st.price)} por foto · ${st.photoCount || 0} fotos · 💾 ${fmtBytes(setBytes(st))} · ${(st.subalbums || []).length} sub-álbumes</span></div></div>`;
       }).join('') : '<p class="muted">Todavía no se sumó ningún fotógrafo.</p>'}</div>`;
     $('#ev-danger').innerHTML = `<button class="btn danger" id="ev-del">Eliminar evento</button>`;
     $('#ev-del').onclick = async () => {
@@ -1185,6 +1188,84 @@ async function viewAdminEvents() {
   $('#new').onclick = () => eventDialog(null);
   $$('[data-f]').forEach(b => b.onclick = () => { adminEvFilter = b.dataset.f; viewAdminEvents(); });
   $$('[data-share]').forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation(); shareEvent(evs.find(x => x.id === b.dataset.share)); });
+}
+
+// ================================================================ superadmin: almacenamiento (R2)
+// Precios de Cloudflare R2 (clase estándar). Revisar si Cloudflare los cambia.
+const R2 = { freeGB: 10, usdPerGB: 0.015, freeA: 1e6, freeB: 1e7 };
+
+function r2Cost(bytes) {
+  return Math.max(0, bytes / 1e9 - R2.freeGB) * R2.usdPerGB;
+}
+const fmtUsd = n => `US$ ${n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+async function viewAdminStorage() {
+  const snap = await getDoc(doc(db, 'adminStats', 'storage'));
+  const st = snap.exists() ? snap.data() : null;
+  const scanBtn = '<button class="btn primary" id="st-scan">🔄 Recalcular ahora</button>';
+  if (!st) {
+    $('#view').innerHTML = `<h1>Almacenamiento</h1><div class="card stack"><p class="muted">Todavía no se calculó el uso. Se calcula solo todos los días; podés hacerlo ahora.</p><div>${scanBtn}</div></div>`;
+    bindScan();
+    return;
+  }
+  const total = st.total || 0;
+  const pct = Math.min(100, (total / (R2.freeGB * 1e9)) * 100);
+  // Cloudflare cobra el promedio del mes: se estima con las mediciones diarias del mes en curso.
+  const month = new Date().toISOString().slice(0, 7);
+  const monthH = (st.history || []).filter(h => h.d.startsWith(month));
+  const avg = monthH.length ? monthH.reduce((a, h) => a + h.b, 0) / monthH.length : total;
+  const users = Object.entries(st.byUser || {}).map(([uid, u]) => ({ uid, ...u, bytes: (u.albumsBytes || 0) + (u.profile || 0) })).sort((a, b) => b.bytes - a.bytes);
+  const top = st.topSets || [];
+  const uids = [...new Set([...users.map(u => u.uid), ...top.map(t => t.uid)])];
+  const eids = [...new Set(top.map(t => t.eid))];
+  const [uDocs, eDocs] = await Promise.all([
+    Promise.all(uids.map(id => getDoc(doc(db, 'users', id)).then(s => [id, s.data() || {}]).catch(() => [id, {}]))),
+    Promise.all(eids.map(id => getDoc(doc(db, 'events', id)).then(s => [id, s.data() || {}]).catch(() => [id, {}]))),
+  ]);
+  const uMap = new Map(uDocs), eMap = new Map(eDocs);
+  const uName = id => uMap.get(id)?.displayName || id;
+  const hist = (st.history || []).slice(-30);
+  const maxH = Math.max(1, ...hist.map(h => h.b));
+
+  $('#view').innerHTML = `
+    <div class="row" style="justify-content:space-between;margin-bottom:14px">
+      <h1 style="margin:0">Almacenamiento (R2)</h1>${scanBtn}
+    </div>
+    <div class="card stack">
+      <div class="stat-grid">
+        <div><span class="muted small">Usado ahora</span><strong class="big">${fmtBytes(total)}</strong></div>
+        <div><span class="muted small">Gratis hasta</span><strong class="big">${R2.freeGB} GB</strong></div>
+        <div><span class="muted small">Te queda gratis</span><strong class="big">${fmtBytes(Math.max(0, R2.freeGB * 1e9 - total))}</strong></div>
+        <div><span class="muted small">Costo estimado del mes</span><strong class="big">${fmtUsd(r2Cost(avg))}</strong></div>
+      </div>
+      <div class="meter"><span style="width:${pct.toFixed(1)}%" class="${pct > 90 ? 'danger' : pct > 70 ? 'warn' : ''}"></span></div>
+      <p class="muted small" style="margin:0">${pct.toFixed(1)}% del espacio gratis · originales ${fmtBytes(st.privateBytes)} · muestras, miniaturas y perfiles ${fmtBytes(st.publicBytes)} · ${(st.objects || 0).toLocaleString('es-AR')} archivos.
+        ${st.orphanBytes ? `<br>⚠️ ${fmtBytes(st.orphanBytes)} de archivos de álbumes ya borrados (se pueden limpiar).` : ''}</p>
+      <p class="muted small" style="margin:0">Cloudflare cobra <strong>US$ ${String(R2.usdPerGB).replace('.', ',')}</strong> por GB por mes pasando los ${R2.freeGB} GB (promedio del mes). Descargar no cuesta nada. Las operaciones (subir/leer) son gratis hasta 1 millón y 10 millones por mes: con este uso no se llega.
+        Ejemplo: 100 GB ≈ ${fmtUsd(r2Cost(100e9))}/mes · 500 GB ≈ ${fmtUsd(r2Cost(500e9))}/mes.</p>
+      <p class="muted small" style="margin:0">Última medición: ${st.scannedAt ? st.scannedAt.toDate().toLocaleString('es-AR') : '—'} (se recalcula sola todos los días).</p>
+    </div>
+    ${hist.length > 1 ? `<div class="card"><h2>Últimos ${hist.length} días</h2>
+      <div class="spark">${hist.map(h => `<span style="height:${Math.max(2, (h.b / maxH) * 100)}%" title="${esc(h.d)}: ${fmtBytes(h.b)}"></span>`).join('')}</div></div>` : ''}
+    <div class="card"><h2>Por fotógrafo</h2>
+      ${users.length ? `<div class="table-wrap"><table class="list"><thead><tr><th>Fotógrafo</th><th>Álbumes</th><th>Fotos</th><th>En álbumes</th><th>Perfil y portfolio</th><th>Total</th><th>Costo/mes*</th></tr></thead><tbody>
+        ${users.map(u => `<tr><td>${esc(uName(u.uid))}</td><td>${u.albums}</td><td>${(u.photos || 0).toLocaleString('es-AR')}</td><td>${fmtBytes(u.albumsBytes)}</td><td>${fmtBytes(u.profile)}</td><td><strong>${fmtBytes(u.bytes)}</strong></td><td>${fmtUsd((u.bytes / 1e9) * R2.usdPerGB)}</td></tr>`).join('')}
+      </tbody></table></div><p class="muted small">* Lo que costaría ese espacio si ya pasaste los ${R2.freeGB} GB gratis.</p>` : '<p class="muted">Sin datos.</p>'}
+    </div>
+    <div class="card"><h2>Álbumes más pesados</h2>
+      ${top.length ? `<div class="table-wrap"><table class="list"><thead><tr><th>Evento</th><th>Fotógrafo</th><th>Fotos</th><th>Tamaño</th><th>Promedio por foto</th></tr></thead><tbody>
+        ${top.map(t => `<tr><td><a href="#/evento/${esc(t.eid)}">${esc(eMap.get(t.eid)?.name || t.eid)}</a></td><td>${esc(uName(t.uid))}</td><td>${(t.photos || 0).toLocaleString('es-AR')}</td><td><strong>${fmtBytes(t.bytes)}</strong></td><td>${t.photos ? fmtBytes(t.bytes / t.photos) : '—'}</td></tr>`).join('')}
+      </tbody></table></div>` : '<p class="muted">Sin álbumes.</p>'}
+    </div>`;
+  bindScan();
+
+  function bindScan() {
+    $('#st-scan').onclick = async () => {
+      const b = $('#st-scan'); b.disabled = true; b.textContent = 'Calculando…';
+      try { await apiPost('/admin/storage/scan'); toast('Uso actualizado'); viewAdminStorage(); }
+      catch (e) { toast(errMsg(e), 'error'); b.disabled = false; b.textContent = '🔄 Recalcular ahora'; }
+    };
+  }
 }
 
 // ================================================================ superadmin: etiquetas

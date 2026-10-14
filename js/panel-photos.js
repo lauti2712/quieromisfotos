@@ -2,7 +2,7 @@
 import {
   db, collection, doc, getDocs, query, where, orderBy, limit, startAfter, writeBatch, updateDoc, increment, Timestamp,
 } from './fb.js';
-import { $, $$, esc, toast, errMsg } from './util.js';
+import { $, $$, esc, toast, errMsg, fmtBytes, setBytes } from './util.js';
 import { createUploader } from './uploader.js';
 import { uploadSession, apiDelete, loadLogoBitmap } from './api.js';
 import { DEFAULT_WATERMARK, wantsLogo } from './watermark.js';
@@ -81,7 +81,7 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings }) {
   }
 
   function draw() {
-    $('#ph-count').textContent = `(${set.photoCount || 0})`;
+    $('#ph-count').textContent = `(${set.photoCount || 0} · ${fmtBytes(setBytes(set))})`;
     $('#ph-grid').innerHTML = photos.length ? photos.map(p => `
       <label class="ph ${p.hidden ? 'is-hidden' : ''} ${selected.has(p.id) ? 'sel' : ''}" data-id="${p.id}">
         <img src="${esc(p.thumbUrl)}" alt="" loading="lazy">
@@ -137,20 +137,21 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings }) {
     const btn = $('#ph-del'); btn.disabled = true; btn.textContent = 'Borrando…';
     try {
       const s = await uploadSession(ev.id);
-      let bytes = 0, n = 0;
+      let bytes = 0, pubBytes = 0, n = 0;
       for (const id of ids) {
         const p = photos.find(x => x.id === id);
         await apiDelete(`/photo/${ev.id}/${id}`, s.token);
         const b = writeBatch(db);
         b.delete(doc(db, 'photos', id));
-        b.update(doc(db, 'events', ev.id, 'sets', uid), { photoCount: increment(-1), bytesOriginal: increment(-(p?.bytes || 0)) });
+        b.update(doc(db, 'events', ev.id, 'sets', uid), { photoCount: increment(-1), bytesOriginal: increment(-(p?.bytes || 0)), bytesPublic: increment(-(p?.bytesPublic || 0)) });
         await b.commit();
-        bytes += p?.bytes || 0; n++;
+        bytes += p?.bytes || 0; pubBytes += p?.bytesPublic || 0; n++;
         photos = photos.filter(x => x.id !== id);
         selected.delete(id);
       }
       set.photoCount = Math.max(0, (set.photoCount || 0) - n);
       set.bytesOriginal = Math.max(0, (set.bytesOriginal || 0) - bytes);
+      set.bytesPublic = Math.max(0, (set.bytesPublic || 0) - pubBytes);
       toast(`${n} foto${n > 1 ? 's' : ''} borrada${n > 1 ? 's' : ''}`);
     } catch (e) { toast(errMsg(e), 'error'); }
     btn.textContent = 'Borrar';
@@ -171,6 +172,8 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings }) {
     onChange: renderQueue,
     onPhoto: p => {
       set.photoCount = (set.photoCount || 0) + 1;
+      set.bytesOriginal = (set.bytesOriginal || 0) + (p.bytes || 0);
+      set.bytesPublic = (set.bytesPublic || 0) + (p.bytesPublic || 0);
       startExpiry();
       const f = $('#ph-filter')?.value;
       if (f === '*' || f === p.subalbumId) { photos.push(p); photos.sort((a, b) => a.takenAt.toMillis() - b.takenAt.toMillis()); }

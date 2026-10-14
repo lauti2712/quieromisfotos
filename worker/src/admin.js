@@ -124,3 +124,16 @@ export async function adminQuery(env, collectionId, { filters = [], orderBy = []
 export async function adminDelete(env, path) {
   return call(env, 'DELETE', `${root(env)}/${path}`);
 }
+
+// Actualiza varios documentos existentes en lotes (un solo pedido por cada 400). updates: [{ path, data }]
+export async function adminUpdateMany(env, updates) {
+  for (let i = 0; i < updates.length; i += 400) {
+    await call(env, 'POST', `${root(env)}:commit`, {
+      writes: updates.slice(i, i + 400).map(({ path, data }) => ({
+        update: { name: docName(env, path), fields: encodeFields(data) },
+        updateMask: { fieldPaths: Object.keys(data) },
+        currentDocument: { exists: true },
+      })),
+    });
+  }
+}

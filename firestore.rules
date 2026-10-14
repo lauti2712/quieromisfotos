@@ -121,7 +121,7 @@ service cloud.firestore {
           && uid() in eventAfter(eid).photographerUids
           && !request.resource.data.keys().hasAny(['expiresAt', 'extendedUntil', 'originalsDeleted']);
         allow update: if isSuper() || (isApproved() && uid() == pid
-          && !changed().hasAny(['extendedUntil', 'originalsDeleted', 'soldPhotos', 'soldOrders'])
+          && !changed().hasAny(['extendedUntil', 'originalsDeleted', 'soldPhotos', 'soldOrders', 'storageAt'])
           && (!changed().hasAny(['expiresAt']) || initialExpiry()));
         allow delete: if isSuper() || (signedIn() && uid() == pid && resource.data.photoCount == 0);
       }
@@ -179,6 +179,12 @@ service cloud.firestore {
     }
 
     // ---------- dominios propios activados (los da de alta el superadmin; los lee solo el Worker)
+    // Resúmenes que escribe el Worker (uso de R2, etc.)
+    match /adminStats/{id} {
+      allow read: if isSuper();
+      allow write: if false;
+    }
+
     match /domains/{host} {
       allow read, write: if isSuper();
     }

@@ -19,6 +19,7 @@
 //   POST   /orders/{id}/downloads      Bearer (comprador)                     -> links de 15 min
 //   GET    /dl/{token}                                                        descarga del original
 //   GET    /w/{slug}  ·  {slug}.quieromisfotos.com.ar  ·  dominio propio           web personal del fotógrafo (planes Web)
+//   POST   /admin/storage/scan         Bearer (superadmin)                    recalcula el uso de R2 (también corre a diario)
 //   POST   /tags                       Bearer (fotógrafo aprobado) {type, name}  alta de actividad/club/lugar sin duplicados
 //
 // Claves en R2:
@@ -33,6 +34,7 @@ import { connectUrl, callback, disconnect } from './mp.js';
 import { checkout, webhook, syncOrder, retryCheckout, downloadLinks, download } from './orders.js';
 import { createTag } from './tags.js';
 import { renderSite } from './site.js';
+import { scanRequest, scanStorage } from './storage.js';
 
 const MAX = { preview: 6e6, thumb: 1e6, original: 80e6, avatar: 3e6, logo: 2e6, cover: 6e6, portfolio: 6e6 };
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
@@ -53,6 +55,10 @@ export default {
       if (status >= 500) console.error(e);
       return json({ error: e.message || 'Error' }, status, cors);
     }
+  },
+  // Cron diario: recalcula el uso de R2.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(scanStorage(env));
   },
 };
 
@@ -91,6 +97,7 @@ async function route(req, env, ctx) {
   if (m === 'POST' && url.pathname === '/mp/webhook') return webhook(req, env);
   if (m === 'POST' && url.pathname === '/checkout') return checkout(req, env);
   if (m === 'POST' && url.pathname === '/tags') return createTag(req, env);
+  if (m === 'POST' && url.pathname === '/admin/storage/scan') return scanRequest(req, env);
   if (m === 'POST' && parts[0] === 'orders' && parts.length === 3 && ID_RE.test(parts[1])) {
     if (parts[2] === 'sync') return syncOrder(req, env, parts[1]);
     if (parts[2] === 'checkout') return retryCheckout(req, env, parts[1]);

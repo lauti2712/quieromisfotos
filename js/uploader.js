@@ -81,13 +81,13 @@ export function createUploader({ eventId, uid, wm, logo = null, onChange, onPhot
     const photo = {
       eventId, photographerUid: uid, subalbumId: it.subalbumId || '',
       previewUrl: p.url, thumbUrl: t.url,
-      width: r.width, height: r.height, bytes: it.file.size,
+      width: r.width, height: r.height, bytes: it.file.size, bytesPublic: extra,
       takenAt: Timestamp.fromMillis(r.takenAt), fileName: it.file.name.slice(0, 120),
       bibs: [], hidden: false, originalDeleted: false, createdAt: serverTimestamp(),
     };
     const b = writeBatch(db);
     b.set(doc(db, 'photos', pid), photo);
-    b.update(doc(db, 'events', eventId, 'sets', uid), { photoCount: increment(1), bytesOriginal: increment(it.file.size) });
+    b.update(doc(db, 'events', eventId, 'sets', uid), { photoCount: increment(1), bytesOriginal: increment(it.file.size), bytesPublic: increment(extra) });
     await b.commit();
     it.status = 'done'; it.loaded = it.file.size;
     onPhoto?.({ id: pid, ...photo, takenAt: photo.takenAt });
