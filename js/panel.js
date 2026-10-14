@@ -194,7 +194,7 @@ function navItems() {
     { href: '#/inicio', label: '🏠 Inicio' },
     { href: '#/eventos', label: '🏟️ Mis eventos', need: true },
     { href: '#/ventas', label: '💰 Ventas', need: true },
-    { href: '#/portfolio', label: '🖼️ Portfolio', need: true },
+    { href: '#/portfolio', label: '🖼️ Portfolio' },
     { group: 'Cuenta' },
     { href: '#/perfil', label: '👤 Perfil' },
     { href: '#/config', label: '⚙️ Precios y marca' },
@@ -238,7 +238,7 @@ function route() {
   if (a === 'evento' && b && (isApproved() || S.isSuper)) return run(() => viewEvent(b));
   if (a === 'eventos' && isApproved() && !S.isSuper) return run(viewMyEvents);
   if (a === 'ventas' && isApproved()) return run(viewSales);
-  if (a === 'portfolio' && isApproved() && !S.isSuper) return run(() => viewPortfolio($('#view'), { uid: S.user.uid, profile: S.profile, settings: S.settings }));
+  if (a === 'portfolio' && !S.isSuper) return run(() => viewPortfolio($('#view'), { uid: S.user.uid, profile: S.profile, settings: S.settings }));
   if (S.isSuper) return run(viewAdminPhotographers);
   return run(viewHome);
 }
@@ -248,13 +248,14 @@ function viewHome() {
   const p = S.profile;
   const checks = [
     { ok: !!(p.displayName && p.zone && p.bio), label: 'Completar perfil (nombre, zona y bio)', href: '#/perfil' },
+    { ok: !!p.avatarUrl, label: 'Subir tu foto de perfil', href: '#/perfil' },
     { ok: !!p.socials?.whatsapp, label: 'Cargar tu WhatsApp para recibir pedidos de presupuesto', href: '#/perfil' },
     { ok: (p.defaults?.price || 0) > 0, label: 'Definir precio por foto', href: '#/config' },
     { ok: !!p.mpConnected, label: 'Vincular Mercado Pago (obligatorio para vender)', href: '#/mp' },
   ];
   $('#view').innerHTML = `
     <h1>Hola, ${esc(p.displayName)}</h1>
-    ${p.status === 'pending' ? `<div class="notice warn"><strong>Tu cuenta está pendiente de aprobación.</strong><br>Mientras tanto podés completar tu perfil y configurar precios y marca de agua.</div>` : ''}
+    ${p.status === 'pending' ? `<div class="notice warn"><strong>Tu cuenta está pendiente de aprobación.</strong><br>Mientras tanto podés completar tu perfil, subir tu foto y tu portfolio, y configurar precios y marca de agua.</div>` : ''}
     <div class="card">
       <h2>Para empezar a vender</h2>
       ${checks.map(c => `<div class="item-row"><span>${c.ok ? '✅' : '⬜'}</span><span class="grow">${c.label}</span><a class="btn sm" href="${c.href}">${c.ok ? 'Ver' : 'Completar'}</a></div>`).join('')}
@@ -273,11 +274,10 @@ function viewProfile() {
         <div class="stack" style="flex:1;min-width:220px">
           <input type="hidden" id="pf-avatar" value="${esc(p.avatarUrl)}">
           <div class="row">
-            ${isApproved() || S.isSuper ? `<label class="btn sm">Subir foto<input type="file" id="pf-avatar-file" accept="image/*" hidden></label>` : ''}
+            <label class="btn sm">Subir foto<input type="file" id="pf-avatar-file" accept="image/*" hidden></label>
             ${S.user.photoURL ? `<button type="button" class="btn sm" id="pf-google">Usar mi foto de Google</button>` : ''}
             ${p.avatarUrl ? `<button type="button" class="btn sm ghost" id="pf-av-rm">Quitar</button>` : ''}
           </div>
-          ${isApproved() || S.isSuper ? '' : '<span class="muted small">Vas a poder subir tu foto cuando tu cuenta esté aprobada.</span>'}
         </div>
       </div>
       <div class="grid2">
@@ -469,7 +469,7 @@ function viewConfig() {
               <span class="hint">PNG con fondo transparente, idealmente blanco. Máximo 2 MB.</span>
               <div class="row">
                 <img id="wm-logo-img" alt="" class="${wm.logoUrl ? '' : 'hidden'}" style="height:48px;max-width:140px;object-fit:contain;background:#3a3f4b;border-radius:8px;padding:4px">
-                ${isApproved() ? `<label class="btn sm">${wm.logoUrl ? 'Cambiar logo' : 'Subir logo'}<input type="file" id="wm-logo-file" accept="image/png,image/webp" hidden></label>` : '<span class="muted small">Disponible cuando tu cuenta esté aprobada.</span>'}
+                <label class="btn sm">${wm.logoUrl ? 'Cambiar logo' : 'Subir logo'}<input type="file" id="wm-logo-file" accept="image/png,image/webp" hidden></label>
               </div>
             </div>
             <label class="field">Opacidad <span class="hint" id="wm-op-v">${Math.round(wm.opacity * 100)}%</span>

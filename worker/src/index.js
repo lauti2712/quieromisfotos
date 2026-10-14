@@ -92,7 +92,10 @@ async function uploadSession(req, env) {
   const user = await getDocAsUser(env, idToken, `users/${uid}`);
   if (!user) throw httpError(403, 'Perfil inexistente');
   const isSuper = claims.email === 'lautarom87@gmail.com' && claims.email_verified === true;
-  if (!isSuper && user.status !== 'approved') throw httpError(403, 'Tu cuenta no está aprobada');
+  // Pendientes pueden subir avatar, logo y portfolio; para eventos hay que estar aprobado.
+  if (!isSuper && user.status === 'suspended') throw httpError(403, 'Tu cuenta está suspendida');
+  if (!isSuper && eid && user.status !== 'approved') throw httpError(403, 'Tu cuenta no está aprobada');
+  if (!isSuper && !['approved', 'pending'].includes(user.status)) throw httpError(403, 'Tu cuenta no está habilitada');
 
   let role = 'profile';
   if (eid) {

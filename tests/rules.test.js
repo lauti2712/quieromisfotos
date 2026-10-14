@@ -204,7 +204,9 @@ test('portfolio: slot dentro del límite del plan', async () => {
   await assertFails(setDoc(doc(user('ana'), 'portfolio/ana_12'), pf('ana', 12)));       // gratis: máximo 12
   await assertFails(setDoc(doc(user('ana'), 'portfolio/ana_3'), pf('ana', 4)));         // id ≠ slot
   await assertFails(setDoc(doc(user('ana'), 'portfolio/beto_1'), pf('beto', 1)));       // ajeno
-  await assertFails(setDoc(doc(user('pepe'), 'portfolio/pepe_0'), pf('pepe', 0)));      // pendiente
+  await assertSucceeds(setDoc(doc(user('pepe'), 'portfolio/pepe_0'), pf('pepe', 0)));   // pendiente: puede armar su portfolio
+  await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'users/susi'), photographer('suspended', { slug: 'susi' })));
+  await assertFails(setDoc(doc(user('susi'), 'portfolio/susi_0'), pf('susi', 0)));      // suspendido
   await assertFails(updateDoc(doc(user('ana'), 'users/ana'), { plan: 'pro' }));         // no se da Pro solo
   await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users/ana'), { plan: 'pro', proUntil: new Date(Date.now() + 86400000) }));
   await assertSucceeds(setDoc(doc(user('ana'), 'portfolio/ana_150'), pf('ana', 150)));
