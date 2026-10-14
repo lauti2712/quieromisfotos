@@ -1,6 +1,6 @@
 // Cuenta del comprador en el sitio público: ingresar (Google / email), Mis compras, salir.
 import {
-  db, auth, collection, getDocs, query, where, orderBy, limit,
+  db, auth, collection, doc, getDoc, getDocs, query, where, orderBy, limit,
   onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword,
   createUserWithEmailAndPassword, sendPasswordResetEmail, signOut, updateProfile,
 } from './fb.js';
@@ -120,10 +120,30 @@ export async function renderAccount(app) {
       </div>
       <button class="btn" id="logout">Salir</button>
     </div>
+    <div id="photog"></div>
     <h2>Mis compras</h2>
     <div id="orders"><div class="spinner"></div></div>
-    <p class="muted small" style="margin-top:24px">¿Sos fotógrafo? <a href="panel.html">Entrá al panel para vender tus fotos</a>.</p>`;
+    <p class="muted small" style="margin-top:24px" id="photog-hint">¿Sos fotógrafo? <a href="panel.html">Entrá al panel para vender tus fotos</a>.</p>`;
   $('#logout').onclick = async () => { await signOut(auth); location.hash = '#/'; };
+
+  // Si además es fotógrafo, accesos a su perfil público y a su panel.
+  getDoc(doc(db, 'users', u.uid)).then(snap => {
+    const p = snap.exists() ? snap.data() : null;
+    if (!p || !['photographer', 'superadmin'].includes(p.role)) return;
+    $('#photog-hint')?.remove();
+    const approved = p.status === 'approved';
+    $('#photog').innerHTML = `
+      <div class="card stack" style="margin-bottom:22px">
+        <div class="row" style="justify-content:space-between">
+          <div><strong>📷 Tu cuenta de fotógrafo</strong>
+            <div class="muted small">${approved ? 'Tu perfil está publicado.' : p.status === 'pending' ? 'Pendiente de aprobación: tu perfil se publica cuando te aprueben.' : 'Tu cuenta de fotógrafo está suspendida.'}</div></div>
+          <div class="row">
+            ${approved && p.slug ? `<a class="btn" href="#/f/${esc(p.slug)}">Ver mi perfil público</a>` : ''}
+            <a class="btn primary" href="panel.html">Ir a mi panel</a>
+          </div>
+        </div>
+      </div>`;
+  }).catch(() => {});
 
   try {
     const snap = await getDocs(query(collection(db, 'orders'), where('buyerUid', '==', u.uid), orderBy('createdAt', 'desc'), limit(100)));
