@@ -66,8 +66,15 @@ async function route(req, env, ctx) {
     if (parts[0] === 'w' && parts[1] && parts.length === 2) return renderSite(req, env, ctx, { slug: parts[1].toLowerCase() });
     const host = url.hostname.toLowerCase();
     const sub = host.match(/^([a-z0-9-]+)\.quieromisfotos\.com\.ar$/)?.[1];
-    if (url.pathname === '/' && sub && !['api', 'fotos', 'www'].includes(sub)) return renderSite(req, env, ctx, { slug: sub });
     const ours = /(^|\.)(quieromisfotos\.com\.ar|solucionescotidianas\.com\.ar|workers\.dev)$/.test(host) || host === 'localhost';
+    const isSite = (sub && !['api', 'fotos', 'www'].includes(sub)) || !ours;
+    if (isSite && url.pathname === '/robots.txt') {
+      return new Response(`User-agent: *\nAllow: /\n\nSitemap: https://${host}/sitemap.xml\n`, { headers: { 'Content-Type': 'text/plain' } });
+    }
+    if (isSite && url.pathname === '/sitemap.xml') {
+      return new Response(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://${host}/</loc></url></urlset>\n`, { headers: { 'Content-Type': 'application/xml' } });
+    }
+    if (url.pathname === '/' && sub && isSite) return renderSite(req, env, ctx, { slug: sub });
     if (url.pathname === '/' && !ours) return renderSite(req, env, ctx, { host: host.replace(/^www\./, '') });
   }
   if (m === 'GET' && parts[0] === 'public') return servePublic(req, env, ctx, parts.slice(1).join('/'));

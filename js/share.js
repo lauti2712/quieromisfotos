@@ -6,8 +6,12 @@ export function siteBase() {
   return `${location.origin}${location.pathname.replace(/(index|panel)\.html$/, '')}`;
 }
 
+// Link a la página indexable del evento (/e/{id}/). Con ?s=1 lleva directo a la galería;
+// así WhatsApp muestra la portada del evento y Google indexa la versión sin parámetros.
 export function eventUrl(eventId, photographerUid = '') {
-  return `${siteBase()}#/evento/${eventId}${photographerUid ? `?f=${encodeURIComponent(photographerUid)}` : ''}`;
+  const local = /^(localhost|127\.)/.test(location.hostname);
+  if (local) return `${siteBase()}#/evento/${eventId}${photographerUid ? `?f=${encodeURIComponent(photographerUid)}` : ''}`;
+  return `${location.origin}/e/${eventId}/?s=1${photographerUid ? `&f=${encodeURIComponent(photographerUid)}` : ''}`;
 }
 
 export async function shareLink({ title, text, url }) {

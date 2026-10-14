@@ -94,6 +94,14 @@ function page({ env, user, site, photos, events, tax, slug }) {
   const gear = (user.gear || []).filter(g => g.name);
   const site0 = siteUrl(env);
   const desc = `${user.displayName} · ${tagline}${user.zone ? ` · ${user.zone}` : ''}`;
+  const canonical = user.domainActive && user.siteDomain ? `https://${user.siteDomain}/` : `https://${slug}.quieromisfotos.com.ar/`;
+  const ld = {
+    '@context': 'https://schema.org', '@type': 'ProfessionalService', name: user.displayName, description: desc, url: canonical,
+    image: hero?.src || user.avatarUrl || undefined, priceRange: services.length ? '$$' : undefined,
+    address: { '@type': 'PostalAddress', addressLocality: user.zone || '', addressCountry: 'AR' },
+    areaServed: user.workZones || user.zone || undefined, knowsAbout: activities,
+    sameAs: user.demo ? [] : Object.entries(SOCIAL).filter(([k]) => user.socials?.[k]).map(([k, f]) => f(user.socials[k])),
+  };
 
   return `<!doctype html>
 <html lang="es-AR">
@@ -108,6 +116,9 @@ function page({ env, user, site, photos, events, tax, slug }) {
 ${hero ? `<meta property="og:image" content="${esc(hero.src)}">` : ''}
 <meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="${accent}">
+<link rel="canonical" href="${esc(canonical)}">
+<meta property="og:url" content="${esc(canonical)}">
+<script type="application/ld+json">${JSON.stringify(ld).replace(/</g, '\\u003c')}</script>
 ${user.avatarUrl ? `<link rel="icon" href="${esc(user.avatarUrl)}">` : ''}
 <style>
 :root{--a:${accent};--bg:#ffffff;--fg:#14161b;--mu:#5d6573;--card:#f4f5f7;--bd:#e3e6eb}

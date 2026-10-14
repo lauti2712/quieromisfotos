@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quiero Mis Fotos</title>
+<meta name="robots" content="noindex">
+<script>
+  // Páginas de evento / fotógrafo que todavía no se generaron (se generan cada hora): mandar a la app.
+  (function () {
+    var p = location.pathname, q = new URLSearchParams(location.search), f = q.get('f');
+    var m = p.match(/^\/e\/([A-Za-z0-9_-]+)\/?$/), n = p.match(/^\/f\/([a-z0-9-]+)\/?$/);
+    if (m) location.replace('/#/evento/' + m[1] + (f ? '?f=' + encodeURIComponent(f) : ''));
+    else if (n) location.replace('/#/f/' + n[1]);
+    else location.replace('/');
+  })();
+</script>
+</head>
+<body style="font-family:system-ui;background:#0f1115;color:#eee;display:grid;place-items:center;min-height:100vh;margin:0">
+  <p>Redirigiendo… <a href="/" style="color:#ff5a1f">Ir a Quiero Mis Fotos</a></p>
+</body>
+</html>

@@ -1,0 +1,28 @@
+# Regenera las páginas indexables (eventos, fotógrafos, sitemap) cada hora.
+name: SEO
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: seo
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 tools/build-seo.py
+      - name: Commit si hubo cambios
+        run: |
+          git add -A e f eventos fotografos sitemap.xml robots.txt
+          if git diff --cached --quiet; then echo "Sin cambios"; exit 0; fi
+          git config user.name "quieromisfotos-bot"
+          git config user.email "quieromisfotos-bot@users.noreply.github.com"
+          git commit -m "SEO: actualizar páginas de eventos y fotógrafos"
+          git push
