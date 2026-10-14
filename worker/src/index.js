@@ -41,8 +41,10 @@ export default {
     const cors = corsHeaders(req, env);
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
     try {
-      const res = await route(req, env, ctx);
-      for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);
+      let res = await route(req, env, ctx);
+      // Algunas respuestas (Response.redirect, objetos de cache) tienen headers inmutables: se copian.
+      try { for (const [k, v] of Object.entries(cors)) res.headers.set(k, v); }
+      catch { res = new Response(res.body, res); for (const [k, v] of Object.entries(cors)) res.headers.set(k, v); }
       return res;
     } catch (e) {
       const status = e.status || 500;

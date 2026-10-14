@@ -27,7 +27,7 @@ export async function connectUrl(req, env) {
 // GET /mp/callback?code&state -> intercambia el code, guarda tokens y vuelve al panel
 export async function callback(req, env) {
   const url = new URL(req.url);
-  const back = (status, msg = '') => Response.redirect(`${panelUrl(env)}#/mp?mp=${status}${msg ? `&m=${encodeURIComponent(msg)}` : ''}`, 302);
+  const back = (status, msg = '') => new Response(null, { status: 302, headers: { Location: `${panelUrl(env)}#/mp?mp=${status}${msg ? `&m=${encodeURIComponent(msg)}` : ''}` } });
   const st = await verifyToken(url.searchParams.get('state') || '', env.UPLOAD_SECRET);
   if (!st || st.exp < Date.now() / 1000) return back('error', 'El enlace venció. Probá de nuevo.');
   const code = url.searchParams.get('code');
