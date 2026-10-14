@@ -135,6 +135,7 @@ test('set: no se crea sin ser miembro; no se tocan campos de retención', async 
   await assertFails(setDoc(doc(user('beto'), 'events/pub/sets/ana'), { price: 1 }));
   await assertSucceeds(updateDoc(doc(user('ana'), 'events/pub/sets/ana'), { price: 200 }));
   await assertFails(updateDoc(doc(user('ana'), 'events/pub/sets/ana'), { extendedUntil: new Date() }));
+  await assertFails(updateDoc(doc(user('ana'), 'events/pub/sets/ana'), { soldPhotos: 99 }));
   await assertFails(updateDoc(doc(user('beto'), 'events/pub/sets/ana'), { price: 1 }));
 });
 

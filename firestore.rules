@@ -120,7 +120,7 @@ service cloud.firestore {
           && uid() in eventAfter(eid).photographerUids
           && !request.resource.data.keys().hasAny(['expiresAt', 'extendedUntil', 'originalsDeleted']);
         allow update: if isSuper() || (isApproved() && uid() == pid
-          && !changed().hasAny(['extendedUntil', 'originalsDeleted'])
+          && !changed().hasAny(['extendedUntil', 'originalsDeleted', 'soldPhotos', 'soldOrders'])
           && (!changed().hasAny(['expiresAt']) || initialExpiry()));
         allow delete: if isSuper() || (signedIn() && uid() == pid && resource.data.photoCount == 0);
       }

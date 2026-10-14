@@ -666,6 +666,9 @@ async function viewSales() {
 async function viewMyEvents() {
   const snap = await getDocs(query(collection(db, 'events'), where('photographerUids', 'array-contains', S.user.uid), orderBy('date', 'desc'), limit(200)));
   const evs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  // Mi set en cada evento: fotos, vendidas y vencimiento.
+  const sets = await Promise.all(evs.map(ev => getDoc(doc(db, 'events', ev.id, 'sets', S.user.uid)).then(s => s.data() || null).catch(() => null)));
+  evs.forEach((ev, i) => { ev.mySet = sets[i]; });
   $('#view').innerHTML = `
     <div class="row" style="justify-content:space-between;margin-bottom:14px">
       <h1 style="margin:0">Mis eventos</h1>
@@ -693,8 +696,29 @@ function panelEventCard(ev) {
           ${ev.kind === 'general' ? '<span class="pill accent">Evento general</span>' : mine ? '<span class="pill">Creado por mí</span>' : '<span class="pill">Compartido</span>'}
           <span class="pill">👥 ${(ev.photographerUids || []).length}</span>
         </div>
+        ${ev.mySet ? setStatsHtml(ev.mySet) : ''}
       </div>
     </a>`;
+}
+
+// Fotos subidas, fotos vendidas y días hasta que se borren los originales.
+function setStatsHtml(set) {
+  const until = Math.max(set.expiresAt?.toMillis?.() || 0, set.extendedUntil?.toMillis?.() || 0);
+  let exp;
+  if (set.originalsDeleted) exp = '<span class="stat-chip danger" title="Los originales ya se eliminaron">⏳ Vencido</span>';
+  else if (!until) exp = `<span class="stat-chip" title="El plazo arranca cuando subís la primera foto">⏳ ${S.settings.retentionDays} días al subir</span>`;
+  else {
+    const days = Math.ceil((until - Date.now()) / 86400000);
+    exp = days <= 0
+      ? '<span class="stat-chip danger" title="Vencido">⏳ Vencido</span>'
+      : `<span class="stat-chip ${days <= 3 ? 'warn' : ''}" title="Días hasta que se eliminen los originales">⏳ ${days} día${days === 1 ? '' : 's'}</span>`;
+  }
+  return `
+    <div class="set-stats">
+      <span class="stat-chip" title="Fotos en el álbum">📷 ${set.photoCount || 0}</span>
+      <span class="stat-chip ${set.soldPhotos ? 'ok' : ''}" title="Fotos vendidas">🛒 ${set.soldPhotos || 0} vendida${set.soldPhotos === 1 ? '' : 's'}</span>
+      ${exp}
+    </div>`;
 }
 
 async function joinDialog() {

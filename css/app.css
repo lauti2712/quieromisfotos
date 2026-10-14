@@ -299,3 +299,8 @@ footer.site .foot-links a { color: var(--muted); }
 @media (max-width: 640px) { #public-profile { display: none !important; } }
 .sidenav a.mobile-only { display: none; }
 @media (max-width: 640px) { .sidenav a.mobile-only { display: inline-block; } }
+.set-stats { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 8px; margin-top: 2px; border-top: 1px solid var(--border); }
+.stat-chip { display: inline-flex; align-items: center; gap: 4px; font-size: .82rem; font-weight: 600; color: var(--text); background: var(--surface-2); border-radius: 8px; padding: 3px 8px; }
+.stat-chip.ok { background: var(--ok-soft); color: var(--ok); }
+.stat-chip.warn { background: var(--warn-soft); color: var(--warn); }
+.stat-chip.danger { background: var(--danger-soft); color: var(--danger); }

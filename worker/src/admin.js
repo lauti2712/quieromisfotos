@@ -81,6 +81,19 @@ export async function adminUpdate(env, path, data) {
   return call(env, 'PATCH', `${root(env)}/${path}?${mask}&currentDocument.exists=true`, { fields: encodeFields(data) });
 }
 
+// Suma `by` a campos numéricos (atómico, no pisa otros campos). fields: { campo: número }
+export async function adminIncrement(env, path, fields) {
+  return call(env, 'POST', `${root(env)}:commit`, {
+    writes: [{
+      transform: {
+        document: docName(env, path),
+        fieldTransforms: Object.entries(fields).map(([fieldPath, n]) => ({ fieldPath, increment: encodeValue(n) })),
+      },
+      currentDocument: { exists: true },
+    }],
+  });
+}
+
 export async function adminDelete(env, path) {
   return call(env, 'DELETE', `${root(env)}/${path}`);
 }

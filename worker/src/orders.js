@@ -1,6 +1,6 @@
 // Compras: checkout (preferencia de MP con comisión), aviso de pago (webhook), sincronización y descargas.
 import { computeTotals } from '../../js/pricing.js';
-import { adminGet, adminGetMany, adminSet, adminUpdate } from './admin.js';
+import { adminGet, adminGetMany, adminSet, adminUpdate, adminIncrement } from './admin.js';
 import { requireUser } from './firebase.js';
 import { sellerToken, mpFetch, siteUrl } from './mp.js';
 import { signToken, verifyToken } from './tokens.js';
@@ -100,6 +100,13 @@ async function applyPayment(env, orderId, order, payment) {
     upd.status = status; // un pago rechazado no pisa uno aprobado
   }
   await adminUpdate(env, `orders/${orderId}`, upd);
+  // Contador de ventas en el set del fotógrafo (solo la primera vez que el pedido pasa a aprobado o se reembolsa).
+  const setPath = `events/${order.eventId}/sets/${order.photographerUid}`;
+  if (upd.status === 'approved' && order.status !== 'approved') {
+    await adminIncrement(env, setPath, { soldPhotos: order.count || 0, soldOrders: 1 }).catch(e => console.error('soldPhotos', e));
+  } else if (upd.status === 'refunded' && order.status === 'approved') {
+    await adminIncrement(env, setPath, { soldPhotos: -(order.count || 0), soldOrders: -1 }).catch(e => console.error('soldPhotos', e));
+  }
   return { ...order, ...upd };
 }
 
