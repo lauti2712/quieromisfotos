@@ -95,7 +95,7 @@ python3 tools/seed-demo.py prod --delete   # borrar
 ## Fases
 
 1. ✅ Base: auth, roles, alta y aprobación de fotógrafos, etiquetas, eventos, sets y sub-álbumes, sitio público con filtros.
-2. ✅ Fotos: Worker, R2, marca de agua en el navegador (Web Worker), subida masiva, galería con visor. Falta el deploy del Worker en Cloudflare.
+2. ✅ Fotos: Worker (qmf-api.solucionescotidianas.com.ar), R2 (fotos públicas en qmf-fotos.solucionescotidianas.com.ar), marca de agua en el navegador, subida masiva, galería con visor.
 3. ✅ Carrito: agrupado por fotógrafo + evento, packs (combinación más barata, `js/pricing.js` compartido con el Worker), comisión y sugerencia de pack.
 4. Pagos: OAuth de Mercado Pago, checkout, webhook, descargas firmadas, mail.
 5. Retención: cron, avisos, borrado y extensiones pagas.

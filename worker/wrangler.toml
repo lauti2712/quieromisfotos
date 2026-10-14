@@ -1,12 +1,14 @@
 name = "qmf-api"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
+workers_dev = false
+routes = [{ pattern = "qmf-api.solucionescotidianas.com.ar", custom_domain = true }]
 
 [vars]
 FIREBASE_PROJECT_ID = "quieromisfotos-71629"
-ALLOWED_ORIGINS = "https://solucionescotidianas.com.ar,http://localhost:5175"
+ALLOWED_ORIGINS = "https://solucionescotidianas.com.ar,https://quieromisfotos.com.ar,https://www.quieromisfotos.com.ar,http://localhost:5175"
 # Dominio público del bucket qmf-public (custom domain de R2). Si está vacío, el Worker sirve /public/*.
-PUBLIC_BASE_URL = ""
+PUBLIC_BASE_URL = "https://qmf-fotos.solucionescotidianas.com.ar"
 
 [[r2_buckets]]
 binding = "PUBLIC"
