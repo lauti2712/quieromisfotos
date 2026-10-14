@@ -195,3 +195,18 @@ test('set: vencimiento inicial solo una vez y con los días configurados', async
   await assertSucceeds(updateDoc(ref, { expiresAt: new Date(Date.now() + 14 * 86400000) }));
   await assertFails(updateDoc(ref, { expiresAt: new Date(Date.now() + 14 * 86400000 + 60000) }));
 });
+
+// ---------- portfolio
+test('portfolio: slot dentro del límite del plan', async () => {
+  await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'settings/platform'), { freePortfolioLimit: 12, proPortfolioLimit: 200 }));
+  const pf = (uid, slot) => ({ photographerUid: uid, slot, url: `https://x/u/${uid}/a_p.jpg`, thumbUrl: `https://x/u/${uid}/a_t.jpg` });
+  await assertSucceeds(setDoc(doc(user('ana'), 'portfolio/ana_11'), pf('ana', 11)));
+  await assertFails(setDoc(doc(user('ana'), 'portfolio/ana_12'), pf('ana', 12)));       // gratis: máximo 12
+  await assertFails(setDoc(doc(user('ana'), 'portfolio/ana_3'), pf('ana', 4)));         // id ≠ slot
+  await assertFails(setDoc(doc(user('ana'), 'portfolio/beto_1'), pf('beto', 1)));       // ajeno
+  await assertFails(setDoc(doc(user('pepe'), 'portfolio/pepe_0'), pf('pepe', 0)));      // pendiente
+  await assertFails(updateDoc(doc(user('ana'), 'users/ana'), { plan: 'pro' }));         // no se da Pro solo
+  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users/ana'), { plan: 'pro', proUntil: new Date(Date.now() + 86400000) }));
+  await assertSucceeds(setDoc(doc(user('ana'), 'portfolio/ana_150'), pf('ana', 150)));
+  await assertSucceeds(getDoc(doc(as(), 'portfolio/ana_150')));
+});

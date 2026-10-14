@@ -72,6 +72,7 @@ function groupHtml(g, settings) {
         <div class="bd-row total"><span>Total</span><span>${fmtMoney(t.total)}</span></div>
       </div>
       ${tip ? `<div class="notice small">💡 ${tip}</div>` : ''}
+      ${g.ev.demo ? '<div class="notice warn small">👀 Son fotos de un evento de ejemplo: no se pueden comprar.</div>' : ''}
       <div class="row end">
         <span class="muted small">Los pagos con Mercado Pago se habilitan muy pronto.</span>
         <button class="btn primary" disabled>Pagar ${fmtMoney(t.total)}</button>

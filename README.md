@@ -74,6 +74,15 @@ npx wrangler secret put UPLOAD_SECRET
 npx wrangler deploy
 ```
 
+## Ejemplo (demo)
+
+Hay un fotógrafo y un evento de ejemplo (`demo: true`) para que quien entre vea cómo funciona. Las imágenes están en `demo/`, se generan con `tools/make-demo.py` y se sirven desde GitHub Pages.
+
+```bash
+python3 tools/seed-demo.py prod            # cargar
+python3 tools/seed-demo.py prod --delete   # borrar
+```
+
 ## Deploy
 
 - Frontend: push a `main` y GitHub Pages lo publica solo.
@@ -87,3 +96,5 @@ npx wrangler deploy
 4. Pagos: OAuth de Mercado Pago, checkout, webhook, descargas firmadas, mail.
 5. Retención: cron, avisos, borrado y extensiones pagas.
 6. Superadmin: métricas.
+
+Extra: perfil con especialidades y botón "Pedir presupuesto" por WhatsApp, portfolio freemium (12 fotos gratis, 200 con Pro; precio configurable, por defecto $3.000) y directorio `#/fotografos` con los Pro destacados. Por ahora el superadmin da el Pro a mano; el cobro por suscripción de Mercado Pago llega con la Fase 4.

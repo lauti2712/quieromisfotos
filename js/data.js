@@ -5,7 +5,21 @@ export const DEFAULT_SETTINGS = {
   feePercent: 3,
   retentionDays: 14,
   extensionPlans: [],
+  proPrice: 3000,
+  freePortfolioLimit: 12,
+  proPortfolioLimit: 200,
 };
+
+export const SERVICES = ['Deportes', 'Eventos sociales', 'Retratos / books', 'Institucional', 'Producto', 'Video'];
+
+export function isPro(user) {
+  const t = user?.proUntil?.toMillis ? user.proUntil.toMillis() : 0;
+  return user?.plan === 'pro' && t > Date.now();
+}
+
+export function portfolioLimit(user, settings) {
+  return isPro(user) ? settings.proPortfolioLimit : settings.freePortfolioLimit;
+}
 
 export const INITIAL_TAG_TYPES = ['Deporte', 'Club', 'Categoría', 'Lugar'];
 

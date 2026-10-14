@@ -3,9 +3,10 @@ import {
   db, collection, doc, getDoc, getDocs, query, where, orderBy, limit, startAfter,
 } from './fb.js';
 import {
-  $, esc, fmtDate, parseHash, queryWords, avatarHtml, coverHtml, SOCIALS, toast, errMsg,
+  $, $$, esc, fmtDate, parseHash, queryWords, avatarHtml, coverHtml, SOCIALS, toast, errMsg, waLink, normalize,
 } from './util.js';
-import { loadTaxonomy, tagPills } from './data.js';
+import { loadTaxonomy, tagPills, loadSettings, isPro, portfolioLimit } from './data.js';
+import { openViewer } from './viewer.js';
 import { mountGallery } from './gallery.js';
 import { renderCart } from './cart-view.js';
 import { cart } from './cart.js';
@@ -32,6 +33,7 @@ function route() {
   if (parts[0] === 'evento' && parts[1]) return renderEvent(parts[1]);
   if (parts[0] === 'f' && parts[1]) return renderProfile(parts[1]);
   if (parts[0] === 'carrito') return renderCart(app);
+  if (parts[0] === 'fotografos') return renderDirectory();
   return renderHome();
 }
 
@@ -159,6 +161,7 @@ async function renderEvent(id) {
       </div>
     </div>
     ${tags.length ? `<div class="pills" style="margin-bottom:18px">${tags.map(t => `<span class="pill accent">${esc(t.name)}</span>`).join('')}</div>` : ''}
+    ${ev.demo ? '<div class="notice warn">👀 <strong>Evento de ejemplo.</strong> Está para que veas cómo funciona la plataforma: podés ver las fotos y armar el carrito, pero no se pueden comprar.</div>' : ''}
     <section class="card">
       <h2>Fotógrafos</h2>
       ${photographers.length
@@ -170,6 +173,80 @@ async function renderEvent(id) {
       <div id="gallery"></div>
     </section>`;
   mountGallery($('#gallery'), { ev, photographers, sets });
+}
+
+async function loadPortfolio(user, settings) {
+  const box = $('#p-portfolio');
+  try {
+    const snap = await getDocs(query(collection(db, 'portfolio'), where('photographerUid', '==', user.uid)));
+    const max = portfolioLimit(user, settings);
+    const items = snap.docs.map(d => d.data()).filter(p => p.slot < max)
+      .sort((a, b) => (a.order || 0) - (b.order || 0) || a.slot - b.slot);
+    if (!items.length) return;
+    box.innerHTML = `<h2>Portfolio</h2><div class="gallery" style="margin-bottom:26px">${items.map((p, i) =>
+      `<div class="g-item" data-i="${i}" role="button" tabindex="0"><img src="${esc(p.thumbUrl)}" alt="${esc(p.caption || '')}" loading="lazy"></div>`).join('')}</div>`;
+    const open = i => openViewer({
+      index: i, src: k => items[k].url, count: () => items.length,
+      footer: (k, el) => { el.innerHTML = `<span class="small">${esc(items[k].caption || '')}</span><span class="muted small">Portfolio · no disponible para compra</span>`; },
+    });
+    $$('.g-item', box).forEach(el => {
+      el.onclick = () => open(+el.dataset.i);
+      el.onkeydown = e => { if (e.key === 'Enter') open(+el.dataset.i); };
+    });
+  } catch { /* sin portfolio */ }
+}
+
+// ---------------------------------------------------------------- directorio
+async function renderDirectory() {
+  document.title = 'Fotógrafos · Quiero Mis Fotos';
+  app.innerHTML = '<div class="spinner"></div>';
+  const [tax, snap] = await Promise.all([
+    loadTaxonomy(),
+    getDocs(query(collection(db, 'users'), where('status', '==', 'approved'), limit(500))).catch(() => null),
+  ]);
+  const all = (snap?.docs || []).map(d => ({ uid: d.id, ...d.data() })).filter(u => u.role === 'photographer');
+  const sportType = tax.types.find(t => normalize(t.name) === 'deporte');
+  const sports = sportType ? tax.tags.filter(g => g.typeId === sportType.id) : [];
+  const f = { q: '', sport: '', service: '' };
+
+  app.innerHTML = `
+    <h1>Fotógrafos</h1>
+    <p class="muted">Encontrá un fotógrafo para tu evento, partido o sesión y pedile presupuesto.</p>
+    <div class="filters">
+      <input class="search" type="text" id="d-q" placeholder="Buscar por nombre o zona…">
+      ${sports.length ? `<select id="d-sport"><option value="">Deporte: todos</option>${sports.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>` : ''}
+      <select id="d-service"><option value="">Tipo de trabajo: todos</option>${['Deportes', 'Eventos sociales', 'Retratos / books', 'Institucional', 'Producto', 'Video'].map(v => `<option>${esc(v)}</option>`).join('')}</select>
+    </div>
+    <div id="d-list" class="dir-grid"></div>`;
+
+  const draw = () => {
+    const words = normalize(f.q).split(/\s+/).filter(Boolean);
+    const list = all.filter(u =>
+      (!f.sport || (u.specialties || []).includes(f.sport)) &&
+      (!f.service || (u.services || []).includes(f.service)) &&
+      words.every(w => normalize(`${u.displayName} ${u.zone} ${u.workZones || ''}`).includes(w)))
+      .sort((a, b) => (isPro(b) - isPro(a)) || a.displayName.localeCompare(b.displayName, 'es'));
+    $('#d-list').innerHTML = list.length ? list.map(u => {
+      const sp = (u.specialties || []).map(id => tax.tagById.get(id)).filter(Boolean).slice(0, 4);
+      return `
+        <div class="dir-card ${isPro(u) ? 'pro' : ''}">
+          <a class="row" href="#/f/${esc(u.slug)}" style="text-decoration:none;flex-wrap:nowrap">${avatarHtml(u)}
+            <span style="min-width:0"><strong>${esc(u.displayName)}</strong>${isPro(u) ? ' <span class="pill accent">⭐ Destacado</span>' : ''}${u.demo ? ' <span class="pill warn">Ejemplo</span>' : ''}<br>
+            <span class="muted small">${esc(u.zone || '')}</span></span></a>
+          ${sp.length || u.services?.length ? `<div class="pills">${sp.map(t => `<span class="pill accent">${esc(t.name)}</span>`).join('')}${(u.services || []).slice(0, 3).map(v => `<span class="pill">${esc(v)}</span>`).join('')}</div>` : ''}
+          <div class="row" style="margin-top:auto">
+            <a class="btn sm" href="#/f/${esc(u.slug)}">Ver perfil</a>
+            ${u.demo ? '<button class="btn sm primary" data-demo-quote>💬 Presupuesto</button>' : u.socials?.whatsapp ? `<a class="btn sm primary" target="_blank" rel="noopener" href="${esc(waLink(u.socials.whatsapp, `¡Hola ${u.displayName}! Te encontré en Quiero Mis Fotos y quería pedirte un presupuesto para `))}">💬 Presupuesto</a>` : ''}
+          </div>
+        </div>`;
+    }).join('') : '<div class="empty" style="grid-column:1/-1">No encontramos fotógrafos con esos filtros.</div>';
+    $$('[data-demo-quote]').forEach(b => b.onclick = () => toast('Es un perfil de ejemplo: en un perfil real se abre WhatsApp con el fotógrafo.'));
+  };
+  let t;
+  $('#d-q').oninput = e => { clearTimeout(t); t = setTimeout(() => { f.q = e.target.value; draw(); }, 200); };
+  $('#d-sport')?.addEventListener('change', e => { f.sport = e.target.value; draw(); });
+  $('#d-service').onchange = e => { f.service = e.target.value; draw(); };
+  draw();
 }
 
 async function loadUsers(uids) {
@@ -193,23 +270,37 @@ async function renderProfile(slug) {
     return;
   }
   document.title = `${user.displayName} · Quiero Mis Fotos`;
-  const socials = SOCIALS.filter(s => user.socials?.[s.key]);
+  const [tax, settings] = await Promise.all([loadTaxonomy(), loadSettings()]);
+  const socials = SOCIALS.filter(s => user.socials?.[s.key] && s.key !== 'whatsapp');
+  const sports = (user.specialties || []).map(id => tax.tagById.get(id)).filter(Boolean);
+  const wa = user.socials?.whatsapp;
+  const quoteMsg = `¡Hola ${user.displayName}! Te encontré en Quiero Mis Fotos y quería pedirte un presupuesto para `;
   app.innerHTML = `
     <div class="profile-head">
       ${avatarHtml(user, 'lg')}
       <div style="flex:1;min-width:220px">
-        <h1 style="margin-bottom:4px">${esc(user.displayName)}</h1>
-        ${user.zone ? `<div class="muted">📍 ${esc(user.zone)}</div>` : ''}
+        <h1 style="margin-bottom:4px">${esc(user.displayName)} ${isPro(user) ? '<span class="pill accent" style="vertical-align:middle">⭐ Pro</span>' : ''}</h1>
+        ${user.zone ? `<div class="muted">📍 ${esc(user.zone)}${user.workZones ? ` · Trabaja en ${esc(user.workZones)}` : ''}</div>` : ''}
         ${user.bio ? `<p style="margin-top:8px;white-space:pre-line">${esc(user.bio)}</p>` : ''}
-        ${socials.length ? `<div class="row">${socials.map(s => `<a class="btn sm" target="_blank" rel="noopener" href="${esc(s.url(user.socials[s.key]))}">${s.label}</a>`).join('')}</div>` : ''}
+        ${sports.length || user.services?.length ? `<div class="pills" style="margin-bottom:10px">
+          ${sports.map(t => `<span class="pill accent">${esc(t.name)}</span>`).join('')}
+          ${(user.services || []).map(v => `<span class="pill">${esc(v)}</span>`).join('')}</div>` : ''}
+        <div class="row">
+          ${user.demo ? '<button class="btn primary" data-demo-quote>💬 Pedir presupuesto</button>'
+            : wa ? `<a class="btn primary" target="_blank" rel="noopener" href="${esc(waLink(wa, quoteMsg))}">💬 Pedir presupuesto</a>` : ''}
+          ${socials.map(s => `<a class="btn sm" target="_blank" rel="noopener" href="${esc(s.url(user.socials[s.key]))}">${s.label}</a>`).join('')}
+        </div>
       </div>
     </div>
+    ${user.demo ? '<div class="notice warn">👀 <strong>Perfil de ejemplo.</strong> Así se ve el perfil de un fotógrafo: portfolio, especialidades, contacto y sus eventos.</div>' : ''}
+    <section id="p-portfolio"></section>
     <h2>Eventos</h2>
     <div id="p-events" class="events-grid"><div class="spinner"></div></div>`;
 
+  app.querySelector('[data-demo-quote]')?.addEventListener('click', () => toast('Es un perfil de ejemplo: en un perfil real se abre WhatsApp con el fotógrafo.'));
+  loadPortfolio(user, settings);
   try {
-    const [tax, snap] = await Promise.all([
-      loadTaxonomy(),
+    const [snap] = await Promise.all([
       getDocs(query(collection(db, 'events'),
         where('photographerUids', 'array-contains', user.uid),
         where('status', '==', 'published'),

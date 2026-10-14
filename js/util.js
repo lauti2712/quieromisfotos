@@ -112,10 +112,28 @@ export function debounce(fn, ms = 300) {
 export const SOCIALS = [
   { key: 'instagram', label: 'Instagram', url: v => `https://instagram.com/${v.replace(/^@/, '')}` },
   { key: 'facebook', label: 'Facebook', url: v => (v.startsWith('http') ? v : `https://facebook.com/${v}`) },
-  { key: 'whatsapp', label: 'WhatsApp', url: v => `https://wa.me/${v.replace(/\D/g, '')}` },
+  { key: 'whatsapp', label: 'WhatsApp', url: v => `https://wa.me/${waNumber(v)}` },
   { key: 'web', label: 'Web', url: v => (v.startsWith('http') ? v : `https://${v}`) },
 ];
 
 export function newId() {
   return Math.random().toString(36).slice(2, 10);
+}
+
+// Normaliza un número argentino al formato de wa.me (549 + área + número).
+export function waNumber(v) {
+  let d = String(v || '').replace(/\D/g, '');
+  if (d.startsWith('00')) d = d.slice(2);
+  if (d.startsWith('0')) d = d.slice(1);               // 0341… -> 341…
+  if (d.length === 12 && !d.startsWith('54')) {        // área + 15 + número -> sin el 15
+    const k = [2, 3, 4].find(n => d.slice(n, n + 2) === '15');
+    if (k) d = d.slice(0, k) + d.slice(k + 2);
+  }
+  if (d.length === 10) d = `549${d}`;                  // área + número
+  else if (d.startsWith('54') && !d.startsWith('549') && d.length === 12) d = `549${d.slice(2)}`;
+  return d;
+}
+
+export function waLink(number, text) {
+  return `https://wa.me/${waNumber(number)}${text ? `?text=${encodeURIComponent(text)}` : ''}`;
 }

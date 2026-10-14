@@ -2,7 +2,7 @@
 import {
   db, auth, SUPERADMIN_EMAIL,
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, writeBatch,
-  query, where, orderBy, limit, serverTimestamp, arrayUnion, arrayRemove,
+  query, where, orderBy, limit, serverTimestamp, arrayUnion, arrayRemove, Timestamp,
   onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword,
   createUserWithEmailAndPassword, sendPasswordResetEmail, signOut, updateProfile,
 } from './fb.js';
@@ -10,7 +10,8 @@ import {
   $, $$, esc, slugify, SLUG_RE, searchTokens, fmtMoney, fmtDate, fmtTs, todayIso, parseHash,
   toast, errMsg, avatarHtml, coverHtml, SOCIALS, newId, normalize,
 } from './util.js';
-import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, tagPills } from './data.js';
+import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, tagPills, SERVICES, isPro } from './data.js';
+import { viewPortfolio } from './panel-portfolio.js';
 import { drawWatermark, drawSampleScene, DEFAULT_WATERMARK } from './watermark.js';
 import { uploadAsset } from './api.js';
 import { resizeToJpeg } from './image-proc.js';
@@ -170,7 +171,8 @@ async function seedPlatform() {
   const tt = await getDocs(query(collection(db, 'tagTypes'), limit(1)));
   if (tt.empty) {
     const b = writeBatch(db);
-    INITIAL_TAG_TYPES.forEach((name, i) => b.set(doc(collection(db, 'tagTypes')), { name, order: i }));
+    // Ids fijos: si esto corre dos veces en paralelo no se duplican los tipos.
+    INITIAL_TAG_TYPES.forEach((name, i) => b.set(doc(db, 'tagTypes', slugify(name)), { name, order: i }));
     await b.commit();
     await rebuildTaxonomy();
   }
@@ -191,6 +193,7 @@ function navItems() {
     { href: '#/inicio', label: '🏠 Inicio' },
     { href: '#/eventos', label: '🏟️ Mis eventos', need: true },
     { href: '#/ventas', label: '💰 Ventas', need: true },
+    { href: '#/portfolio', label: '🖼️ Portfolio', need: true },
     { group: 'Cuenta' },
     { href: '#/perfil', label: '👤 Perfil' },
     { href: '#/config', label: '⚙️ Precios y marca' },
@@ -234,6 +237,7 @@ function route() {
   if (a === 'evento' && b && (isApproved() || S.isSuper)) return run(() => viewEvent(b));
   if (a === 'eventos' && isApproved() && !S.isSuper) return run(viewMyEvents);
   if (a === 'ventas' && isApproved()) return run(viewSales);
+  if (a === 'portfolio' && isApproved() && !S.isSuper) return run(() => viewPortfolio($('#view'), { uid: S.user.uid, profile: S.profile, settings: S.settings }));
   if (S.isSuper) return run(viewAdminPhotographers);
   return run(viewHome);
 }
@@ -243,6 +247,7 @@ function viewHome() {
   const p = S.profile;
   const checks = [
     { ok: !!(p.displayName && p.zone && p.bio), label: 'Completar perfil (nombre, zona y bio)', href: '#/perfil' },
+    { ok: !!p.socials?.whatsapp, label: 'Cargar tu WhatsApp para recibir pedidos de presupuesto', href: '#/perfil' },
     { ok: (p.defaults?.price || 0) > 0, label: 'Definir precio por foto', href: '#/config' },
     { ok: !!p.mpConnected, label: 'Vincular Mercado Pago (obligatorio para vender)', href: '#/mp' },
   ];
@@ -278,11 +283,19 @@ function viewProfile() {
         <label class="field">Nombre público<input type="text" id="pf-name" required maxlength="60" value="${esc(p.displayName)}"></label>
         <label class="field">Dirección del perfil<input type="text" id="pf-slug" required maxlength="40" value="${esc(p.slug)}"><span class="hint">#/f/<span id="pf-slug-prev">${esc(p.slug)}</span></span></label>
       </div>
-      <label class="field">Zona<input type="text" id="pf-zone" maxlength="60" value="${esc(p.zone)}" placeholder="Ciudad, provincia"></label>
-      <label class="field">Bio<textarea id="pf-bio" maxlength="600" placeholder="Contá qué deportes cubrís, tu experiencia…">${esc(p.bio)}</textarea></label>
-      <h3 style="margin-top:6px">Redes</h3>
       <div class="grid2">
-        ${SOCIALS.map(s => `<label class="field">${s.label}<input type="text" data-social="${s.key}" value="${esc(p.socials?.[s.key] || '')}" placeholder="${s.key === 'instagram' ? '@usuario' : s.key === 'whatsapp' ? '54 9 341 …' : ''}"></label>`).join('')}
+        <label class="field">Zona<input type="text" id="pf-zone" maxlength="60" value="${esc(p.zone)}" placeholder="Ciudad, provincia"></label>
+        <label class="field">Zonas donde trabajás<input type="text" id="pf-workzones" maxlength="120" value="${esc(p.workZones || '')}" placeholder="Ej: Rosario, Funes, Roldán"></label>
+      </div>
+      <label class="field">Bio<textarea id="pf-bio" maxlength="600" placeholder="Contá qué deportes cubrís, tu experiencia…">${esc(p.bio)}</textarea></label>
+      <div class="field"><span>Deportes que cubrís</span>
+        <div class="pills" id="pf-sports">${sportTags().map(t => `<button type="button" class="chip ${(p.specialties || []).includes(t.id) ? 'on' : ''}" data-v="${t.id}">${esc(t.name)}</button>`).join('') || '<span class="muted small">Todavía no hay deportes cargados.</span>'}</div></div>
+      <div class="field"><span>Tipos de trabajo</span>
+        <div class="pills" id="pf-services">${SERVICES.map(v => `<button type="button" class="chip ${(p.services || []).includes(v) ? 'on' : ''}" data-v="${esc(v)}">${esc(v)}</button>`).join('')}</div></div>
+      <h3 style="margin-top:6px">Contacto y redes</h3>
+      <p class="muted small" style="margin:0">Con tu WhatsApp aparece el botón <strong>"Pedir presupuesto"</strong> en tu perfil público.</p>
+      <div class="grid2">
+        ${SOCIALS.map(s => `<label class="field">${s.label}<input type="text" data-social="${s.key}" value="${esc(p.socials?.[s.key] || '')}" placeholder="${s.key === 'instagram' ? '@usuario' : s.key === 'whatsapp' ? 'Ej: 341 555-1234 (con código de área)' : ''}"></label>`).join('')}
       </div>
       <div class="row end"><a class="btn" target="_blank" href="index.html#/f/${esc(p.slug)}">Ver perfil público</a><button class="btn primary" type="submit">Guardar</button></div>
     </form>`;
@@ -299,6 +312,7 @@ function viewProfile() {
       toast('Foto lista. Tocá Guardar para aplicarla.');
     } catch (err) { toast(errMsg(err), 'error'); }
   });
+  $$('#pf-sports .chip, #pf-services .chip').forEach(c => c.onclick = () => c.classList.toggle('on'));
   $('#pf-slug').oninput = e => { $('#pf-slug-prev').textContent = slugify(e.target.value); };
   $('#pf').onsubmit = async e => {
     e.preventDefault();
@@ -309,6 +323,9 @@ function viewProfile() {
     const upd = {
       displayName: $('#pf-name').value.trim(), slug, zone: $('#pf-zone').value.trim(),
       bio: $('#pf-bio').value.trim(), avatarUrl: $('#pf-avatar').value.trim(), socials,
+      workZones: $('#pf-workzones').value.trim(),
+      specialties: $$('#pf-sports .chip.on').map(c => c.dataset.v),
+      services: $$('#pf-services .chip.on').map(c => c.dataset.v),
     };
     try {
       const b = writeBatch(db);
@@ -325,6 +342,11 @@ function viewProfile() {
       viewProfile();
     } catch (err) { toast(errMsg(err), 'error'); }
   };
+}
+
+function sportTags() {
+  const t = S.tax.types.find(x => normalize(x.name) === 'deporte');
+  return t ? S.tax.tags.filter(g => g.typeId === t.id) : [];
 }
 
 // ================================================================ precios y marca
@@ -846,14 +868,31 @@ async function viewAdminPhotographers() {
         <strong>${esc(u.displayName)}</strong> <span class="muted small">/${esc(u.slug)}</span><br>
         <span class="muted small">${esc(privs[i].email || '')}${u.zone ? ' · ' + esc(u.zone) : ''} · alta ${esc(fmtTs(u.createdAt))}</span><br>
         ${u.mpConnected ? '<span class="pill ok">MP vinculado</span>' : '<span class="pill">MP sin vincular</span>'}
+        ${isPro(u) ? `<span class="pill accent">⭐ Pro hasta ${esc(fmtTs(u.proUntil))}</span>` : '<span class="pill">Gratis</span>'}
       </div>
       <div class="row">
         <a class="btn sm" target="_blank" href="index.html#/f/${esc(u.slug)}">Perfil</a>
         ${u.status !== 'approved' ? `<button class="btn sm ok" data-st="approved" data-uid="${u.uid}">Aprobar</button>` : ''}
         ${u.status !== 'suspended' ? `<button class="btn sm danger" data-st="suspended" data-uid="${u.uid}">Suspender</button>` : ''}
         ${u.status === 'suspended' ? `<button class="btn sm" data-st="pending" data-uid="${u.uid}">Volver a pendiente</button>` : ''}
+        ${u.status === 'approved' ? `<button class="btn sm" data-pro="${u.uid}">${isPro(u) ? '+30 días Pro' : 'Dar Pro 30 días'}</button>` : ''}
+        ${isPro(u) ? `<button class="btn sm ghost" data-unpro="${u.uid}">Quitar Pro</button>` : ''}
       </div>
     </div>`).join('') : '<div class="empty">No hay fotógrafos en esta lista.</div>';
+  $$('[data-pro]').forEach(b => b.onclick = async () => {
+    const u = users.find(x => x.uid === b.dataset.pro);
+    const from = isPro(u) ? u.proUntil.toMillis() : Date.now();
+    try {
+      await updateDoc(doc(db, 'users', u.uid), { plan: 'pro', proUntil: Timestamp.fromMillis(from + 30 * 86400000) });
+      toast('Plan Pro actualizado');
+      viewAdminPhotographers();
+    } catch (e) { toast(errMsg(e), 'error'); }
+  });
+  $$('[data-unpro]').forEach(b => b.onclick = async () => {
+    if (!confirm('¿Quitar el plan Pro? Las fotos de portfolio que superen el límite gratis se ocultan (no se borran).')) return;
+    try { await updateDoc(doc(db, 'users', b.dataset.unpro), { plan: 'free', proUntil: null }); viewAdminPhotographers(); }
+    catch (e) { toast(errMsg(e), 'error'); }
+  });
   $$('[data-st]').forEach(b => b.onclick = async () => {
     try {
       await updateDoc(doc(db, 'users', b.dataset.uid), { status: b.dataset.st, statusChangedAt: serverTimestamp() });
@@ -989,6 +1028,15 @@ async function viewAdminConfig() {
         </div>
       </div>
       <div class="card stack">
+        <h2>Plan Pro (portfolio)</h2>
+        <div class="grid2">
+          <label class="field">Precio mensual (ARS)<input type="number" id="a-pro-price" min="0" step="1" value="${st.proPrice}" required></label>
+          <span></span>
+          <label class="field">Fotos de portfolio — Gratis<input type="number" id="a-free-lim" min="0" max="500" step="1" value="${st.freePortfolioLimit}" required></label>
+          <label class="field">Fotos de portfolio — Pro<input type="number" id="a-pro-lim" min="1" max="2000" step="1" value="${st.proPortfolioLimit}" required></label>
+        </div>
+      </div>
+      <div class="card stack">
         <h2>Planes de extensión de retención</h2>
         <p class="muted small" style="margin:0">El fotógrafo los paga para mantener sus originales disponibles por más tiempo.</p>
         <div id="a-plans" class="stack"></div>
@@ -1016,7 +1064,11 @@ async function viewAdminConfig() {
     try {
       await setDoc(doc(db, 'settings', 'platform'), {
         feePercent: Number($('#a-fee').value), retentionDays: Math.round(Number($('#a-ret').value)),
-        extensionPlans: clean, updatedAt: serverTimestamp(),
+        extensionPlans: clean,
+        proPrice: Math.round(Number($('#a-pro-price').value) || 0),
+        freePortfolioLimit: Math.round(Number($('#a-free-lim').value) || 0),
+        proPortfolioLimit: Math.round(Number($('#a-pro-lim').value) || 1),
+        updatedAt: serverTimestamp(),
       }, { merge: true });
       S.settings = await loadSettings();
       toast('Configuración guardada');

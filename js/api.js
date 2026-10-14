@@ -59,3 +59,8 @@ export async function uploadAsset(kind, blob, eventId = null) {
   const s = await uploadSession(eventId);
   return putBlob(`/asset/${kind}`, blob, s.token);
 }
+
+export async function deleteAsset(key) {
+  const s = await uploadSession(null);
+  await apiDelete(`/asset?key=${encodeURIComponent(key)}`, s.token);
+}

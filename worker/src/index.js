@@ -3,7 +3,8 @@
 // Fase 2 — subida de fotos:
 //   POST   /upload-session            {eventId?}  Bearer <Firebase ID token>  -> { token, exp, publicBase }
 //   PUT    /upload/{kind}/{eid}/{pid}  X-Upload-Token                         kind: preview|thumb|original
-//   PUT    /asset/{kind}               X-Upload-Token                         kind: avatar|logo|cover
+//   PUT    /asset/{kind}               X-Upload-Token                         kind: avatar|logo|cover|portfolio
+//   DELETE /asset?key=u/{uid}/...      X-Upload-Token                         borra un asset propio
 //   DELETE /photo/{eid}/{pid}          X-Upload-Token                         borra muestra, miniatura y original
 //   GET    /public/{key}                                                      sirve qmf-public (si no hay dominio público)
 //
@@ -16,7 +17,7 @@ import { verifyIdToken, getDocAsUser } from './firebase.js';
 import { signToken, verifyToken } from './tokens.js';
 import { json, httpError } from './http.js';
 
-const MAX = { preview: 6e6, thumb: 1e6, original: 80e6, avatar: 3e6, logo: 2e6, cover: 6e6 };
+const MAX = { preview: 6e6, thumb: 1e6, original: 80e6, avatar: 3e6, logo: 2e6, cover: 6e6, portfolio: 6e6 };
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
 const SESSION_TTL = 2 * 3600;
 
@@ -47,6 +48,7 @@ async function route(req, env, ctx) {
   if (m === 'PUT' && parts[0] === 'upload' && parts.length === 4) return uploadPhotoPart(req, env, parts[1], parts[2], parts[3]);
   if (m === 'PUT' && parts[0] === 'asset' && parts.length === 2) return uploadAsset(req, env, parts[1]);
   if (m === 'DELETE' && parts[0] === 'photo' && parts.length === 3) return deletePhoto(req, env, parts[1], parts[2]);
+  if (m === 'DELETE' && url.pathname === '/asset') return deleteAsset(req, env, url.searchParams.get('key') || '');
   throw httpError(404, 'No encontrado');
 }
 
@@ -123,7 +125,7 @@ async function deletePhoto(req, env, eid, pid) {
 
 // ------------------------------------------------------------------ avatar / logo / portada
 async function uploadAsset(req, env, kind) {
-  if (!['avatar', 'logo', 'cover'].includes(kind)) throw httpError(400, 'Tipo inválido');
+  if (!['avatar', 'logo', 'cover', 'portfolio'].includes(kind)) throw httpError(400, 'Tipo inválido');
   const s = await session(req, env);
   if (kind === 'cover' && !s.eid) throw httpError(400, 'La portada requiere un evento');
   checkSize(req, kind);
@@ -131,9 +133,18 @@ async function uploadAsset(req, env, kind) {
   if (!/^image\/(jpeg|png|webp)$/.test(type)) throw httpError(415, 'Formato no soportado');
   const ext = type === 'image/png' ? 'png' : type === 'image/webp' ? 'webp' : 'jpg';
   const rand = crypto.randomUUID().slice(0, 8);
-  const key = kind === 'cover' ? `e/${s.eid}/cover-${rand}.${ext}` : `u/${s.uid}/${kind}-${rand}.${ext}`;
+  const key = kind === 'cover' ? `e/${s.eid}/cover-${rand}.${ext}`
+    : kind === 'portfolio' ? `u/${s.uid}/pf/${rand}.${ext}`
+    : `u/${s.uid}/${kind}-${rand}.${ext}`;
   await env.PUBLIC.put(key, req.body, { httpMetadata: { contentType: type, cacheControl: 'public, max-age=31536000, immutable' } });
   return json({ ok: true, key, url: `${publicBase(req, env)}/${key}` });
+}
+
+async function deleteAsset(req, env, key) {
+  const s = await session(req, env);
+  if (!key.startsWith(`u/${s.uid}/`) || key.includes('..')) throw httpError(403, 'No podés borrar este archivo');
+  await env.PUBLIC.delete(key);
+  return json({ ok: true });
 }
 
 // ------------------------------------------------------------------ lectura pública (fallback / dev)

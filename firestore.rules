@@ -62,7 +62,7 @@ service cloud.firestore {
             && request.resource.data.mpConnected == false)
           || (isSuper() && request.resource.data.role == 'superadmin'));
       allow update: if isSuper() || (signedIn() && uid() == userId
-          && !changed().hasAny(['role', 'status', 'mpConnected', 'mpUserId', 'createdAt'])
+          && !changed().hasAny(['role', 'status', 'mpConnected', 'mpUserId', 'createdAt', 'plan', 'proUntil'])
           && (!changed().hasAny(['slug']) || slugOwnedAfter(userId)));
       allow delete: if isSuper();
     }
@@ -137,6 +137,28 @@ service cloud.firestore {
         && !request.resource.data.keys().hasAny(['originalKey']);
       allow update: if isSuper()
         || (signedIn() && resource.data.photographerUid == uid() && changed().hasOnly(['subalbumId', 'hidden']));
+      allow delete: if isSuper() || (signedIn() && resource.data.photographerUid == uid());
+    }
+
+    // ---------- portfolio (fotos de muestra, no se venden)
+    // Id = {uid}_{slot}; el slot tiene que ser menor al límite del plan (gratis / Pro).
+    function portfolioLimit() {
+      let u = get(userPath(uid())).data;
+      let st = get(/databases/$(database)/documents/settings/platform).data;
+      let pro = u.get('plan', 'free') == 'pro' && u.get('proUntil', null) != null && u.proUntil > request.time;
+      return pro ? st.get('proPortfolioLimit', 200) : st.get('freePortfolioLimit', 12);
+    }
+    match /portfolio/{id} {
+      allow read: if true;
+      allow create: if isApproved()
+        && request.resource.data.photographerUid == uid()
+        && request.resource.data.slot is int
+        && request.resource.data.slot >= 0
+        && request.resource.data.slot < portfolioLimit()
+        && id == uid() + '_' + string(request.resource.data.slot)
+        && request.resource.data.thumbUrl.matches('.*/u/' + uid() + '/.*')
+        && request.resource.data.url.matches('.*/u/' + uid() + '/.*');
+      allow update: if signedIn() && resource.data.photographerUid == uid() && changed().hasOnly(['caption', 'order']);
       allow delete: if isSuper() || (signedIn() && resource.data.photographerUid == uid());
     }
 

@@ -1,4 +1,4 @@
-// Procesamiento de imágenes en el navegador: muestra (1600px) y miniatura (400px) con marca de agua.
+// Procesamiento de imágenes en el navegador: muestra (1600px) y miniatura (400px) con marca de agua (wm = null: sin marca).
 // Funciona en un Web Worker (OffscreenCanvas) o en el hilo principal.
 import { drawWatermark } from './watermark.js';
 
@@ -35,8 +35,10 @@ export async function processFile(file, wm, logo = null) {
     // Base sin marca a 1600px; de ahí sale la miniatura (mejor calidad que escalar directo desde el original).
     const base = scaled(bmp, width, height, PREVIEW_SIDE);
     const thumbC = scaled(base, base.width, base.height, THUMB_SIDE);
-    drawWatermark(base.getContext('2d'), base.width, base.height, wm, logo);
-    drawWatermark(thumbC.getContext('2d'), thumbC.width, thumbC.height, wm, logo);
+    if (wm) {
+      drawWatermark(base.getContext('2d'), base.width, base.height, wm, logo);
+      drawWatermark(thumbC.getContext('2d'), thumbC.width, thumbC.height, wm, logo);
+    }
     const [preview, thumb] = await Promise.all([toBlob(base, 0.8), toBlob(thumbC, 0.7)]);
     const takenAt = await exifDate(file).catch(() => null);
     return { preview, thumb, width, height, takenAt: takenAt || file.lastModified || Date.now() };

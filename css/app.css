@@ -256,3 +256,20 @@ dialog .dlg-foot { padding: 14px 18px; border-top: 1px solid var(--border); disp
 .bd-row { display: flex; justify-content: space-between; gap: 10px; }
 .bd-row.ok { color: var(--ok); }
 .bd-row.total { font-weight: 800; font-size: 1.15rem; border-top: 1px solid var(--border); padding-top: 8px; }
+.ph-actions { position: absolute; top: 4px; right: 4px; display: flex; gap: 4px; }
+.ph-actions .btn { padding: 3px 7px; background: rgba(0,0,0,.6); color: #fff; border-color: transparent; }
+
+/* ---------- directorio ---------- */
+.dir-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.dir-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; display: flex; flex-direction: column; gap: 10px; box-shadow: var(--shadow); }
+.dir-card.pro { border-color: var(--accent); }
+@media (max-width: 640px) {
+  .topbar .nav-link { padding: 5px 6px; }
+  .topbar .btn.sm { padding: 5px 8px; }
+}
+@media (max-width: 520px) {
+  .public .brand-txt { display: none; }
+}
+footer.site .credit { margin-top: 6px; font-size: .8rem; }
+footer.site .credit a { color: var(--accent); text-decoration: none; font-weight: 600; }
+footer.site .credit a:hover { text-decoration: underline; }

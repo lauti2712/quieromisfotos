@@ -2,6 +2,7 @@
 import { db, collection, getDocs, query, where, orderBy, limit, startAfter } from './fb.js';
 import { $, $$, esc, fmtMoney, toast, errMsg } from './util.js';
 import { cart } from './cart.js';
+import { openViewer } from './viewer.js';
 
 const PAGE = 60;
 
@@ -84,11 +85,11 @@ export function mountGallery(box, { ev, photographers, sets }) {
     const add = e.target.closest('[data-add]');
     if (add) { toggleCart(state.photos[+add.dataset.add]); return; }
     const b = e.target.closest('.g-item');
-    if (b) openViewer(+b.dataset.i);
+    if (b) openGalleryViewer(+b.dataset.i);
   });
   $('#g-grid', box).addEventListener('keydown', e => {
     const b = e.target.closest('.g-item');
-    if (b && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openViewer(+b.dataset.i); }
+    if (b && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openGalleryViewer(+b.dataset.i); }
   });
 
   function toggleCart(p) {
@@ -113,73 +114,26 @@ export function mountGallery(box, { ev, photographers, sets }) {
   io.observe($('#g-sentinel', box));
 
   // ------------------------------------------------ visor
-  function openViewer(index) {
-    let i = index;
-    const lb = document.createElement('div');
-    lb.className = 'lightbox';
-    lb.setAttribute('role', 'dialog');
-    lb.innerHTML = `
-      <div class="lb-top"><span class="small" id="lb-count"></span><span class="spacer"></span><button class="btn sm" id="lb-close" aria-label="Cerrar">✕</button></div>
-      <div class="lb-stage"><button class="lb-nav lb-prev" aria-label="Anterior">‹</button><img id="lb-img" alt=""><button class="lb-nav lb-next" aria-label="Siguiente">›</button></div>
-      <div class="lb-bottom"><span id="lb-info" class="small"></span><span class="row"><a class="btn sm" href="#/carrito" id="lb-cart">Ver carrito</a><button class="btn primary" id="lb-add"></button></span></div>`;
-    document.body.appendChild(lb);
-    document.body.style.overflow = 'hidden';
-
-    const show = () => {
-      const p = state.photos[i];
-      if (!p) return;
-      const ph = byUid.get(p.photographerUid);
-      const set = sets.get(p.photographerUid) || {};
-      $('#lb-img', lb).src = p.previewUrl;
-      $('#lb-count', lb).textContent = `${i + 1} / ${state.photos.length}${state.done ? '' : '+'}`;
-      const packs = (set.packs || []).map(k => `${k.qty} x ${fmtMoney(k.price)}`).join(' · ');
-      $('#lb-info', lb).innerHTML = `📷 ${esc(ph?.displayName || '')}${set.price ? ` · <strong>${fmtMoney(set.price)}</strong>` : ''}${packs ? `<br><span style="opacity:.75">Packs: ${packs}</span>` : ''}`;
-      const inCart = cart.has(p.id);
-      const addBtn = $('#lb-add', lb);
-      addBtn.textContent = inCart ? '✓ En el carrito' : '🛒 Agregar al carrito';
-      addBtn.classList.toggle('primary', !inCart);
-      addBtn.disabled = !set.price;
-      addBtn.onclick = () => { toggleCart(p); show(); };
-      // precarga de la siguiente
-      const n = state.photos[i + 1];
-      if (n) new Image().src = n.previewUrl;
-      if (i >= state.photos.length - 5) loadMore();
-    };
-    const go = d => {
-      const j = i + d;
-      if (j < 0 || j >= state.photos.length) return;
-      i = j; show();
-    };
-    const close = () => {
-      document.removeEventListener('keydown', onKey);
-      window.removeEventListener('hashchange', close);
-      document.body.style.overflow = '';
-      lb.remove();
-    };
-    const onKey = e => {
-      if (e.key === 'Escape') close();
-      else if (e.key === 'ArrowLeft') go(-1);
-      else if (e.key === 'ArrowRight') go(1);
-    };
-    document.addEventListener('keydown', onKey);
-    window.addEventListener('hashchange', close);
-    $('#lb-close', lb).onclick = close;
-    $('.lb-prev', lb).onclick = () => go(-1);
-    $('.lb-next', lb).onclick = () => go(1);
-    // swipe en celular
-    let x0 = null;
-    const stage = $('.lb-stage', lb);
-    stage.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; }, { passive: true });
-    stage.addEventListener('touchend', e => {
-      if (x0 == null) return;
-      const dx = e.changedTouches[0].clientX - x0;
-      if (Math.abs(dx) > 40) go(dx < 0 ? 1 : -1);
-      x0 = null;
+  function openGalleryViewer(index) {
+    openViewer({
+      index,
+      src: i => state.photos[i].previewUrl,
+      count: () => state.photos.length,
+      total: () => `${state.photos.length}${state.done ? '' : '+'}`,
+      onIndex: i => { if (i >= state.photos.length - 5) loadMore(); },
+      footer: (i, el, rerender) => {
+        const p = state.photos[i];
+        const ph = byUid.get(p.photographerUid);
+        const set = sets.get(p.photographerUid) || {};
+        const packs = (set.packs || []).map(k => `${k.qty} x ${fmtMoney(k.price)}`).join(' · ');
+        const inCart = cart.has(p.id);
+        el.innerHTML = `
+          <span class="small">📷 ${esc(ph?.displayName || '')}${set.price ? ` · <strong>${fmtMoney(set.price)}</strong>` : ''}${packs ? `<br><span style="opacity:.75">Packs: ${packs}</span>` : ''}</span>
+          <span class="row"><a class="btn sm" href="#/carrito">Ver carrito</a>
+            <button class="btn ${inCart ? '' : 'primary'}" id="lb-add" ${set.price ? '' : 'disabled'}>${inCart ? '✓ En el carrito' : '🛒 Agregar al carrito'}</button></span>`;
+        $('#lb-add', el).onclick = () => { toggleCart(p); rerender(); };
+      },
     });
-    stage.addEventListener('click', e => { if (e.target === stage) close(); });
-    // bloquear "guardar imagen" básico
-    $('#lb-img', lb).addEventListener('contextmenu', e => e.preventDefault());
-    show();
   }
 
   drawFilters();
