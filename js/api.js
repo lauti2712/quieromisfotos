@@ -3,7 +3,7 @@ import { auth } from './fb.js';
 
 export const API_BASE = location.hostname === 'localhost'
   ? 'http://localhost:8787'
-  : 'https://qmf-api.solucionescotidianas.com.ar';
+  : 'https://api.quieromisfotos.com.ar';
 
 const sessions = new Map(); // eventId|'' -> { token, exp, publicBase }
 

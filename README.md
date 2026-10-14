@@ -2,8 +2,9 @@
 
 Marketplace de fotografía deportiva: fotógrafos suben fotos de eventos, el público las compra y la plataforma cobra una comisión. Objetivo: cero costo fijo mensual.
 
-- **Sitio:** https://solucionescotidianas.com.ar/quieromisfotos/
-- **Panel (fotógrafos y superadmin):** https://solucionescotidianas.com.ar/quieromisfotos/panel.html
+- **Sitio:** https://quieromisfotos.com.ar (el link viejo solucionescotidianas.com.ar/quieromisfotos redirige)
+- **Panel (fotógrafos y superadmin):** https://quieromisfotos.com.ar/panel.html
+- **API (Worker):** https://api.quieromisfotos.com.ar · webs de fotógrafos: https://{slug}.quieromisfotos.com.ar
 - **Firebase:** proyecto `quieromisfotos-71629` (Spark): Auth y Firestore (`southamerica-east1`)
 
 ## Estructura

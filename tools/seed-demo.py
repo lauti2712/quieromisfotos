@@ -11,7 +11,7 @@ delete = '--delete' in sys.argv
 if target == 'prod':
     BASE = f'https://firestore.googleapis.com/v1/projects/{P}/databases/(default)/documents'
     TOKEN = subprocess.check_output(['gcloud', 'auth', 'print-access-token']).decode().strip()
-    IMG = 'https://solucionescotidianas.com.ar/quieromisfotos/demo'
+    IMG = 'https://quieromisfotos.com.ar/demo'
 else:
     BASE = f'http://127.0.0.1:8085/v1/projects/{P}/databases/(default)/documents'
     TOKEN = 'owner'

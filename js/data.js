@@ -55,8 +55,8 @@ export function hasWeb(user) {
   return !!PLANS[planOf(user)].web;
 }
 
-// Dirección de la web personal. Hasta que quieromisfotos.com.ar esté activo en Cloudflare se usa la del servidor.
-export const WEB_SUBDOMAINS_READY = false;
+// Dirección de la web personal: {slug}.quieromisfotos.com.ar (o su dominio propio, si está activado).
+export const WEB_SUBDOMAINS_READY = true;
 export function siteUrlOf(user) {
   if (!user?.slug) return '';
   if (user.domainActive && user.siteDomain) return `https://${user.siteDomain}`;
