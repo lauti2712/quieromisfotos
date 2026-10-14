@@ -54,6 +54,26 @@ Tests de reglas:
 cd tests && npm install && npm test
 ```
 
+## Worker (Cloudflare) — `worker/`
+
+API para subir y borrar fotos (y más adelante pagos, descargas y cron). El navegador procesa las imágenes y las sube **a través del Worker**, que escribe en R2 con un binding: no hacen falta credenciales S3 ni CORS en el bucket. Para validar al fotógrafo, el Worker lee Firestore con el ID token del usuario, así que aplican las reglas.
+
+- `qmf-public`: muestras y miniaturas con marca de agua, más avatares, logos y portadas. Se sirve por dominio público (`PUBLIC_BASE_URL`) o por `GET /public/*` del Worker.
+- `qmf-private`: originales en `e/{eventId}/{uid}/{photoId}`. Nunca son públicos.
+
+Desarrollo: `cd worker && npm run dev` (R2 simulado). Usa `.dev.vars` con `UPLOAD_SECRET` y `FIREBASE_EMULATOR=1`.
+
+Puesta en producción (una vez):
+
+```bash
+cd worker
+npx wrangler login
+npx wrangler r2 bucket create qmf-public
+npx wrangler r2 bucket create qmf-private
+npx wrangler secret put UPLOAD_SECRET
+npx wrangler deploy
+```
+
 ## Deploy
 
 - Frontend: push a `main` y GitHub Pages lo publica solo.
@@ -62,7 +82,7 @@ cd tests && npm install && npm test
 ## Fases
 
 1. ✅ Base: auth, roles, alta y aprobación de fotógrafos, etiquetas, eventos, sets y sub-álbumes, sitio público con filtros.
-2. Fotos: Worker `/upload-urls`, R2, marca de agua en el navegador, subida masiva, galería.
+2. ✅ Fotos: Worker, R2, marca de agua en el navegador (Web Worker), subida masiva, galería con visor. Falta el deploy del Worker en Cloudflare.
 3. Carrito: agrupado por fotógrafo, packs (combinación más barata) y comisión.
 4. Pagos: OAuth de Mercado Pago, checkout, webhook, descargas firmadas, mail.
 5. Retención: cron, avisos, borrado y extensiones pagas.

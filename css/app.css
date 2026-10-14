@@ -193,3 +193,50 @@ dialog .dlg-foot { padding: 14px 18px; border-top: 1px solid var(--border); disp
   .brand { white-space: nowrap; font-size: 1rem; }
   #who { display: none; }
 }
+
+/* ---------- subida ---------- */
+.dropzone { display: grid; place-items: center; gap: 4px; text-align: center; padding: 34px 16px; border: 2px dashed var(--border); border-radius: var(--radius); cursor: pointer; background: var(--surface-2); transition: border-color .15s, background .15s; }
+.dropzone:hover, .dropzone.over { border-color: var(--accent); background: var(--accent-soft); }
+.progress { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin: 8px 0; }
+.progress > span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.progress.sm { height: 4px; margin: 0; }
+.up-list { display: grid; gap: 6px; max-height: 280px; overflow-y: auto; }
+.up-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: .88rem; }
+.up-item .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.up-item .progress { grid-column: 1 / -1; }
+.up-item.error { color: var(--danger); }
+
+/* ---------- grilla de fotos (panel) ---------- */
+.toolbar { gap: 8px; }
+.photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
+@media (max-width: 640px) { .photo-grid { grid-template-columns: repeat(3, 1fr); gap: 4px; } }
+.ph { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: var(--surface-2); cursor: pointer; outline: 3px solid transparent; outline-offset: -3px; }
+.ph img { width: 100%; height: 100%; object-fit: cover; }
+.ph input { position: absolute; top: 6px; left: 6px; width: 20px; height: 20px; accent-color: var(--accent); }
+.ph.sel { outline-color: var(--accent); }
+.ph.is-hidden img { opacity: .35; }
+.ph-meta { position: absolute; left: 4px; right: 4px; bottom: 4px; display: flex; gap: 4px; flex-wrap: wrap; }
+.ph-meta .pill { background: rgba(0,0,0,.6); color: #fff; }
+
+/* ---------- galería pública ---------- */
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+@media (max-width: 640px) { .gallery { grid-template-columns: repeat(2, 1fr); gap: 6px; } }
+.g-item { position: relative; aspect-ratio: 3/2; border-radius: 10px; overflow: hidden; background: var(--surface-2); border: 0; padding: 0; cursor: zoom-in; }
+.g-item img { width: 100%; height: 100%; object-fit: cover; transition: transform .2s; }
+.g-item:hover img { transform: scale(1.03); }
+.filter-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+
+/* ---------- visor ---------- */
+.lightbox { position: fixed; inset: 0; z-index: 90; background: rgba(5, 6, 8, .94); display: grid; grid-template-rows: auto 1fr auto; color: #fff; }
+.lightbox .lb-top, .lightbox .lb-bottom { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
+.lightbox .lb-top .spacer { flex: 1; }
+.lightbox .lb-stage { position: relative; display: grid; place-items: center; min-height: 0; padding: 0 56px; touch-action: pan-y; }
+@media (max-width: 640px) { .lightbox .lb-stage { padding: 0; } }
+.lightbox .lb-stage img { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; }
+.lightbox .lb-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; border-radius: 50%; border: 0; background: rgba(255,255,255,.12); color: #fff; font-size: 22px; cursor: pointer; }
+.lightbox .lb-nav:hover { background: rgba(255,255,255,.22); }
+.lightbox .lb-prev { left: 8px; } .lightbox .lb-next { right: 8px; }
+@media (max-width: 640px) { .lightbox .lb-nav { display: none; } }
+.lightbox .btn { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.2); color: #fff; }
+.lightbox .btn.primary { background: var(--accent); border-color: var(--accent); }
+.lightbox .lb-bottom { justify-content: space-between; flex-wrap: wrap; padding-bottom: max(10px, env(safe-area-inset-bottom)); }

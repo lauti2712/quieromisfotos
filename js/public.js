@@ -6,6 +6,7 @@ import {
   $, esc, fmtDate, parseHash, queryWords, avatarHtml, coverHtml, SOCIALS, toast, errMsg,
 } from './util.js';
 import { loadTaxonomy, tagPills } from './data.js';
+import { mountGallery } from './gallery.js';
 
 const app = $('#app');
 const PAGE = 24;
@@ -126,7 +127,10 @@ async function renderEvent(id) {
     app.innerHTML = `<div class="empty"><h2>Evento no encontrado</h2><p>Puede que todavía no esté publicado.</p><a class="btn" href="#/">Volver al inicio</a></div>`;
     return;
   }
-  const [tax, photographers] = await Promise.all([loadTaxonomy(), loadUsers(ev.photographerUids || [])]);
+  const [tax, photographers, setsSnap] = await Promise.all([
+    loadTaxonomy(), loadUsers(ev.photographerUids || []), getDocs(collection(db, 'events', id, 'sets')).catch(() => null),
+  ]);
+  const sets = new Map((setsSnap?.docs || []).map(d => [d.id, d.data()]));
   const tags = tagPills(ev.tagIds, tax);
   document.title = `${ev.name} · Quiero Mis Fotos`;
 
@@ -150,8 +154,9 @@ async function renderEvent(id) {
     </section>
     <section class="card">
       <h2>Fotos</h2>
-      <div class="empty">📷 Las fotos de este evento van a estar disponibles muy pronto.</div>
+      <div id="gallery"></div>
     </section>`;
+  mountGallery($('#gallery'), { ev, photographers, sets });
 }
 
 async function loadUsers(uids) {

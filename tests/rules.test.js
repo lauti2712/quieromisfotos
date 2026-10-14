@@ -156,3 +156,42 @@ test('orders/extensions: nadie escribe desde el cliente', async () => {
   await assertFails(setDoc(doc(as(SUPER), 'orders/o1'), { photographerUid: 'ana' }));
   await assertFails(setDoc(doc(as(), 'extensions/e1'), { photographerUid: 'ana' }));
 });
+
+// ---------- fotos
+const photo = (uid, pid, extra = {}) => ({
+  eventId: 'pub', photographerUid: uid, subalbumId: '', hidden: false, originalDeleted: false,
+  previewUrl: `https://x/e/pub/${uid}/${pid}_p.jpg`, thumbUrl: `https://x/e/pub/${uid}/${pid}_t.jpg`, ...extra,
+});
+
+test('fotos: miembro crea con URLs propias; no ajenas ni con originalKey', async () => {
+  await assertSucceeds(setDoc(doc(user('ana'), 'photos/p1'), photo('ana', 'p1')));
+  await assertFails(setDoc(doc(user('ana'), 'photos/p2'), photo('ana', 'p2', { thumbUrl: 'https://x/e/pub/beto/p2_t.jpg' })));
+  await assertFails(setDoc(doc(user('ana'), 'photos/p3'), photo('ana', 'p3', { originalKey: 'e/pub/ana/p3' })));
+  await assertFails(setDoc(doc(user('beto'), 'photos/p4'), photo('beto', 'p4'))); // beto no es miembro
+  await assertFails(setDoc(doc(user('ana'), 'photos/p5'), photo('ana', 'p5', { hidden: true })));
+});
+
+test('fotos: ocultas no son públicas; dueño mueve/oculta; otro no', async () => {
+  await env.withSecurityRulesDisabled(async ctx => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'photos/v'), photo('ana', 'v'));
+    await setDoc(doc(db, 'photos/h'), photo('ana', 'h', { hidden: true }));
+  });
+  await assertSucceeds(getDoc(doc(as(), 'photos/v')));
+  await assertFails(getDoc(doc(as(), 'photos/h')));
+  await assertSucceeds(getDoc(doc(user('ana'), 'photos/h')));
+  await assertSucceeds(getDocs(query(collection(as(), 'photos'), where('eventId', '==', 'pub'), where('hidden', '==', false))));
+  await assertSucceeds(updateDoc(doc(user('ana'), 'photos/v'), { hidden: true, subalbumId: 's1' }));
+  await assertFails(updateDoc(doc(user('ana'), 'photos/v'), { previewUrl: 'https://evil' }));
+  await assertFails(updateDoc(doc(user('beto'), 'photos/v'), { hidden: true }));
+  await assertFails(deleteDoc(doc(user('beto'), 'photos/v')));
+  await assertSucceeds(deleteDoc(doc(user('ana'), 'photos/v')));
+});
+
+test('set: vencimiento inicial solo una vez y con los días configurados', async () => {
+  await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'settings/platform'), { retentionDays: 14 }));
+  const ref = doc(user('ana'), 'events/pub/sets/ana');
+  await assertFails(updateDoc(ref, { expiresAt: new Date(Date.now() + 90 * 86400000) }));
+  await assertSucceeds(updateDoc(ref, { expiresAt: new Date(Date.now() + 14 * 86400000) }));
+  await assertFails(updateDoc(ref, { expiresAt: new Date(Date.now() + 14 * 86400000 + 60000) }));
+});

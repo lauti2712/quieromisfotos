@@ -1,0 +1,20 @@
+name = "qmf-api"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+FIREBASE_PROJECT_ID = "quieromisfotos-71629"
+ALLOWED_ORIGINS = "https://solucionescotidianas.com.ar,http://localhost:5175"
+# Dominio público del bucket qmf-public (custom domain de R2). Si está vacío, el Worker sirve /public/*.
+PUBLIC_BASE_URL = ""
+
+[[r2_buckets]]
+binding = "PUBLIC"
+bucket_name = "qmf-public"
+
+[[r2_buckets]]
+binding = "PRIVATE"
+bucket_name = "qmf-private"
+
+# Secretos (wrangler secret put):
+#   UPLOAD_SECRET  -> HMAC para tokens de subida

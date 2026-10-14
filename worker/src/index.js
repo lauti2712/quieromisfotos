@@ -1,0 +1,172 @@
+// API de Quiero Mis Fotos (Cloudflare Worker).
+//
+// Fase 2 — subida de fotos:
+//   POST   /upload-session            {eventId?}  Bearer <Firebase ID token>  -> { token, exp, publicBase }
+//   PUT    /upload/{kind}/{eid}/{pid}  X-Upload-Token                         kind: preview|thumb|original
+//   PUT    /asset/{kind}               X-Upload-Token                         kind: avatar|logo|cover
+//   DELETE /photo/{eid}/{pid}          X-Upload-Token                         borra muestra, miniatura y original
+//   GET    /public/{key}                                                      sirve qmf-public (si no hay dominio público)
+//
+// Claves en R2:
+//   qmf-public:  e/{eid}/{uid}/{pid}_p.jpg  (muestra)   e/{eid}/{uid}/{pid}_t.jpg  (miniatura)
+//                u/{uid}/{kind}-{rand}.jpg  (avatar/logo/portada)
+//   qmf-private: e/{eid}/{uid}/{pid}        (original, nunca público)
+
+import { verifyIdToken, getDocAsUser } from './firebase.js';
+import { signToken, verifyToken } from './tokens.js';
+import { json, httpError } from './http.js';
+
+const MAX = { preview: 6e6, thumb: 1e6, original: 80e6, avatar: 3e6, logo: 2e6, cover: 6e6 };
+const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
+const SESSION_TTL = 2 * 3600;
+
+export default {
+  async fetch(req, env, ctx) {
+    const cors = corsHeaders(req, env);
+    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+    try {
+      const res = await route(req, env, ctx);
+      for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);
+      return res;
+    } catch (e) {
+      const status = e.status || 500;
+      if (status >= 500) console.error(e);
+      return json({ error: e.message || 'Error' }, status, cors);
+    }
+  },
+};
+
+async function route(req, env, ctx) {
+  const url = new URL(req.url);
+  const parts = url.pathname.split('/').filter(Boolean);
+  const m = req.method;
+
+  if (m === 'GET' && parts[0] === 'public') return servePublic(req, env, ctx, parts.slice(1).join('/'));
+  if (m === 'GET' && url.pathname === '/') return json({ ok: true, service: 'qmf-api' });
+  if (m === 'POST' && url.pathname === '/upload-session') return uploadSession(req, env);
+  if (m === 'PUT' && parts[0] === 'upload' && parts.length === 4) return uploadPhotoPart(req, env, parts[1], parts[2], parts[3]);
+  if (m === 'PUT' && parts[0] === 'asset' && parts.length === 2) return uploadAsset(req, env, parts[1]);
+  if (m === 'DELETE' && parts[0] === 'photo' && parts.length === 3) return deletePhoto(req, env, parts[1], parts[2]);
+  throw httpError(404, 'No encontrado');
+}
+
+// ------------------------------------------------------------------ sesión de subida
+async function uploadSession(req, env) {
+  const idToken = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+  if (!idToken) throw httpError(401, 'Falta autenticación');
+  const claims = await verifyIdToken(idToken, env);
+  const uid = claims.sub;
+  const body = await req.json().catch(() => ({}));
+  const eid = body.eventId || null;
+
+  const user = await getDocAsUser(env, idToken, `users/${uid}`);
+  if (!user) throw httpError(403, 'Perfil inexistente');
+  const isSuper = claims.email === 'lautarom87@gmail.com' && claims.email_verified === true;
+  if (!isSuper && user.status !== 'approved') throw httpError(403, 'Tu cuenta no está aprobada');
+
+  let role = 'profile';
+  if (eid) {
+    if (!ID_RE.test(eid)) throw httpError(400, 'Evento inválido');
+    const ev = await getDocAsUser(env, idToken, `events/${eid}`);
+    if (!ev) throw httpError(404, 'Evento no encontrado');
+    const member = (ev.photographerUids || []).includes(uid);
+    if (member) role = 'member';
+    else if (isSuper || ev.createdBy === uid) role = 'editor';
+    else throw httpError(403, 'No participás en este evento');
+  }
+  const exp = Math.floor(Date.now() / 1000) + SESSION_TTL;
+  const token = await signToken({ uid, eid, role, exp }, env.UPLOAD_SECRET);
+  return json({ token, exp, publicBase: publicBase(req, env) });
+}
+
+async function session(req, env) {
+  const t = req.headers.get('X-Upload-Token');
+  if (!t) throw httpError(401, 'Falta token de subida');
+  const s = await verifyToken(t, env.UPLOAD_SECRET);
+  if (!s || s.exp < Date.now() / 1000) throw httpError(401, 'Token de subida inválido o vencido');
+  return s;
+}
+
+function checkSize(req, kind) {
+  const len = Number(req.headers.get('Content-Length') || 0);
+  if (!len) throw httpError(411, 'Falta Content-Length');
+  if (len > MAX[kind]) throw httpError(413, 'Archivo demasiado grande');
+}
+
+// ------------------------------------------------------------------ fotos
+async function uploadPhotoPart(req, env, kind, eid, pid) {
+  if (!['preview', 'thumb', 'original'].includes(kind)) throw httpError(400, 'Tipo inválido');
+  if (!ID_RE.test(eid) || !ID_RE.test(pid)) throw httpError(400, 'Id inválido');
+  const s = await session(req, env);
+  if (s.eid !== eid || s.role !== 'member') throw httpError(403, 'Token no válido para este evento');
+  checkSize(req, kind);
+
+  const base = `e/${eid}/${s.uid}/${pid}`;
+  if (kind === 'original') {
+    const type = req.headers.get('Content-Type') || 'application/octet-stream';
+    await env.PRIVATE.put(base, req.body, { httpMetadata: { contentType: type }, customMetadata: { uid: s.uid } });
+    return json({ ok: true });
+  }
+  const key = `${base}_${kind === 'preview' ? 'p' : 't'}.jpg`;
+  await env.PUBLIC.put(key, req.body, { httpMetadata: { contentType: 'image/jpeg', cacheControl: 'public, max-age=31536000, immutable' } });
+  return json({ ok: true, key, url: `${publicBase(req, env)}/${key}` });
+}
+
+async function deletePhoto(req, env, eid, pid) {
+  if (!ID_RE.test(eid) || !ID_RE.test(pid)) throw httpError(400, 'Id inválido');
+  const s = await session(req, env);
+  if (s.eid !== eid || s.role !== 'member') throw httpError(403, 'Token no válido para este evento');
+  const base = `e/${eid}/${s.uid}/${pid}`;
+  await Promise.all([env.PUBLIC.delete([`${base}_p.jpg`, `${base}_t.jpg`]), env.PRIVATE.delete(base)]);
+  return json({ ok: true });
+}
+
+// ------------------------------------------------------------------ avatar / logo / portada
+async function uploadAsset(req, env, kind) {
+  if (!['avatar', 'logo', 'cover'].includes(kind)) throw httpError(400, 'Tipo inválido');
+  const s = await session(req, env);
+  if (kind === 'cover' && !s.eid) throw httpError(400, 'La portada requiere un evento');
+  checkSize(req, kind);
+  const type = req.headers.get('Content-Type') || '';
+  if (!/^image\/(jpeg|png|webp)$/.test(type)) throw httpError(415, 'Formato no soportado');
+  const ext = type === 'image/png' ? 'png' : type === 'image/webp' ? 'webp' : 'jpg';
+  const rand = crypto.randomUUID().slice(0, 8);
+  const key = kind === 'cover' ? `e/${s.eid}/cover-${rand}.${ext}` : `u/${s.uid}/${kind}-${rand}.${ext}`;
+  await env.PUBLIC.put(key, req.body, { httpMetadata: { contentType: type, cacheControl: 'public, max-age=31536000, immutable' } });
+  return json({ ok: true, key, url: `${publicBase(req, env)}/${key}` });
+}
+
+// ------------------------------------------------------------------ lectura pública (fallback / dev)
+async function servePublic(req, env, ctx, key) {
+  if (!key || key.includes('..')) throw httpError(404, 'No encontrado');
+  const cache = caches.default;
+  const hit = await cache.match(req);
+  if (hit) return new Response(hit.body, hit);
+  const obj = await env.PUBLIC.get(key);
+  if (!obj) throw httpError(404, 'No encontrado');
+  const headers = new Headers();
+  obj.writeHttpMetadata(headers);
+  headers.set('ETag', obj.httpEtag);
+  if (!headers.has('Cache-Control')) headers.set('Cache-Control', 'public, max-age=86400');
+  const res = new Response(obj.body, { headers });
+  ctx.waitUntil(cache.put(req, res.clone()));
+  return res;
+}
+
+// ------------------------------------------------------------------ helpers
+function publicBase(req, env) {
+  return (env.PUBLIC_BASE_URL || `${new URL(req.url).origin}/public`).replace(/\/$/, '');
+}
+
+function corsHeaders(req, env) {
+  const origin = req.headers.get('Origin') || '';
+  const allowed = (env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim());
+  const ok = allowed.includes(origin) || /^http:\/\/localhost:\d+$/.test(origin);
+  return ok ? {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Upload-Token',
+    'Access-Control-Max-Age': '86400',
+    Vary: 'Origin',
+  } : { Vary: 'Origin' };
+}

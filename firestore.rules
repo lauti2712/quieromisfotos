@@ -19,6 +19,15 @@ service cloud.firestore {
       return getAfter(/databases/$(database)/documents/slugs/$(request.resource.data.slug)).data.uid == id;
     }
     function eventAfter(eid) { return getAfter(/databases/$(database)/documents/events/$(eid)).data; }
+    function eventData(eid) { return get(/databases/$(database)/documents/events/$(eid)).data; }
+    // El vencimiento del set lo fija el fotógrafo una sola vez (primera subida): ahora + retentionDays.
+    function initialExpiry() {
+      let days = get(/databases/$(database)/documents/settings/platform).data.retentionDays;
+      return resource.data.get('expiresAt', null) == null
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.expiresAt > request.time + duration.value(days, 'd') - duration.value(1, 'h')
+        && request.resource.data.expiresAt < request.time + duration.value(days, 'd') + duration.value(1, 'h');
+    }
 
     // ---------- configuración y etiquetas ----------
     match /settings/{id} {
@@ -107,9 +116,28 @@ service cloud.firestore {
           && uid() in eventAfter(eid).photographerUids
           && !request.resource.data.keys().hasAny(['expiresAt', 'extendedUntil', 'originalsDeleted']);
         allow update: if isSuper() || (isApproved() && uid() == pid
-          && !changed().hasAny(['expiresAt', 'extendedUntil', 'originalsDeleted']));
+          && !changed().hasAny(['extendedUntil', 'originalsDeleted'])
+          && (!changed().hasAny(['expiresAt']) || initialExpiry()));
         allow delete: if isSuper() || (signedIn() && uid() == pid && resource.data.photoCount == 0);
       }
+    }
+
+    // ---------- fotos (originalKey no se guarda: se deriva como e/{eventId}/{uid}/{photoId})
+    match /photos/{pid} {
+      allow read: if resource.data.hidden == false
+        || (signedIn() && resource.data.photographerUid == uid())
+        || isSuper();
+      allow create: if isApproved()
+        && request.resource.data.photographerUid == uid()
+        && uid() in eventData(request.resource.data.eventId).photographerUids
+        && request.resource.data.hidden == false
+        && request.resource.data.originalDeleted == false
+        && request.resource.data.thumbUrl.matches('.*/e/' + request.resource.data.eventId + '/' + uid() + '/' + pid + '_t[.]jpg$')
+        && request.resource.data.previewUrl.matches('.*/e/' + request.resource.data.eventId + '/' + uid() + '/' + pid + '_p[.]jpg$')
+        && !request.resource.data.keys().hasAny(['originalKey']);
+      allow update: if isSuper()
+        || (signedIn() && resource.data.photographerUid == uid() && changed().hasOnly(['subalbumId', 'hidden']));
+      allow delete: if isSuper() || (signedIn() && resource.data.photographerUid == uid());
     }
 
     // ---------- órdenes y extensiones: solo las escribe el Worker ----------

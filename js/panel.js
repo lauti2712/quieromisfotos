@@ -12,6 +12,9 @@ import {
 } from './util.js';
 import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, tagPills } from './data.js';
 import { drawWatermark, drawSampleScene, DEFAULT_WATERMARK } from './watermark.js';
+import { uploadAsset } from './api.js';
+import { resizeToJpeg } from './image-proc.js';
+import { mountPhotos } from './panel-photos.js';
 
 const root = $('#root');
 const S = { user: null, profile: null, isSuper: false, settings: { ...DEFAULT_SETTINGS }, tax: null };
@@ -260,10 +263,15 @@ function viewProfile() {
   $('#view').innerHTML = `
     <h1>Perfil</h1>
     <form class="card stack" id="pf">
-      <div class="row">${avatarHtml(p, 'lg')}
+      <div class="row"><span id="pf-av">${avatarHtml(p, 'lg')}</span>
         <div class="stack" style="flex:1;min-width:220px">
-          <label class="field">URL de la foto de perfil<input type="url" id="pf-avatar" value="${esc(p.avatarUrl)}" placeholder="https://…"><span class="hint">La subida de imagen llega con la carga de fotos.</span></label>
-          ${S.user.photoURL ? `<button type="button" class="btn sm" id="pf-google" style="justify-self:start">Usar mi foto de Google</button>` : ''}
+          <input type="hidden" id="pf-avatar" value="${esc(p.avatarUrl)}">
+          <div class="row">
+            ${isApproved() || S.isSuper ? `<label class="btn sm">Subir foto<input type="file" id="pf-avatar-file" accept="image/*" hidden></label>` : ''}
+            ${S.user.photoURL ? `<button type="button" class="btn sm" id="pf-google">Usar mi foto de Google</button>` : ''}
+            ${p.avatarUrl ? `<button type="button" class="btn sm ghost" id="pf-av-rm">Quitar</button>` : ''}
+          </div>
+          ${isApproved() || S.isSuper ? '' : '<span class="muted small">Vas a poder subir tu foto cuando tu cuenta esté aprobada.</span>'}
         </div>
       </div>
       <div class="grid2">
@@ -278,7 +286,19 @@ function viewProfile() {
       </div>
       <div class="row end"><a class="btn" target="_blank" href="index.html#/f/${esc(p.slug)}">Ver perfil público</a><button class="btn primary" type="submit">Guardar</button></div>
     </form>`;
-  $('#pf-google')?.addEventListener('click', () => { $('#pf-avatar').value = S.user.photoURL; });
+  const setAvatar = url => { $('#pf-avatar').value = url; $('#pf-av').innerHTML = avatarHtml({ ...p, avatarUrl: url }, 'lg'); };
+  $('#pf-google')?.addEventListener('click', () => setAvatar(S.user.photoURL));
+  $('#pf-av-rm')?.addEventListener('click', () => setAvatar(''));
+  $('#pf-avatar-file')?.addEventListener('change', async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    try {
+      toast('Subiendo foto…');
+      const { url } = await uploadAsset('avatar', await resizeToJpeg(f, 400, 0.85));
+      setAvatar(url);
+      toast('Foto lista. Tocá Guardar para aplicarla.');
+    } catch (err) { toast(errMsg(err), 'error'); }
+  });
   $('#pf-slug').oninput = e => { $('#pf-slug-prev').textContent = slugify(e.target.value); };
   $('#pf').onsubmit = async e => {
     e.preventDefault();
@@ -370,8 +390,11 @@ function viewConfig() {
         <div class="grid2">
           <div class="stack">
             <label class="field">Tipo
-              <select id="wm-type"><option value="text">Texto</option><option value="logo" disabled>Logo (próximamente)</option></select></label>
-            <label class="field">Texto<input type="text" id="wm-text" maxlength="40" value="${esc(wm.text)}"></label>
+              <select id="wm-type"><option value="text">Texto</option><option value="logo" ${wm.type === 'logo' ? 'selected' : ''}>Logo</option></select></label>
+            <label class="field" id="wm-text-f">Texto<input type="text" id="wm-text" maxlength="40" value="${esc(wm.text)}"></label>
+            <div class="field" id="wm-logo-f">Logo <span class="hint">PNG con fondo transparente, idealmente blanco.</span>
+              ${isApproved() ? `<label class="btn sm" style="justify-self:start">Subir logo<input type="file" id="wm-logo-file" accept="image/png,image/webp" hidden></label>` : '<span class="muted small">Disponible cuando tu cuenta esté aprobada.</span>'}
+            </div>
             <label class="field">Posición
               <select id="wm-pos">
                 <option value="both" ${wm.position === 'both' ? 'selected' : ''}>Mosaico + central</option>
@@ -388,14 +411,40 @@ function viewConfig() {
       <div class="row end" style="margin-top:14px"><button class="btn primary" type="submit">Guardar</button></div>
     </form>`;
   const packs = packsEditor($('#cf-packs'), d.packs);
-  const readWm = () => ({ type: 'text', text: $('#wm-text').value.trim(), position: $('#wm-pos').value, opacity: Number($('#wm-op').value) });
+  let logo = { key: wm.logoKey || '', url: wm.logoUrl || '', img: null };
+  const readWm = () => ({
+    type: $('#wm-type').value === 'logo' && logo.key ? 'logo' : 'text',
+    text: $('#wm-text').value.trim(), position: $('#wm-pos').value, opacity: Number($('#wm-op').value),
+    logoKey: logo.key, logoUrl: logo.url,
+  });
   const preview = () => {
+    const isLogo = $('#wm-type').value === 'logo';
+    $('#wm-text-f').classList.toggle('hidden', isLogo);
+    $('#wm-logo-f').classList.toggle('hidden', !isLogo);
     const c = $('#wm-canvas'), ctx = c.getContext('2d');
     drawSampleScene(ctx, c.width, c.height);
-    drawWatermark(ctx, c.width, c.height, readWm());
+    drawWatermark(ctx, c.width, c.height, readWm(), logo.img);
     $('#wm-op-v').textContent = `${Math.round(Number($('#wm-op').value) * 100)}%`;
   };
-  ['wm-text', 'wm-pos', 'wm-op'].forEach(id => $('#' + id).addEventListener('input', preview));
+  const loadLogo = url => {
+    if (!url) return;
+    const img = new Image();
+    img.onload = () => { logo.img = img; preview(); };
+    img.src = url;
+  };
+  ['wm-type', 'wm-text', 'wm-pos', 'wm-op'].forEach(id => $('#' + id).addEventListener('input', preview));
+  $('#wm-logo-file')?.addEventListener('change', async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    if (f.size > 2e6) return toast('El logo debe pesar menos de 2 MB.', 'error');
+    try {
+      const r = await uploadAsset('logo', f);
+      logo = { key: r.key, url: r.url, img: null };
+      loadLogo(r.url);
+      toast('Logo subido. Tocá Guardar para aplicarlo.');
+    } catch (err) { toast(errMsg(err), 'error'); }
+  });
+  loadLogo(logo.url);
   preview();
   $('#cf').onsubmit = async e => {
     e.preventDefault();
@@ -519,12 +568,29 @@ function eventDialog(ev, onSaved) {
       const tags = tax.tags.filter(g => g.typeId === t.id);
       return `<div class="field"><span>${esc(t.name)}</span><div class="pills">${tags.length ? tags.map(g => `<button type="button" class="chip ${sel.has(g.id) ? 'on' : ''}" data-tag="${g.id}">${esc(g.name)}</button>`).join('') : '<span class="muted small">Sin etiquetas cargadas</span>'}</div></div>`;
     }).join('')}
-    <label class="field">Imagen de portada (URL)<input type="url" id="ev-cover" value="${esc(ev.coverUrl)}" placeholder="https://…"><span class="hint">Opcional. La subida directa llega con la carga de fotos.</span></label>
+    <input type="hidden" id="ev-cover" value="${esc(ev.coverUrl)}">
+    <div class="field"><span>Portada</span>
+      ${isNew ? '<span class="muted small">Podés subir la portada después de crear el evento.</span>' : `
+        <div class="row"><img id="ev-cover-img" src="${esc(ev.coverUrl)}" alt="" class="${ev.coverUrl ? '' : 'hidden'}" style="width:160px;aspect-ratio:16/9;object-fit:cover;border-radius:8px">
+          <label class="btn sm">Subir imagen<input type="file" id="ev-cover-file" accept="image/*" hidden></label>
+          ${ev.coverUrl ? '<button type="button" class="btn sm ghost" id="ev-cover-rm">Quitar</button>' : ''}</div>`}
+    </div>
     <label class="field">Estado<select id="ev-status"><option value="draft" ${ev.status !== 'published' ? 'selected' : ''}>Borrador (no visible al público)</option><option value="published" ${ev.status === 'published' ? 'selected' : ''}>Publicado</option></select></label>
     ${general ? '<p class="muted small" style="margin:0">Los eventos generales siempre están abiertos para que se sumen fotógrafos.</p>'
       : `<label class="check"><input type="checkbox" id="ev-open" ${ev.openToJoin ? 'checked' : ''}> Permitir que otros fotógrafos se sumen a este evento</label>`}
   `, `<button class="btn" data-close>Cancelar</button><button class="btn primary" id="ev-save">${isNew ? 'Crear' : 'Guardar'}</button>`);
 
+  $('#ev-cover-file', dlg)?.addEventListener('change', async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    try {
+      toast('Subiendo portada…');
+      const { url } = await uploadAsset('cover', await resizeToJpeg(f, 1600, 0.82), ev.id);
+      $('#ev-cover', dlg).value = url;
+      const img = $('#ev-cover-img', dlg); img.src = url; img.classList.remove('hidden');
+    } catch (err) { toast(errMsg(err), 'error'); }
+  });
+  $('#ev-cover-rm', dlg)?.addEventListener('click', () => { $('#ev-cover', dlg).value = ''; $('#ev-cover-img', dlg).classList.add('hidden'); });
   $$('[data-tag]', dlg).forEach(c => c.onclick = () => { c.classList.toggle('on'); c.classList.contains('on') ? sel.add(c.dataset.tag) : sel.delete(c.dataset.tag); });
   $('#ev-save', dlg).onclick = async () => {
     const name = $('#ev-name', dlg).value.trim(), date = $('#ev-date', dlg).value, loc = $('#ev-loc', dlg).value.trim();
@@ -683,7 +749,6 @@ function renderSetEditor(ev, set, reload) {
         <span class="pill">📷 ${set.photoCount || 0} fotos</span>
         <span class="pill">${expires ? `Originales disponibles hasta ${esc(expires)}` : `Vence ${S.settings.retentionDays} días después de subir las fotos`}</span>
       </div>
-      <div class="notice">La subida de fotos se habilita en la próxima etapa.</div>
     </div>
     <form class="card stack" id="set-form">
       <div class="row" style="justify-content:space-between"><h2 style="margin:0">Precios</h2><button type="button" class="btn sm" id="use-def">Usar mis valores por defecto</button></div>
@@ -697,7 +762,10 @@ function renderSetEditor(ev, set, reload) {
       <div id="st-subs" class="stack"></div>
       <div class="row"><input type="text" id="st-sub-new" placeholder="Nombre del sub-álbum" style="max-width:300px"><button type="button" class="btn" id="st-sub-add">Agregar</button></div>
       <div class="row end"><button class="btn primary" type="submit">Guardar set</button></div>
-    </form>`;
+    </form>
+    <div id="set-photos"></div>`;
+  mountPhotos($('#set-photos'), { ev, set, uid: S.user.uid, profile: S.profile, settings: S.settings })
+    .catch(e => { $('#set-photos').innerHTML = `<div class="notice danger">${esc(errMsg(e))}</div>`; });
 
   let packs = packsEditor($('#st-packs'), set.packs);
   const drawSubs = () => {
@@ -712,7 +780,6 @@ function renderSetEditor(ev, set, reload) {
     $$('[data-up]').forEach(b => b.onclick = () => { const i = +b.dataset.up; [subs[i - 1], subs[i]] = [subs[i], subs[i - 1]]; drawSubs(); });
     $$('[data-down]').forEach(b => b.onclick = () => { const i = +b.dataset.down; [subs[i + 1], subs[i]] = [subs[i], subs[i + 1]]; drawSubs(); });
     $$('[data-rm]').forEach(b => b.onclick = () => {
-      // TODO fase fotos: impedir borrar sub-álbumes con fotos (o moverlas a "sin sub-álbum").
       subs.splice(+b.dataset.rm, 1); drawSubs();
     });
   };
@@ -734,6 +801,16 @@ function renderSetEditor(ev, set, reload) {
     e.preventDefault();
     try {
       const clean = subs.map((s, i) => ({ id: s.id, name: s.name.trim(), order: i })).filter(s => s.name);
+      // Las fotos de sub-álbumes eliminados pasan a "Sin sub-álbum".
+      const removed = (set.subalbums || []).map(s => s.id).filter(id => !clean.some(c => c.id === id));
+      for (const sid of removed) {
+        const ps = await getDocs(query(collection(db, 'photos'), where('eventId', '==', ev.id), where('photographerUid', '==', S.user.uid), where('subalbumId', '==', sid)));
+        for (let i = 0; i < ps.docs.length; i += 400) {
+          const b = writeBatch(db);
+          ps.docs.slice(i, i + 400).forEach(d => b.update(d.ref, { subalbumId: '' }));
+          await b.commit();
+        }
+      }
       await updateDoc(doc(db, 'events', ev.id, 'sets', S.user.uid), {
         price: Math.round(Number($('#st-price').value) || 0),
         packs: packs.get(),
