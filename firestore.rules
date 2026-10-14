@@ -1,0 +1,125 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- helpers ----------
+    function signedIn() { return request.auth != null; }
+    function uid() { return request.auth.uid; }
+    function isSuper() {
+      return signedIn()
+        && request.auth.token.email == 'lautarom87@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
+    function userPath(id) { return /databases/$(database)/documents/users/$(id); }
+    function isApproved() {
+      return signedIn() && exists(userPath(uid())) && get(userPath(uid())).data.status == 'approved';
+    }
+    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+    function slugOwnedAfter(id) {
+      return getAfter(/databases/$(database)/documents/slugs/$(request.resource.data.slug)).data.uid == id;
+    }
+    function eventAfter(eid) { return getAfter(/databases/$(database)/documents/events/$(eid)).data; }
+
+    // ---------- configuración y etiquetas ----------
+    match /settings/{id} {
+      allow read: if true;
+      allow write: if isSuper();
+    }
+    match /tagTypes/{id} {
+      allow read: if true;
+      allow write: if isSuper();
+    }
+    match /tags/{id} {
+      allow read: if true;
+      allow write: if isSuper();
+    }
+
+    // ---------- slugs únicos de fotógrafos ----------
+    match /slugs/{slug} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.uid == uid()
+        && request.resource.data.keys().hasOnly(['uid'])
+        && slug.matches('^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$');
+      allow delete: if signedIn() && (resource.data.uid == uid() || isSuper());
+    }
+
+    // ---------- usuarios (perfil público si está aprobado) ----------
+    match /users/{userId} {
+      allow read: if (signedIn() && uid() == userId) || isSuper() || resource.data.status == 'approved';
+      allow create: if signedIn() && uid() == userId && slugOwnedAfter(userId) && (
+          (request.resource.data.role == 'photographer'
+            && request.resource.data.status == 'pending'
+            && request.resource.data.mpConnected == false)
+          || (isSuper() && request.resource.data.role == 'superadmin'));
+      allow update: if isSuper() || (signedIn() && uid() == userId
+          && !changed().hasAny(['role', 'status', 'mpConnected', 'mpUserId', 'createdAt'])
+          && (!changed().hasAny(['slug']) || slugOwnedAfter(userId)));
+      allow delete: if isSuper();
+    }
+
+    // Datos privados del usuario (email). Nunca públicos.
+    match /userPrivate/{userId} {
+      allow read, write: if (signedIn() && uid() == userId) || isSuper();
+    }
+
+    // ---------- eventos ----------
+    match /events/{eid} {
+      allow read: if resource.data.status == 'published'
+        || isSuper()
+        || (signedIn() && uid() in resource.data.photographerUids)
+        || (signedIn() && resource.data.createdBy == uid())
+        || (resource.data.openToJoin == true && isApproved());
+
+      allow create: if (isSuper() && request.resource.data.kind == 'general')
+        || (isApproved()
+            && request.resource.data.kind == 'own'
+            && request.resource.data.createdBy == uid()
+            && request.resource.data.photographerUids == [uid()]);
+
+      allow update: if isSuper()
+        // el creador de un evento propio edita sus datos (no la membresía)
+        || (isApproved() && resource.data.kind == 'own' && resource.data.createdBy == uid()
+            && !changed().hasAny(['createdBy', 'kind', 'createdAt', 'photographerUids']))
+        // sumarse a un evento abierto
+        || (isApproved() && resource.data.openToJoin == true
+            && changed().hasOnly(['photographerUids'])
+            && !(uid() in resource.data.photographerUids)
+            && request.resource.data.photographerUids.hasAll(resource.data.photographerUids)
+            && request.resource.data.photographerUids.hasAll([uid()])
+            && request.resource.data.photographerUids.size() == resource.data.photographerUids.size() + 1)
+        // salir de un evento (no el creador)
+        || (signedIn() && resource.data.createdBy != uid()
+            && changed().hasOnly(['photographerUids'])
+            && uid() in resource.data.photographerUids
+            && resource.data.photographerUids.hasAll(request.resource.data.photographerUids)
+            && !(uid() in request.resource.data.photographerUids)
+            && request.resource.data.photographerUids.size() == resource.data.photographerUids.size() - 1);
+
+      allow delete: if isSuper()
+        || (isApproved() && resource.data.kind == 'own' && resource.data.createdBy == uid()
+            && resource.data.photographerUids == [uid()]);
+
+      // Set de cada fotógrafo dentro del evento (id = uid del fotógrafo)
+      match /sets/{pid} {
+        allow read: if true;
+        allow create: if isApproved() && uid() == pid
+          && uid() in eventAfter(eid).photographerUids
+          && !request.resource.data.keys().hasAny(['expiresAt', 'extendedUntil', 'originalsDeleted']);
+        allow update: if isSuper() || (isApproved() && uid() == pid
+          && !changed().hasAny(['expiresAt', 'extendedUntil', 'originalsDeleted']));
+        allow delete: if isSuper() || (signedIn() && uid() == pid && resource.data.photoCount == 0);
+      }
+    }
+
+    // ---------- órdenes y extensiones: solo las escribe el Worker ----------
+    match /orders/{id} {
+      allow read: if isSuper() || (signedIn() && resource.data.photographerUid == uid());
+      allow write: if false;
+    }
+    match /extensions/{id} {
+      allow read: if isSuper() || (signedIn() && resource.data.photographerUid == uid());
+      allow write: if false;
+    }
+  }
+}

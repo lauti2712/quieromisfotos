@@ -1,0 +1,29 @@
+// Inicialización de Firebase y re-export del SDK modular (CDN, sin build step).
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
+import { getFirestore, connectFirestoreEmulator } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+import { getAuth, connectAuthEmulator } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
+
+export * from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+export * from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
+
+const firebaseConfig = {
+  apiKey: 'AIzaSyD8-421zYevgPvfuS9mvF_6LYE3GdALzLA',
+  authDomain: 'quieromisfotos-71629.firebaseapp.com',
+  projectId: 'quieromisfotos-71629',
+  storageBucket: 'quieromisfotos-71629.firebasestorage.app',
+  messagingSenderId: '566210366600',
+  appId: '1:566210366600:web:0f11be04fce5a0e66ae33d',
+};
+
+export const app = initializeApp(firebaseConfig);
+export const db = getFirestore(app);
+export const auth = getAuth(app);
+
+// Desarrollo: http://localhost:PORT/?emu usa los emuladores locales (firebase emulators:start).
+export const EMULATOR = location.hostname === 'localhost' && new URLSearchParams(location.search).has('emu');
+if (EMULATOR) {
+  connectFirestoreEmulator(db, '127.0.0.1', 8085);
+  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+}
+
+export const SUPERADMIN_EMAIL = 'lautarom87@gmail.com';

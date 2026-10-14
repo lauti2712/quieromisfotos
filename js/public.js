@@ -1,0 +1,208 @@
+// Sitio público: inicio con filtros, página de evento y perfil de fotógrafo.
+import {
+  db, collection, doc, getDoc, getDocs, query, where, orderBy, limit, startAfter,
+} from './fb.js';
+import {
+  $, esc, fmtDate, parseHash, queryWords, avatarHtml, coverHtml, SOCIALS, toast, errMsg,
+} from './util.js';
+import { loadTaxonomy, tagPills } from './data.js';
+
+const app = $('#app');
+const PAGE = 24;
+
+window.addEventListener('hashchange', route);
+route();
+
+function route() {
+  const { parts } = parseHash();
+  window.scrollTo(0, 0);
+  if (parts[0] === 'evento' && parts[1]) return renderEvent(parts[1]);
+  if (parts[0] === 'f' && parts[1]) return renderProfile(parts[1]);
+  return renderHome();
+}
+
+// ---------------------------------------------------------------- inicio
+const filters = { q: '', from: '', to: '', tags: {} }; // tags: { typeId: tagId }
+let cursor = null;
+let loading = false;
+
+async function renderHome() {
+  const tax = await loadTaxonomy();
+  app.innerHTML = `
+    <section style="margin-bottom:18px">
+      <h1>Encontrá tus fotos</h1>
+      <p class="muted">Buscá el evento donde participaste y comprá tus fotos en alta calidad.</p>
+    </section>
+    <div class="filters">
+      <input class="search" type="text" id="f-q" placeholder="Buscar evento por nombre o lugar…" value="${esc(filters.q)}">
+      ${tax.types.map(t => `
+        <select data-type="${t.id}">
+          <option value="">${esc(t.name)}: todos</option>
+          ${tax.tags.filter(g => g.typeId === t.id).map(g =>
+            `<option value="${g.id}" ${filters.tags[t.id] === g.id ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}
+        </select>`).join('')}
+      <div class="dates">
+        <input type="date" id="f-from" value="${filters.from}" title="Desde" aria-label="Desde">
+        <input type="date" id="f-to" value="${filters.to}" title="Hasta" aria-label="Hasta">
+      </div>
+    </div>
+    <div id="results" class="events-grid"></div>
+    <div id="more" class="row" style="justify-content:center;margin-top:20px"></div>`;
+
+  const reload = () => { cursor = null; $('#results').innerHTML = ''; loadEvents(tax); };
+  let t;
+  $('#f-q').addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => { filters.q = e.target.value; reload(); }, 350); });
+  $('#f-from').addEventListener('change', e => { filters.from = e.target.value; reload(); });
+  $('#f-to').addEventListener('change', e => { filters.to = e.target.value; reload(); });
+  app.querySelectorAll('select[data-type]').forEach(s => s.addEventListener('change', () => {
+    if (s.value) filters.tags[s.dataset.type] = s.value; else delete filters.tags[s.dataset.type];
+    reload();
+  }));
+  reload();
+}
+
+async function loadEvents(tax) {
+  if (loading) return;
+  loading = true;
+  const results = $('#results');
+  const more = $('#more');
+  more.innerHTML = '<div class="spinner" style="margin:10px auto"></div>';
+
+  const words = queryWords(filters.q);
+  const tagIds = Object.values(filters.tags);
+  const cons = [where('status', '==', 'published')];
+  // Firestore admite un solo array-contains por consulta: el resto se filtra en el cliente.
+  if (words.length) cons.push(where('searchTokens', 'array-contains', words[0]));
+  else if (tagIds.length) cons.push(where('tagIds', 'array-contains', tagIds[0]));
+  if (filters.from) cons.push(where('date', '>=', filters.from));
+  if (filters.to) cons.push(where('date', '<=', filters.to));
+  cons.push(orderBy('date', 'desc'));
+  if (cursor) cons.push(startAfter(cursor));
+  cons.push(limit(PAGE));
+
+  try {
+    const snap = await getDocs(query(collection(db, 'events'), ...cons));
+    cursor = snap.docs[snap.docs.length - 1] || cursor;
+    const evs = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(ev =>
+      tagIds.every(id => (ev.tagIds || []).includes(id)) &&
+      words.every(w => (ev.searchTokens || []).includes(w)));
+    results.insertAdjacentHTML('beforeend', evs.map(ev => eventCard(ev, tax)).join(''));
+    if (!results.children.length && snap.docs.length < PAGE) {
+      results.innerHTML = `<div class="empty" style="grid-column:1/-1">No encontramos eventos con esos filtros.</div>`;
+    }
+    more.innerHTML = snap.docs.length === PAGE ? '<button class="btn" id="load-more">Ver más eventos</button>' : '';
+    $('#load-more')?.addEventListener('click', () => loadEvents(tax));
+  } catch (e) {
+    more.innerHTML = '';
+    results.innerHTML = `<div class="empty" style="grid-column:1/-1">No se pudieron cargar los eventos.<br><span class="small">${esc(errMsg(e))}</span></div>`;
+  } finally {
+    loading = false;
+  }
+}
+
+function eventCard(ev, tax) {
+  const tags = tagPills(ev.tagIds, tax, 3);
+  return `
+    <a class="event-card" href="#/evento/${ev.id}">
+      ${coverHtml(ev)}
+      <div class="body">
+        <span class="date">${esc(fmtDate(ev.date))}</span>
+        <span class="name">${esc(ev.name)}</span>
+        ${ev.location ? `<span class="muted small">📍 ${esc(ev.location)}</span>` : ''}
+        ${tags.length ? `<div class="pills">${tags.map(t => `<span class="pill">${esc(t.name)}</span>`).join('')}</div>` : ''}
+      </div>
+    </a>`;
+}
+
+// ---------------------------------------------------------------- evento
+async function renderEvent(id) {
+  app.innerHTML = '<div class="spinner"></div>';
+  let ev;
+  try {
+    const snap = await getDoc(doc(db, 'events', id));
+    if (!snap.exists()) throw new Error('not-found');
+    ev = { id, ...snap.data() };
+  } catch {
+    app.innerHTML = `<div class="empty"><h2>Evento no encontrado</h2><p>Puede que todavía no esté publicado.</p><a class="btn" href="#/">Volver al inicio</a></div>`;
+    return;
+  }
+  const [tax, photographers] = await Promise.all([loadTaxonomy(), loadUsers(ev.photographerUids || [])]);
+  const tags = tagPills(ev.tagIds, tax);
+  document.title = `${ev.name} · Quiero Mis Fotos`;
+
+  app.innerHTML = `
+    <a href="#/" class="muted small" style="text-decoration:none">← Todos los eventos</a>
+    <div class="event-hero" style="margin-top:10px">
+      <div class="cover">
+        ${ev.coverUrl ? `<img src="${esc(ev.coverUrl)}" alt="">` : ''}
+        <div class="meta">
+          <h1>${esc(ev.name)}</h1>
+          <div>${esc(fmtDate(ev.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}${ev.location ? ` · 📍 ${esc(ev.location)}` : ''}</div>
+        </div>
+      </div>
+    </div>
+    ${tags.length ? `<div class="pills" style="margin-bottom:18px">${tags.map(t => `<span class="pill accent">${esc(t.name)}</span>`).join('')}</div>` : ''}
+    <section class="card">
+      <h2>Fotógrafos</h2>
+      ${photographers.length
+        ? `<div class="people">${photographers.map(p => `<a class="person" href="#/f/${esc(p.slug)}">${avatarHtml(p)}<span><strong>${esc(p.displayName)}</strong>${p.zone ? `<br><span class="muted small">${esc(p.zone)}</span>` : ''}</span></a>`).join('')}</div>`
+        : '<p class="muted">Todavía no hay fotógrafos en este evento.</p>'}
+    </section>
+    <section class="card">
+      <h2>Fotos</h2>
+      <div class="empty">📷 Las fotos de este evento van a estar disponibles muy pronto.</div>
+    </section>`;
+}
+
+async function loadUsers(uids) {
+  const out = await Promise.all(uids.map(uid =>
+    getDoc(doc(db, 'users', uid)).then(s => (s.exists() ? { uid, ...s.data() } : null)).catch(() => null)));
+  return out.filter(u => u && u.status === 'approved');
+}
+
+// ---------------------------------------------------------------- perfil
+async function renderProfile(slug) {
+  app.innerHTML = '<div class="spinner"></div>';
+  let user;
+  try {
+    const s = await getDoc(doc(db, 'slugs', slug));
+    if (!s.exists()) throw new Error('nf');
+    const u = await getDoc(doc(db, 'users', s.data().uid));
+    if (!u.exists()) throw new Error('nf');
+    user = { uid: u.id, ...u.data() };
+  } catch {
+    app.innerHTML = `<div class="empty"><h2>Fotógrafo no encontrado</h2><a class="btn" href="#/">Volver al inicio</a></div>`;
+    return;
+  }
+  document.title = `${user.displayName} · Quiero Mis Fotos`;
+  const socials = SOCIALS.filter(s => user.socials?.[s.key]);
+  app.innerHTML = `
+    <div class="profile-head">
+      ${avatarHtml(user, 'lg')}
+      <div style="flex:1;min-width:220px">
+        <h1 style="margin-bottom:4px">${esc(user.displayName)}</h1>
+        ${user.zone ? `<div class="muted">📍 ${esc(user.zone)}</div>` : ''}
+        ${user.bio ? `<p style="margin-top:8px;white-space:pre-line">${esc(user.bio)}</p>` : ''}
+        ${socials.length ? `<div class="row">${socials.map(s => `<a class="btn sm" target="_blank" rel="noopener" href="${esc(s.url(user.socials[s.key]))}">${s.label}</a>`).join('')}</div>` : ''}
+      </div>
+    </div>
+    <h2>Eventos</h2>
+    <div id="p-events" class="events-grid"><div class="spinner"></div></div>`;
+
+  try {
+    const [tax, snap] = await Promise.all([
+      loadTaxonomy(),
+      getDocs(query(collection(db, 'events'),
+        where('photographerUids', 'array-contains', user.uid),
+        where('status', '==', 'published'),
+        orderBy('date', 'desc'), limit(60))),
+    ]);
+    const evs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    $('#p-events').innerHTML = evs.length
+      ? evs.map(ev => eventCard(ev, tax)).join('')
+      : '<div class="empty" style="grid-column:1/-1">Todavía no publicó eventos.</div>';
+  } catch (e) {
+    $('#p-events').innerHTML = '';
+    toast(errMsg(e), 'error');
+  }
+}

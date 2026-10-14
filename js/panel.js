@@ -1,0 +1,962 @@
+// Panel de fotógrafos y superadmin (secciones según rol).
+import {
+  db, auth, SUPERADMIN_EMAIL,
+  collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, writeBatch,
+  query, where, orderBy, limit, serverTimestamp, arrayUnion, arrayRemove,
+  onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword,
+  createUserWithEmailAndPassword, sendPasswordResetEmail, signOut, updateProfile,
+} from './fb.js';
+import {
+  $, $$, esc, slugify, SLUG_RE, searchTokens, fmtMoney, fmtDate, fmtTs, todayIso, parseHash,
+  toast, errMsg, avatarHtml, coverHtml, SOCIALS, newId, normalize,
+} from './util.js';
+import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, tagPills } from './data.js';
+import { drawWatermark, drawSampleScene, DEFAULT_WATERMARK } from './watermark.js';
+
+const root = $('#root');
+const S = { user: null, profile: null, isSuper: false, settings: { ...DEFAULT_SETTINGS }, tax: null };
+
+const isApproved = () => S.profile?.status === 'approved';
+
+// ================================================================ auth
+onAuthStateChanged(auth, async user => {
+  S.user = user;
+  $('#logout').style.display = user ? '' : 'none';
+  $('#who').textContent = user ? (user.displayName || user.email) : '';
+  if (!user) { S.profile = null; return renderLogin(); }
+  S.isSuper = user.email === SUPERADMIN_EMAIL && user.emailVerified;
+  root.innerHTML = '<div class="spinner"></div>';
+  try {
+    const snap = await getDoc(doc(db, 'users', user.uid));
+    S.profile = snap.exists() ? snap.data() : null;
+    S.settings = await loadSettings();
+    if (S.isSuper) await seedPlatform();
+    S.tax = await loadTaxonomy(true);
+  } catch (e) {
+    root.innerHTML = `<div class="container"><div class="notice danger">${esc(errMsg(e))}</div></div>`;
+    return;
+  }
+  if (!S.profile) return renderOnboarding();
+  updateRolePill();
+  renderShell();
+});
+
+$('#logout').addEventListener('click', () => signOut(auth));
+
+function updateRolePill() {
+  const p = $('#role-pill');
+  const st = S.profile?.status;
+  if (S.isSuper) { p.textContent = 'Superadmin'; p.className = 'pill accent'; }
+  else if (st === 'approved') { p.textContent = 'Fotógrafo'; p.className = 'pill ok'; }
+  else if (st === 'pending') { p.textContent = 'Pendiente'; p.className = 'pill warn'; }
+  else { p.textContent = 'Suspendido'; p.className = 'pill danger'; }
+  p.style.display = '';
+}
+
+function renderLogin() {
+  $('#role-pill').style.display = 'none';
+  let mode = 'login';
+  root.innerHTML = `
+    <div class="container"><div class="auth-box card">
+      <h1 id="a-title">Ingresar</h1>
+      <p class="muted" id="a-sub">Panel para fotógrafos de Quiero Mis Fotos.</p>
+      <div class="stack">
+        <button class="btn block" id="g-login">
+          <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>
+          Continuar con Google
+        </button>
+        <div class="divider">o con email</div>
+        <form id="e-form" class="stack">
+          <label class="field">Email<input type="email" id="e-mail" required autocomplete="email"></label>
+          <label class="field">Contraseña<input type="password" id="e-pass" required minlength="6" autocomplete="current-password"></label>
+          <button class="btn primary block" type="submit" id="e-submit">Ingresar</button>
+        </form>
+        <div class="row" style="justify-content:space-between">
+          <button class="btn ghost sm" id="toggle-mode">Crear cuenta nueva</button>
+          <button class="btn ghost sm" id="reset">Olvidé mi contraseña</button>
+        </div>
+      </div>
+    </div></div>`;
+
+  $('#g-login').onclick = async () => {
+    try { await signInWithPopup(auth, new GoogleAuthProvider()); } catch (e) { toast(errMsg(e), 'error'); }
+  };
+  $('#toggle-mode').onclick = () => {
+    mode = mode === 'login' ? 'signup' : 'login';
+    $('#a-title').textContent = mode === 'login' ? 'Ingresar' : 'Crear cuenta';
+    $('#a-sub').textContent = mode === 'login' ? 'Panel para fotógrafos de Quiero Mis Fotos.' : 'Registrate como fotógrafo. Un administrador aprueba tu cuenta.';
+    $('#e-submit').textContent = mode === 'login' ? 'Ingresar' : 'Crear cuenta';
+    $('#toggle-mode').textContent = mode === 'login' ? 'Crear cuenta nueva' : 'Ya tengo cuenta';
+    $('#e-pass').autocomplete = mode === 'login' ? 'current-password' : 'new-password';
+  };
+  $('#e-form').onsubmit = async e => {
+    e.preventDefault();
+    const email = $('#e-mail').value.trim(), pass = $('#e-pass').value;
+    try {
+      if (mode === 'login') await signInWithEmailAndPassword(auth, email, pass);
+      else await createUserWithEmailAndPassword(auth, email, pass);
+    } catch (err) { toast(errMsg(err), 'error'); }
+  };
+  $('#reset').onclick = async () => {
+    const email = $('#e-mail').value.trim();
+    if (!email) return toast('Escribí tu email arriba y volvé a tocar.', 'error');
+    try { await sendPasswordResetEmail(auth, email); toast('Te mandamos un mail para restablecer la contraseña.'); }
+    catch (e) { toast(errMsg(e), 'error'); }
+  };
+}
+
+// ================================================================ alta
+function renderOnboarding() {
+  const u = S.user;
+  const name = u.displayName || '';
+  root.innerHTML = `
+    <div class="container"><div class="auth-box card" style="max-width:520px">
+      <h1>${S.isSuper ? 'Configurá tu perfil' : 'Registro de fotógrafo'}</h1>
+      <p class="muted">${S.isSuper ? 'Sos el superadmin de la plataforma.' : 'Completá tus datos. Después un administrador revisa y aprueba tu cuenta.'}</p>
+      <form id="ob" class="stack">
+        <label class="field">Nombre público<input type="text" id="ob-name" required maxlength="60" value="${esc(name)}" placeholder="Ej: Juan Pérez Fotografía"></label>
+        <label class="field">Dirección de tu perfil
+          <input type="text" id="ob-slug" required maxlength="40" value="${esc(slugify(name))}">
+          <span class="hint" id="ob-slug-hint">quieromisfotos/#/f/<strong>${esc(slugify(name) || '...')}</strong></span>
+        </label>
+        <label class="field">Zona<input type="text" id="ob-zone" maxlength="60" placeholder="Ej: Rosario, Santa Fe"></label>
+        <button class="btn primary" type="submit">Crear perfil</button>
+      </form>
+    </div></div>`;
+  let slugTouched = false;
+  $('#ob-name').oninput = e => { if (!slugTouched) { $('#ob-slug').value = slugify(e.target.value); slugHint(); } };
+  $('#ob-slug').oninput = () => { slugTouched = true; slugHint(); };
+  const slugHint = () => { $('#ob-slug-hint strong').textContent = $('#ob-slug').value || '...'; };
+
+  $('#ob').onsubmit = async e => {
+    e.preventDefault();
+    const displayName = $('#ob-name').value.trim();
+    const slug = slugify($('#ob-slug').value);
+    if (!SLUG_RE.test(slug)) return toast('La dirección debe tener entre 3 y 40 letras, números o guiones.', 'error');
+    try {
+      const taken = await getDoc(doc(db, 'slugs', slug));
+      if (taken.exists() && taken.data().uid !== u.uid) return toast('Esa dirección ya está en uso. Probá otra.', 'error');
+      const profile = {
+        role: S.isSuper ? 'superadmin' : 'photographer',
+        status: S.isSuper ? 'approved' : 'pending',
+        displayName, slug, zone: $('#ob-zone').value.trim(),
+        avatarUrl: u.photoURL || '', bio: '', socials: {},
+        mpConnected: false, mpUserId: null,
+        defaults: { price: 0, packs: [], feeMode: 'absorb' },
+        watermark: { ...DEFAULT_WATERMARK, text: displayName },
+        createdAt: serverTimestamp(),
+      };
+      const b = writeBatch(db);
+      if (!taken.exists()) b.set(doc(db, 'slugs', slug), { uid: u.uid });
+      b.set(doc(db, 'users', u.uid), profile);
+      b.set(doc(db, 'userPrivate', u.uid), { email: u.email || '', createdAt: serverTimestamp() });
+      await b.commit();
+      if (!u.displayName) updateProfile(u, { displayName }).catch(() => {});
+      S.profile = (await getDoc(doc(db, 'users', u.uid))).data();
+      updateRolePill();
+      location.hash = S.isSuper ? '#/admin/fotografos' : '#/inicio';
+      renderShell();
+    } catch (err) { toast(errMsg(err), 'error'); }
+  };
+}
+
+// Primer ingreso del superadmin: settings por defecto + tipos de etiqueta iniciales.
+async function seedPlatform() {
+  const ps = await getDoc(doc(db, 'settings', 'platform'));
+  if (!ps.exists()) await setDoc(doc(db, 'settings', 'platform'), { ...DEFAULT_SETTINGS, updatedAt: serverTimestamp() });
+  const tt = await getDocs(query(collection(db, 'tagTypes'), limit(1)));
+  if (tt.empty) {
+    const b = writeBatch(db);
+    INITIAL_TAG_TYPES.forEach((name, i) => b.set(doc(collection(db, 'tagTypes')), { name, order: i }));
+    await b.commit();
+    await rebuildTaxonomy();
+  }
+}
+
+// ================================================================ shell + router
+function navItems() {
+  if (S.isSuper) return [
+    { group: 'Administración' },
+    { href: '#/admin/fotografos', label: '👥 Fotógrafos' },
+    { href: '#/admin/eventos', label: '🏟️ Eventos' },
+    { href: '#/admin/etiquetas', label: '🏷️ Etiquetas' },
+    { href: '#/admin/config', label: '⚙️ Plataforma' },
+    { group: 'Mi cuenta' },
+    { href: '#/perfil', label: '👤 Perfil' },
+  ];
+  return [
+    { href: '#/inicio', label: '🏠 Inicio' },
+    { href: '#/eventos', label: '🏟️ Mis eventos', need: true },
+    { href: '#/ventas', label: '💰 Ventas', need: true },
+    { group: 'Cuenta' },
+    { href: '#/perfil', label: '👤 Perfil' },
+    { href: '#/config', label: '⚙️ Precios y marca' },
+    { href: '#/mp', label: '💳 Mercado Pago' },
+  ];
+}
+
+function renderShell() {
+  if (S.profile.status === 'suspended' && !S.isSuper) {
+    root.innerHTML = `<div class="container"><div class="auth-box card"><h1>Cuenta suspendida</h1><p class="muted">Tu cuenta de fotógrafo está suspendida. Si creés que es un error, contactá al administrador.</p></div></div>`;
+    return;
+  }
+  root.innerHTML = `<div class="panel"><nav class="sidenav" id="nav"></nav><main id="view"></main></div>`;
+  window.onhashchange = route;
+  route();
+}
+
+function route() {
+  const { parts } = parseHash();
+  let key = parts.join('/');
+  if (!key) key = S.isSuper ? 'admin/fotografos' : 'inicio';
+  const nav = $('#nav');
+  if (!nav) return;
+  nav.innerHTML = navItems().map(i => i.group
+    ? `<div class="group">${i.group}</div>`
+    : (i.need && !isApproved()) ? '' : `<a href="${i.href}" class="${('#/' + key).startsWith(i.href) ? 'on' : ''}">${i.label}</a>`).join('');
+  const view = $('#view');
+  view.innerHTML = '<div class="spinner"></div>';
+  const [a, b] = parts;
+  const run = (fn) => Promise.resolve(fn()).catch(e => { console.error(e); view.innerHTML = `<div class="notice danger">${esc(errMsg(e))}</div>`; });
+
+  if (S.isSuper && a === 'admin') {
+    if (b === 'eventos') return run(viewAdminEvents);
+    if (b === 'etiquetas') return run(viewAdminTags);
+    if (b === 'config') return run(viewAdminConfig);
+    return run(viewAdminPhotographers);
+  }
+  if (a === 'perfil') return run(viewProfile);
+  if (a === 'config' && !S.isSuper) return run(viewConfig);
+  if (a === 'mp' && !S.isSuper) return run(viewMp);
+  if (a === 'evento' && b && (isApproved() || S.isSuper)) return run(() => viewEvent(b));
+  if (a === 'eventos' && isApproved() && !S.isSuper) return run(viewMyEvents);
+  if (a === 'ventas' && isApproved()) return run(viewSales);
+  if (S.isSuper) return run(viewAdminPhotographers);
+  return run(viewHome);
+}
+
+// ================================================================ fotógrafo: inicio
+function viewHome() {
+  const p = S.profile;
+  const checks = [
+    { ok: !!(p.displayName && p.zone && p.bio), label: 'Completar perfil (nombre, zona y bio)', href: '#/perfil' },
+    { ok: (p.defaults?.price || 0) > 0, label: 'Definir precio por foto', href: '#/config' },
+    { ok: !!p.mpConnected, label: 'Vincular Mercado Pago (obligatorio para vender)', href: '#/mp' },
+  ];
+  $('#view').innerHTML = `
+    <h1>Hola, ${esc(p.displayName)}</h1>
+    ${p.status === 'pending' ? `<div class="notice warn"><strong>Tu cuenta está pendiente de aprobación.</strong><br>Mientras tanto podés completar tu perfil y configurar precios y marca de agua.</div>` : ''}
+    <div class="card">
+      <h2>Para empezar a vender</h2>
+      ${checks.map(c => `<div class="item-row"><span>${c.ok ? '✅' : '⬜'}</span><span class="grow">${c.label}</span><a class="btn sm" href="${c.href}">${c.ok ? 'Ver' : 'Completar'}</a></div>`).join('')}
+    </div>
+    ${isApproved() ? `<div class="card"><h2>Eventos</h2><p class="muted">Creá un evento nuevo o sumate a uno existente para subir tus fotos.</p><a class="btn primary" href="#/eventos">Ir a mis eventos</a></div>` : ''}
+    <div class="card"><h2>Tu perfil público</h2><p class="muted">Así te ven los compradores.</p><a class="btn" target="_blank" href="index.html#/f/${esc(p.slug)}">Ver mi perfil</a></div>`;
+}
+
+// ================================================================ perfil
+function viewProfile() {
+  const p = S.profile;
+  $('#view').innerHTML = `
+    <h1>Perfil</h1>
+    <form class="card stack" id="pf">
+      <div class="row">${avatarHtml(p, 'lg')}
+        <div class="stack" style="flex:1;min-width:220px">
+          <label class="field">URL de la foto de perfil<input type="url" id="pf-avatar" value="${esc(p.avatarUrl)}" placeholder="https://…"><span class="hint">La subida de imagen llega con la carga de fotos.</span></label>
+          ${S.user.photoURL ? `<button type="button" class="btn sm" id="pf-google" style="justify-self:start">Usar mi foto de Google</button>` : ''}
+        </div>
+      </div>
+      <div class="grid2">
+        <label class="field">Nombre público<input type="text" id="pf-name" required maxlength="60" value="${esc(p.displayName)}"></label>
+        <label class="field">Dirección del perfil<input type="text" id="pf-slug" required maxlength="40" value="${esc(p.slug)}"><span class="hint">#/f/<span id="pf-slug-prev">${esc(p.slug)}</span></span></label>
+      </div>
+      <label class="field">Zona<input type="text" id="pf-zone" maxlength="60" value="${esc(p.zone)}" placeholder="Ciudad, provincia"></label>
+      <label class="field">Bio<textarea id="pf-bio" maxlength="600" placeholder="Contá qué deportes cubrís, tu experiencia…">${esc(p.bio)}</textarea></label>
+      <h3 style="margin-top:6px">Redes</h3>
+      <div class="grid2">
+        ${SOCIALS.map(s => `<label class="field">${s.label}<input type="text" data-social="${s.key}" value="${esc(p.socials?.[s.key] || '')}" placeholder="${s.key === 'instagram' ? '@usuario' : s.key === 'whatsapp' ? '54 9 341 …' : ''}"></label>`).join('')}
+      </div>
+      <div class="row end"><a class="btn" target="_blank" href="index.html#/f/${esc(p.slug)}">Ver perfil público</a><button class="btn primary" type="submit">Guardar</button></div>
+    </form>`;
+  $('#pf-google')?.addEventListener('click', () => { $('#pf-avatar').value = S.user.photoURL; });
+  $('#pf-slug').oninput = e => { $('#pf-slug-prev').textContent = slugify(e.target.value); };
+  $('#pf').onsubmit = async e => {
+    e.preventDefault();
+    const slug = slugify($('#pf-slug').value);
+    if (!SLUG_RE.test(slug)) return toast('La dirección debe tener entre 3 y 40 letras, números o guiones.', 'error');
+    const socials = {};
+    $$('[data-social]').forEach(i => { if (i.value.trim()) socials[i.dataset.social] = i.value.trim(); });
+    const upd = {
+      displayName: $('#pf-name').value.trim(), slug, zone: $('#pf-zone').value.trim(),
+      bio: $('#pf-bio').value.trim(), avatarUrl: $('#pf-avatar').value.trim(), socials,
+    };
+    try {
+      const b = writeBatch(db);
+      if (slug !== p.slug) {
+        const taken = await getDoc(doc(db, 'slugs', slug));
+        if (taken.exists() && taken.data().uid !== S.user.uid) return toast('Esa dirección ya está en uso.', 'error');
+        if (!taken.exists()) b.set(doc(db, 'slugs', slug), { uid: S.user.uid });
+        b.delete(doc(db, 'slugs', p.slug));
+      }
+      b.update(doc(db, 'users', S.user.uid), upd);
+      await b.commit();
+      Object.assign(S.profile, upd);
+      toast('Perfil guardado');
+      viewProfile();
+    } catch (err) { toast(errMsg(err), 'error'); }
+  };
+}
+
+// ================================================================ precios y marca
+function packsEditor(el, packs) {
+  let rows = (packs || []).map(p => ({ ...p }));
+  const hint = r => (r.qty > 1 && r.price > 0 ? `${fmtMoney(r.price / r.qty)} c/u` : '&nbsp;');
+  const draw = () => {
+    el.innerHTML = `
+      ${rows.length ? '' : '<p class="muted small" style="margin:0">Sin packs: cada foto se cobra al precio individual.</p>'}
+      ${rows.map((r, i) => `
+        <div class="pack-row">
+          <label class="field">Cantidad de fotos<input type="number" min="2" step="1" data-i="${i}" data-k="qty" value="${r.qty || ''}"></label>
+          <label class="field">Precio del pack<input type="number" min="1" step="1" data-i="${i}" data-k="price" value="${r.price || ''}">
+            <span class="hint" data-hint="${i}">${hint(r)}</span></label>
+          <button type="button" class="btn sm danger" data-del="${i}" title="Quitar">✕</button>
+        </div>`).join('')}
+      <button type="button" class="btn sm" data-add style="justify-self:start">+ Agregar pack</button>`;
+    el.querySelectorAll('input').forEach(inp => inp.oninput = () => {
+      const r = rows[inp.dataset.i];
+      r[inp.dataset.k] = Number(inp.value);
+      el.querySelector(`[data-hint="${inp.dataset.i}"]`).innerHTML = hint(r);
+    });
+    el.querySelectorAll('[data-del]').forEach(btn => btn.onclick = () => { rows.splice(btn.dataset.del, 1); draw(); });
+    el.querySelector('[data-add]').onclick = () => { rows.push({ qty: (rows.at(-1)?.qty || 1) + 2, price: 0 }); draw(); };
+  };
+  el.classList.add('stack');
+  draw();
+  return {
+    get() {
+      const clean = rows.filter(r => r.qty || r.price).map(r => ({ qty: Math.round(r.qty), price: Math.round(r.price) }));
+      for (const r of clean) if (!(r.qty >= 2 && r.price > 0)) throw new Error('Cada pack necesita cantidad (2 o más) y precio.');
+      if (new Set(clean.map(r => r.qty)).size !== clean.length) throw new Error('Hay dos packs con la misma cantidad.');
+      return clean.sort((a, b) => a.qty - b.qty);
+    },
+  };
+}
+
+function feeModeHtml(name, value) {
+  const pct = S.settings.feePercent;
+  return `
+    <label class="check"><input type="radio" name="${name}" value="absorb" ${value !== 'buyer' ? 'checked' : ''}> Absorbo la comisión <span class="muted small">(el comprador paga el precio; se te descuenta ${pct}%)</span></label>
+    <label class="check"><input type="radio" name="${name}" value="buyer" ${value === 'buyer' ? 'checked' : ''}> La paga el comprador <span class="muted small">(se suma ${pct}% como "costo de servicio")</span></label>`;
+}
+
+function viewConfig() {
+  const p = S.profile;
+  const d = p.defaults || {};
+  const wm = { ...DEFAULT_WATERMARK, text: p.displayName, ...(p.watermark || {}) };
+  $('#view').innerHTML = `
+    <h1>Precios y marca de agua</h1>
+    <p class="muted">Estos valores se usan por defecto en cada evento nuevo. Después podés cambiarlos por evento.</p>
+    <form id="cf">
+      <div class="card stack">
+        <h2>Precios</h2>
+        <label class="field" style="max-width:240px">Precio por foto (ARS)<input type="number" min="0" step="1" id="cf-price" value="${d.price || ''}" required></label>
+        <h3>Packs por cantidad</h3>
+        <div id="cf-packs"></div>
+        <h3>Comisión de la plataforma (${S.settings.feePercent}%)</h3>
+        <div class="stack">${feeModeHtml('cf-fee', d.feeMode)}</div>
+      </div>
+      <div class="card stack">
+        <h2>Marca de agua</h2>
+        <div class="grid2">
+          <div class="stack">
+            <label class="field">Tipo
+              <select id="wm-type"><option value="text">Texto</option><option value="logo" disabled>Logo (próximamente)</option></select></label>
+            <label class="field">Texto<input type="text" id="wm-text" maxlength="40" value="${esc(wm.text)}"></label>
+            <label class="field">Posición
+              <select id="wm-pos">
+                <option value="both" ${wm.position === 'both' ? 'selected' : ''}>Mosaico + central</option>
+                <option value="tiled" ${wm.position === 'tiled' ? 'selected' : ''}>Solo mosaico</option>
+                <option value="center" ${wm.position === 'center' ? 'selected' : ''}>Solo central</option>
+              </select></label>
+            <label class="field">Opacidad <span class="hint" id="wm-op-v">${Math.round(wm.opacity * 100)}%</span>
+              <input type="range" id="wm-op" min="0.1" max="0.7" step="0.05" value="${wm.opacity}"></label>
+          </div>
+          <div><canvas class="wm-preview" id="wm-canvas" width="960" height="640"></canvas>
+            <p class="muted small">Vista previa. La marca se aplica a las muestras y miniaturas; el original se entrega sin marca.</p></div>
+        </div>
+      </div>
+      <div class="row end" style="margin-top:14px"><button class="btn primary" type="submit">Guardar</button></div>
+    </form>`;
+  const packs = packsEditor($('#cf-packs'), d.packs);
+  const readWm = () => ({ type: 'text', text: $('#wm-text').value.trim(), position: $('#wm-pos').value, opacity: Number($('#wm-op').value) });
+  const preview = () => {
+    const c = $('#wm-canvas'), ctx = c.getContext('2d');
+    drawSampleScene(ctx, c.width, c.height);
+    drawWatermark(ctx, c.width, c.height, readWm());
+    $('#wm-op-v').textContent = `${Math.round(Number($('#wm-op').value) * 100)}%`;
+  };
+  ['wm-text', 'wm-pos', 'wm-op'].forEach(id => $('#' + id).addEventListener('input', preview));
+  preview();
+  $('#cf').onsubmit = async e => {
+    e.preventDefault();
+    try {
+      const upd = {
+        defaults: { price: Math.round(Number($('#cf-price').value) || 0), packs: packs.get(), feeMode: $('input[name=cf-fee]:checked').value },
+        watermark: readWm(),
+      };
+      await updateDoc(doc(db, 'users', S.user.uid), upd);
+      Object.assign(S.profile, upd);
+      toast('Configuración guardada');
+    } catch (err) { toast(errMsg(err), 'error'); }
+  };
+}
+
+// ================================================================ Mercado Pago
+function viewMp() {
+  const p = S.profile;
+  $('#view').innerHTML = `
+    <h1>Mercado Pago</h1>
+    <div class="card stack">
+      <div class="row"><strong>Estado:</strong> ${p.mpConnected ? '<span class="pill ok">Vinculada</span>' : '<span class="pill warn">Sin vincular</span>'}</div>
+      <p class="muted">Los pagos de tus fotos se acreditan directamente en tu cuenta de Mercado Pago. La plataforma retiene automáticamente su comisión (${S.settings.feePercent}%). Vincular tu cuenta es obligatorio para vender.</p>
+      <div><button class="btn primary" disabled>Vincular Mercado Pago</button> <span class="muted small">Disponible próximamente.</span></div>
+    </div>`;
+}
+
+function viewSales() {
+  $('#view').innerHTML = `<h1>Ventas</h1><div class="card"><div class="empty">Todavía no hay ventas. Las ventas aparecen acá cuando se habiliten los pagos.</div></div>`;
+}
+
+// ================================================================ eventos (fotógrafo)
+async function viewMyEvents() {
+  const snap = await getDocs(query(collection(db, 'events'), where('photographerUids', 'array-contains', S.user.uid), orderBy('date', 'desc'), limit(200)));
+  const evs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  $('#view').innerHTML = `
+    <div class="row" style="justify-content:space-between;margin-bottom:14px">
+      <h1 style="margin:0">Mis eventos</h1>
+      <div class="row"><button class="btn" id="join">Sumarme a un evento</button><button class="btn primary" id="new">+ Crear evento</button></div>
+    </div>
+    ${evs.length ? `<div class="events-grid">${evs.map(ev => panelEventCard(ev)).join('')}</div>`
+      : `<div class="card"><div class="empty">Todavía no estás en ningún evento.<br>Creá uno nuevo o sumate a un evento general.</div></div>`}`;
+  $('#new').onclick = () => eventDialog(null);
+  $('#join').onclick = joinDialog;
+}
+
+function statusPill(ev) {
+  return ev.status === 'published' ? '<span class="pill ok">Publicado</span>' : '<span class="pill warn">Borrador</span>';
+}
+
+function panelEventCard(ev) {
+  const mine = ev.createdBy === S.user.uid && ev.kind === 'own';
+  return `
+    <a class="event-card" href="#/evento/${ev.id}">
+      ${coverHtml(ev, statusPill(ev))}
+      <div class="body">
+        <span class="date">${esc(fmtDate(ev.date))}</span>
+        <span class="name">${esc(ev.name)}</span>
+        <div class="pills">
+          ${ev.kind === 'general' ? '<span class="pill accent">Evento general</span>' : mine ? '<span class="pill">Creado por mí</span>' : '<span class="pill">Compartido</span>'}
+          <span class="pill">👥 ${(ev.photographerUids || []).length}</span>
+        </div>
+      </div>
+    </a>`;
+}
+
+async function joinDialog() {
+  const dlg = openDialog('Sumarme a un evento', `<input type="text" id="jq" placeholder="Buscar…"><div id="jl"><div class="spinner"></div></div>`, '');
+  try {
+    const snap = await getDocs(query(collection(db, 'events'), where('openToJoin', '==', true), orderBy('date', 'desc'), limit(200)));
+    const evs = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(ev => !(ev.photographerUids || []).includes(S.user.uid));
+    const draw = () => {
+      const q = normalize($('#jq', dlg).value);
+      const list = evs.filter(ev => !q || normalize(`${ev.name} ${ev.location}`).includes(q));
+      $('#jl', dlg).innerHTML = list.length ? list.map(ev => `
+        <div class="item-row">
+          <div class="grow"><strong>${esc(ev.name)}</strong><br><span class="muted small">${esc(fmtDate(ev.date))}${ev.location ? ' · ' + esc(ev.location) : ''}</span>
+            ${ev.kind === 'general' ? ' <span class="pill accent">General</span>' : ''}</div>
+          <button class="btn sm primary" data-join="${ev.id}">Sumarme</button>
+        </div>`).join('') : '<div class="empty">No hay eventos abiertos para sumarse.</div>';
+      $$('[data-join]', dlg).forEach(b => b.onclick = async () => {
+        b.disabled = true;
+        try {
+          const bt = writeBatch(db);
+          bt.update(doc(db, 'events', b.dataset.join), { photographerUids: arrayUnion(S.user.uid) });
+          bt.set(doc(db, 'events', b.dataset.join, 'sets', S.user.uid), newSetData());
+          await bt.commit();
+          dlg.close();
+          toast('Te sumaste al evento');
+          location.hash = `#/evento/${b.dataset.join}`;
+        } catch (e) { b.disabled = false; toast(errMsg(e), 'error'); }
+      });
+    };
+    $('#jq', dlg).oninput = draw;
+    draw();
+  } catch (e) { $('#jl', dlg).innerHTML = `<div class="notice danger">${esc(errMsg(e))}</div>`; }
+}
+
+function newSetData() {
+  const d = S.profile.defaults || {};
+  return {
+    price: d.price || 0, packs: d.packs || [], feeMode: d.feeMode || 'absorb',
+    subalbums: [], photoCount: 0, bytesOriginal: 0, createdAt: serverTimestamp(),
+  };
+}
+
+// Crear/editar evento. Superadmin crea eventos generales; el fotógrafo, propios.
+function eventDialog(ev, onSaved) {
+  const isNew = !ev;
+  const general = isNew ? S.isSuper : ev.kind === 'general';
+  ev = ev || { name: '', date: todayIso(), location: '', tagIds: [], status: 'draft', openToJoin: general, coverUrl: '' };
+  const tax = S.tax;
+  const sel = new Set(ev.tagIds || []);
+  const dlg = openDialog(isNew ? (general ? 'Nuevo evento general' : 'Nuevo evento') : 'Editar evento', `
+    <label class="field">Nombre<input type="text" id="ev-name" required maxlength="100" value="${esc(ev.name)}" placeholder="Ej: Torneo Apertura Sub-14 — Fecha 3"></label>
+    <div class="grid2">
+      <label class="field">Fecha<input type="date" id="ev-date" required value="${esc(ev.date)}"></label>
+      <label class="field">Lugar<input type="text" id="ev-loc" maxlength="100" value="${esc(ev.location)}" placeholder="Club, ciudad"></label>
+    </div>
+    ${tax.types.map(t => {
+      const tags = tax.tags.filter(g => g.typeId === t.id);
+      return `<div class="field"><span>${esc(t.name)}</span><div class="pills">${tags.length ? tags.map(g => `<button type="button" class="chip ${sel.has(g.id) ? 'on' : ''}" data-tag="${g.id}">${esc(g.name)}</button>`).join('') : '<span class="muted small">Sin etiquetas cargadas</span>'}</div></div>`;
+    }).join('')}
+    <label class="field">Imagen de portada (URL)<input type="url" id="ev-cover" value="${esc(ev.coverUrl)}" placeholder="https://…"><span class="hint">Opcional. La subida directa llega con la carga de fotos.</span></label>
+    <label class="field">Estado<select id="ev-status"><option value="draft" ${ev.status !== 'published' ? 'selected' : ''}>Borrador (no visible al público)</option><option value="published" ${ev.status === 'published' ? 'selected' : ''}>Publicado</option></select></label>
+    ${general ? '<p class="muted small" style="margin:0">Los eventos generales siempre están abiertos para que se sumen fotógrafos.</p>'
+      : `<label class="check"><input type="checkbox" id="ev-open" ${ev.openToJoin ? 'checked' : ''}> Permitir que otros fotógrafos se sumen a este evento</label>`}
+  `, `<button class="btn" data-close>Cancelar</button><button class="btn primary" id="ev-save">${isNew ? 'Crear' : 'Guardar'}</button>`);
+
+  $$('[data-tag]', dlg).forEach(c => c.onclick = () => { c.classList.toggle('on'); c.classList.contains('on') ? sel.add(c.dataset.tag) : sel.delete(c.dataset.tag); });
+  $('#ev-save', dlg).onclick = async () => {
+    const name = $('#ev-name', dlg).value.trim(), date = $('#ev-date', dlg).value, loc = $('#ev-loc', dlg).value.trim();
+    if (!name || !date) return toast('Completá nombre y fecha.', 'error');
+    const tagNames = [...sel].map(id => tax.tagById.get(id)?.name || '');
+    const data = {
+      name, date, location: loc, tagIds: [...sel].filter(id => tax.tagById.has(id)),
+      coverUrl: $('#ev-cover', dlg).value.trim(),
+      status: $('#ev-status', dlg).value,
+      openToJoin: general ? true : $('#ev-open', dlg).checked,
+      searchTokens: searchTokens(name, loc, ...tagNames),
+      updatedAt: serverTimestamp(),
+    };
+    const btn = $('#ev-save', dlg); btn.disabled = true;
+    try {
+      if (isNew) {
+        const ref = doc(collection(db, 'events'));
+        const b = writeBatch(db);
+        b.set(ref, {
+          ...data, kind: general ? 'general' : 'own', createdBy: S.user.uid,
+          photographerUids: general ? [] : [S.user.uid], createdAt: serverTimestamp(),
+        });
+        if (!general) b.set(doc(db, 'events', ref.id, 'sets', S.user.uid), newSetData());
+        await b.commit();
+        dlg.close();
+        toast('Evento creado');
+        location.hash = `#/evento/${ref.id}`;
+      } else {
+        await updateDoc(doc(db, 'events', ev.id), data);
+        dlg.close();
+        toast('Evento guardado');
+        onSaved?.();
+      }
+    } catch (e) { btn.disabled = false; toast(errMsg(e), 'error'); }
+  };
+}
+
+// Detalle de evento: datos + set propio (fotógrafo) o lista de sets (superadmin).
+async function viewEvent(id) {
+  const snap = await getDoc(doc(db, 'events', id));
+  if (!snap.exists()) { $('#view').innerHTML = '<div class="empty">Evento no encontrado.</div>'; return; }
+  const ev = { id, ...snap.data() };
+  const me = S.user.uid;
+  const member = (ev.photographerUids || []).includes(me);
+  const canEdit = S.isSuper || (ev.kind === 'own' && ev.createdBy === me);
+  const tags = tagPills(ev.tagIds, S.tax);
+  const back = S.isSuper ? '#/admin/eventos' : '#/eventos';
+
+  $('#view').innerHTML = `
+    <a href="${back}" class="muted small" style="text-decoration:none">← Volver</a>
+    <div class="card" style="margin-top:10px">
+      <div class="row" style="justify-content:space-between;align-items:flex-start">
+        <div>
+          <div class="row" style="margin-bottom:6px">${statusPill(ev)} ${ev.kind === 'general' ? '<span class="pill accent">Evento general</span>' : ''} ${ev.openToJoin ? '<span class="pill">Abierto a fotógrafos</span>' : ''}</div>
+          <h1 style="margin-bottom:4px">${esc(ev.name)}</h1>
+          <div class="muted">${esc(fmtDate(ev.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}${ev.location ? ` · 📍 ${esc(ev.location)}` : ''}</div>
+          ${tags.length ? `<div class="pills" style="margin-top:8px">${tags.map(t => `<span class="pill">${esc(t.name)}</span>`).join('')}</div>` : ''}
+        </div>
+        <div class="row">
+          ${ev.status === 'published' ? `<a class="btn sm" target="_blank" href="index.html#/evento/${ev.id}">Ver público</a>` : ''}
+          ${canEdit ? `<button class="btn sm" id="ev-edit">Editar</button>` : ''}
+          ${canEdit ? `<button class="btn sm" id="ev-toggle">${ev.status === 'published' ? 'Despublicar' : 'Publicar'}</button>` : ''}
+        </div>
+      </div>
+    </div>
+    <div id="ev-sets"></div>
+    <div class="row end" style="margin-top:14px" id="ev-danger"></div>`;
+
+  const reload = () => viewEvent(id);
+  if (canEdit) {
+    $('#ev-edit').onclick = () => eventDialog(ev, reload);
+    $('#ev-toggle').onclick = async () => {
+      try { await updateDoc(doc(db, 'events', id), { status: ev.status === 'published' ? 'draft' : 'published', updatedAt: serverTimestamp() }); reload(); }
+      catch (e) { toast(errMsg(e), 'error'); }
+    };
+  }
+
+  const setsSnap = await getDocs(collection(db, 'events', id, 'sets'));
+  const sets = new Map(setsSnap.docs.map(d => [d.id, d.data()]));
+
+  if (S.isSuper) {
+    const users = await Promise.all((ev.photographerUids || []).map(uid => getDoc(doc(db, 'users', uid)).then(s => ({ uid, ...(s.data() || {}) }))));
+    $('#ev-sets').innerHTML = `<div class="card"><h2>Fotógrafos en el evento (${users.length})</h2>
+      ${users.length ? users.map(u => {
+        const st = sets.get(u.uid) || {};
+        return `<div class="item-row">${avatarHtml(u)}<div class="grow"><strong>${esc(u.displayName || u.uid)}</strong><br><span class="muted small">${fmtMoney(st.price)} por foto · ${st.photoCount || 0} fotos · ${(st.subalbums || []).length} sub-álbumes</span></div></div>`;
+      }).join('') : '<p class="muted">Todavía no se sumó ningún fotógrafo.</p>'}</div>`;
+    $('#ev-danger').innerHTML = `<button class="btn danger" id="ev-del">Eliminar evento</button>`;
+    $('#ev-del').onclick = async () => {
+      if (!confirm(`¿Eliminar "${ev.name}"? Se borran también los sets de los fotógrafos.`)) return;
+      try {
+        const b = writeBatch(db);
+        setsSnap.docs.forEach(d => b.delete(d.ref));
+        b.delete(doc(db, 'events', id));
+        await b.commit();
+        toast('Evento eliminado');
+        location.hash = back;
+      } catch (e) { toast(errMsg(e), 'error'); }
+    };
+    return;
+  }
+
+  if (!member) {
+    $('#ev-sets').innerHTML = `<div class="card"><p class="muted">No participás en este evento.</p></div>`;
+    return;
+  }
+  renderSetEditor(ev, sets.get(me) || null, reload);
+
+  const isCreator = ev.createdBy === me && ev.kind === 'own';
+  const set = sets.get(me);
+  if (isCreator && ev.photographerUids.length === 1) {
+    $('#ev-danger').innerHTML = `<button class="btn danger" id="ev-del">Eliminar evento</button>`;
+    $('#ev-del').onclick = async () => {
+      if ((set?.photoCount || 0) > 0) return toast('Primero borrá las fotos del evento.', 'error');
+      if (!confirm(`¿Eliminar "${ev.name}"?`)) return;
+      try {
+        const b = writeBatch(db);
+        if (set) b.delete(doc(db, 'events', id, 'sets', me));
+        b.delete(doc(db, 'events', id));
+        await b.commit();
+        toast('Evento eliminado');
+        location.hash = '#/eventos';
+      } catch (e) { toast(errMsg(e), 'error'); }
+    };
+  } else if (!isCreator) {
+    $('#ev-danger').innerHTML = `<button class="btn danger" id="ev-leave">Salir del evento</button>`;
+    $('#ev-leave').onclick = async () => {
+      if ((set?.photoCount || 0) > 0) return toast('Primero borrá tus fotos de este evento.', 'error');
+      if (!confirm('¿Salir de este evento?')) return;
+      try {
+        const b = writeBatch(db);
+        if (set) b.delete(doc(db, 'events', id, 'sets', me));
+        b.update(doc(db, 'events', id), { photographerUids: arrayRemove(me) });
+        await b.commit();
+        toast('Saliste del evento');
+        location.hash = '#/eventos';
+      } catch (e) { toast(errMsg(e), 'error'); }
+    };
+  }
+}
+
+function renderSetEditor(ev, set, reload) {
+  const box = $('#ev-sets');
+  if (!set) {
+    box.innerHTML = `<div class="card"><p>No tenés un set en este evento.</p><button class="btn primary" id="mk-set">Crear mi set</button></div>`;
+    $('#mk-set').onclick = async () => { try { await setDoc(doc(db, 'events', ev.id, 'sets', S.user.uid), newSetData()); reload(); } catch (e) { toast(errMsg(e), 'error'); } };
+    return;
+  }
+  let subs = (set.subalbums || []).map(s => ({ ...s })).sort((a, b) => a.order - b.order);
+  const expires = set.expiresAt ? fmtTs(set.extendedUntil && set.extendedUntil.toMillis() > set.expiresAt.toMillis() ? set.extendedUntil : set.expiresAt) : null;
+
+  box.innerHTML = `
+    <div class="card stack">
+      <h2>Mi set en este evento</h2>
+      <div class="row">
+        <span class="pill">📷 ${set.photoCount || 0} fotos</span>
+        <span class="pill">${expires ? `Originales disponibles hasta ${esc(expires)}` : `Vence ${S.settings.retentionDays} días después de subir las fotos`}</span>
+      </div>
+      <div class="notice">La subida de fotos se habilita en la próxima etapa.</div>
+    </div>
+    <form class="card stack" id="set-form">
+      <div class="row" style="justify-content:space-between"><h2 style="margin:0">Precios</h2><button type="button" class="btn sm" id="use-def">Usar mis valores por defecto</button></div>
+      <label class="field" style="max-width:240px">Precio por foto (ARS)<input type="number" min="0" step="1" id="st-price" value="${set.price || ''}"></label>
+      <h3>Packs</h3>
+      <div id="st-packs"></div>
+      <h3>Comisión</h3>
+      <div class="stack" id="st-fee">${feeModeHtml('st-fee', set.feeMode)}</div>
+      <h2 style="margin-top:8px">Sub-álbumes</h2>
+      <p class="muted small" style="margin:0">Ej: categorías, partidos o turnos. Ayudan al comprador a encontrar sus fotos.</p>
+      <div id="st-subs" class="stack"></div>
+      <div class="row"><input type="text" id="st-sub-new" placeholder="Nombre del sub-álbum" style="max-width:300px"><button type="button" class="btn" id="st-sub-add">Agregar</button></div>
+      <div class="row end"><button class="btn primary" type="submit">Guardar set</button></div>
+    </form>`;
+
+  let packs = packsEditor($('#st-packs'), set.packs);
+  const drawSubs = () => {
+    $('#st-subs').innerHTML = subs.length ? subs.map((s, i) => `
+      <div class="row">
+        <input type="text" data-sub="${i}" value="${esc(s.name)}" style="flex:1;min-width:160px">
+        <button type="button" class="btn sm" data-up="${i}" ${i === 0 ? 'disabled' : ''}>↑</button>
+        <button type="button" class="btn sm" data-down="${i}" ${i === subs.length - 1 ? 'disabled' : ''}>↓</button>
+        <button type="button" class="btn sm danger" data-rm="${i}">✕</button>
+      </div>`).join('') : '<p class="muted small" style="margin:0">Sin sub-álbumes: todas las fotos van juntas.</p>';
+    $$('[data-sub]').forEach(inp => inp.oninput = () => { subs[inp.dataset.sub].name = inp.value; });
+    $$('[data-up]').forEach(b => b.onclick = () => { const i = +b.dataset.up; [subs[i - 1], subs[i]] = [subs[i], subs[i - 1]]; drawSubs(); });
+    $$('[data-down]').forEach(b => b.onclick = () => { const i = +b.dataset.down; [subs[i + 1], subs[i]] = [subs[i], subs[i + 1]]; drawSubs(); });
+    $$('[data-rm]').forEach(b => b.onclick = () => {
+      // TODO fase fotos: impedir borrar sub-álbumes con fotos (o moverlas a "sin sub-álbum").
+      subs.splice(+b.dataset.rm, 1); drawSubs();
+    });
+  };
+  drawSubs();
+  $('#st-sub-add').onclick = () => {
+    const name = $('#st-sub-new').value.trim();
+    if (!name) return;
+    subs.push({ id: newId(), name, order: subs.length });
+    $('#st-sub-new').value = '';
+    drawSubs();
+  };
+  $('#use-def').onclick = () => {
+    const d = S.profile.defaults || {};
+    $('#st-price').value = d.price || '';
+    packs = packsEditor($('#st-packs'), d.packs);
+    $('#st-fee').innerHTML = feeModeHtml('st-fee', d.feeMode);
+  };
+  $('#set-form').onsubmit = async e => {
+    e.preventDefault();
+    try {
+      const clean = subs.map((s, i) => ({ id: s.id, name: s.name.trim(), order: i })).filter(s => s.name);
+      await updateDoc(doc(db, 'events', ev.id, 'sets', S.user.uid), {
+        price: Math.round(Number($('#st-price').value) || 0),
+        packs: packs.get(),
+        feeMode: $('input[name=st-fee]:checked').value,
+        subalbums: clean,
+        updatedAt: serverTimestamp(),
+      });
+      toast('Set guardado');
+      reload();
+    } catch (err) { toast(errMsg(err), 'error'); }
+  };
+}
+
+// ================================================================ superadmin: fotógrafos
+let photogTab = 'pending';
+async function viewAdminPhotographers() {
+  const view = $('#view');
+  const tabs = [['pending', 'Pendientes'], ['approved', 'Aprobados'], ['suspended', 'Suspendidos']];
+  view.innerHTML = `
+    <h1>Fotógrafos</h1>
+    <div class="tabs">${tabs.map(([k, l]) => `<button class="chip ${photogTab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>
+    <div class="card" id="pl"><div class="spinner"></div></div>`;
+  $$('[data-tab]').forEach(b => b.onclick = () => { photogTab = b.dataset.tab; viewAdminPhotographers(); });
+
+  const snap = await getDocs(query(collection(db, 'users'), where('status', '==', photogTab)));
+  const users = snap.docs.map(d => ({ uid: d.id, ...d.data() })).filter(u => u.role === 'photographer')
+    .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+  const privs = await Promise.all(users.map(u => getDoc(doc(db, 'userPrivate', u.uid)).then(s => s.data() || {}).catch(() => ({}))));
+  $('#pl').innerHTML = users.length ? users.map((u, i) => `
+    <div class="item-row">
+      ${avatarHtml(u)}
+      <div class="grow">
+        <strong>${esc(u.displayName)}</strong> <span class="muted small">/${esc(u.slug)}</span><br>
+        <span class="muted small">${esc(privs[i].email || '')}${u.zone ? ' · ' + esc(u.zone) : ''} · alta ${esc(fmtTs(u.createdAt))}</span><br>
+        ${u.mpConnected ? '<span class="pill ok">MP vinculado</span>' : '<span class="pill">MP sin vincular</span>'}
+      </div>
+      <div class="row">
+        <a class="btn sm" target="_blank" href="index.html#/f/${esc(u.slug)}">Perfil</a>
+        ${u.status !== 'approved' ? `<button class="btn sm ok" data-st="approved" data-uid="${u.uid}">Aprobar</button>` : ''}
+        ${u.status !== 'suspended' ? `<button class="btn sm danger" data-st="suspended" data-uid="${u.uid}">Suspender</button>` : ''}
+        ${u.status === 'suspended' ? `<button class="btn sm" data-st="pending" data-uid="${u.uid}">Volver a pendiente</button>` : ''}
+      </div>
+    </div>`).join('') : '<div class="empty">No hay fotógrafos en esta lista.</div>';
+  $$('[data-st]').forEach(b => b.onclick = async () => {
+    try {
+      await updateDoc(doc(db, 'users', b.dataset.uid), { status: b.dataset.st, statusChangedAt: serverTimestamp() });
+      toast(b.dataset.st === 'approved' ? 'Fotógrafo aprobado' : 'Estado actualizado');
+      viewAdminPhotographers();
+    } catch (e) { toast(errMsg(e), 'error'); }
+  });
+}
+
+// ================================================================ superadmin: eventos
+let adminEvFilter = 'all';
+async function viewAdminEvents() {
+  const snap = await getDocs(query(collection(db, 'events'), orderBy('date', 'desc'), limit(300)));
+  const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const evs = all.filter(e => adminEvFilter === 'all' || e.kind === adminEvFilter);
+  $('#view').innerHTML = `
+    <div class="row" style="justify-content:space-between;margin-bottom:14px">
+      <h1 style="margin:0">Eventos</h1>
+      <button class="btn primary" id="new">+ Evento general</button>
+    </div>
+    <div class="tabs">${[['all', 'Todos'], ['general', 'Generales'], ['own', 'De fotógrafos']].map(([k, l]) => `<button class="chip ${adminEvFilter === k ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div>
+    ${evs.length ? `<div class="events-grid">${evs.map(ev => panelEventCard(ev)).join('')}</div>` : '<div class="card"><div class="empty">No hay eventos.</div></div>'}`;
+  $('#new').onclick = () => eventDialog(null);
+  $$('[data-f]').forEach(b => b.onclick = () => { adminEvFilter = b.dataset.f; viewAdminEvents(); });
+}
+
+// ================================================================ superadmin: etiquetas
+async function rebuildTaxonomy() {
+  const [ts, gs] = await Promise.all([getDocs(collection(db, 'tagTypes')), getDocs(collection(db, 'tags'))]);
+  await setDoc(doc(db, 'settings', 'tags'), {
+    types: ts.docs.map(d => ({ id: d.id, name: d.data().name, order: d.data().order ?? 0 })),
+    tags: gs.docs.map(d => ({ id: d.id, typeId: d.data().typeId, name: d.data().name, slug: d.data().slug })),
+    updatedAt: serverTimestamp(),
+  });
+  S.tax = await loadTaxonomy(true);
+}
+
+async function viewAdminTags() {
+  const [ts, gs] = await Promise.all([getDocs(collection(db, 'tagTypes')), getDocs(collection(db, 'tags'))]);
+  const types = ts.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.order - b.order);
+  const tags = gs.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  $('#view').innerHTML = `
+    <h1>Etiquetas</h1>
+    <p class="muted">Se usan para clasificar eventos y como filtros en el sitio público.</p>
+    ${types.map((t, i) => `
+      <div class="card stack">
+        <div class="row" style="justify-content:space-between">
+          <h2 style="margin:0">${esc(t.name)}</h2>
+          <div class="row">
+            <button class="btn sm" data-tup="${i}" ${i === 0 ? 'disabled' : ''}>↑</button>
+            <button class="btn sm" data-tdown="${i}" ${i === types.length - 1 ? 'disabled' : ''}>↓</button>
+            <button class="btn sm" data-trename="${t.id}">Renombrar</button>
+            <button class="btn sm danger" data-tdel="${t.id}">Eliminar</button>
+          </div>
+        </div>
+        <div class="pills">${tags.filter(g => g.typeId === t.id).map(g => `
+          <span class="chip" style="cursor:default">${esc(g.name)}
+            <button class="btn ghost sm" style="padding:0 4px" data-grename="${g.id}" title="Renombrar">✎</button>
+            <button class="btn ghost sm danger" style="padding:0 4px" data-gdel="${g.id}" title="Eliminar">✕</button></span>`).join('') || '<span class="muted small">Sin etiquetas</span>'}</div>
+        <form class="row" data-gadd="${t.id}"><input type="text" placeholder="Nueva etiqueta de ${esc(t.name)}" style="max-width:300px" required><button class="btn">Agregar</button></form>
+      </div>`).join('')}
+    <form class="card row" id="tadd"><input type="text" placeholder="Nuevo tipo de etiqueta" style="max-width:300px" required><button class="btn primary">Agregar tipo</button></form>`;
+
+  const done = async (msg) => { await rebuildTaxonomy(); if (msg) toast(msg); viewAdminTags(); };
+  const guard = fn => async (...a) => { try { await fn(...a); } catch (e) { toast(errMsg(e), 'error'); } };
+
+  $('#tadd').onsubmit = guard(async e => {
+    e.preventDefault();
+    await addDoc(collection(db, 'tagTypes'), { name: e.target[0].value.trim(), order: types.length });
+    await done('Tipo agregado');
+  });
+  $$('[data-gadd]').forEach(f => f.onsubmit = guard(async e => {
+    e.preventDefault();
+    const name = f[0].value.trim();
+    const typeId = f.dataset.gadd;
+    if (tags.some(g => g.typeId === typeId && normalize(g.name) === normalize(name))) return toast('Esa etiqueta ya existe.', 'error');
+    await addDoc(collection(db, 'tags'), { typeId, name, slug: slugify(name) });
+    await done();
+  }));
+  $$('[data-trename]').forEach(b => b.onclick = guard(async () => {
+    const t = types.find(x => x.id === b.dataset.trename);
+    const name = prompt('Nuevo nombre', t.name)?.trim();
+    if (!name || name === t.name) return;
+    await updateDoc(doc(db, 'tagTypes', t.id), { name });
+    await done('Tipo renombrado');
+  }));
+  $$('[data-tdel]').forEach(b => b.onclick = guard(async () => {
+    const t = types.find(x => x.id === b.dataset.tdel);
+    const n = tags.filter(g => g.typeId === t.id).length;
+    if (!confirm(`¿Eliminar el tipo "${t.name}"${n ? ` y sus ${n} etiquetas` : ''}?`)) return;
+    const bt = writeBatch(db);
+    tags.filter(g => g.typeId === t.id).forEach(g => bt.delete(doc(db, 'tags', g.id)));
+    bt.delete(doc(db, 'tagTypes', t.id));
+    await bt.commit();
+    await done('Tipo eliminado');
+  }));
+  const swap = guard(async (i, j) => {
+    const bt = writeBatch(db);
+    types.forEach((t, k) => { const ord = k === i ? j : k === j ? i : k; if (t.order !== ord) bt.update(doc(db, 'tagTypes', t.id), { order: ord }); });
+    await bt.commit();
+    await done();
+  });
+  $$('[data-tup]').forEach(b => b.onclick = () => swap(+b.dataset.tup, +b.dataset.tup - 1));
+  $$('[data-tdown]').forEach(b => b.onclick = () => swap(+b.dataset.tdown, +b.dataset.tdown + 1));
+  $$('[data-grename]').forEach(b => b.onclick = guard(async () => {
+    const g = tags.find(x => x.id === b.dataset.grename);
+    const name = prompt('Nuevo nombre', g.name)?.trim();
+    if (!name || name === g.name) return;
+    await updateDoc(doc(db, 'tags', g.id), { name, slug: slugify(name) });
+    await done('Etiqueta renombrada');
+  }));
+  $$('[data-gdel]').forEach(b => b.onclick = guard(async () => {
+    const g = tags.find(x => x.id === b.dataset.gdel);
+    if (!confirm(`¿Eliminar la etiqueta "${g.name}"? Los eventos que la usan la pierden.`)) return;
+    await deleteDoc(doc(db, 'tags', g.id));
+    await done('Etiqueta eliminada');
+  }));
+}
+
+// ================================================================ superadmin: plataforma
+async function viewAdminConfig() {
+  S.settings = await loadSettings();
+  const st = S.settings;
+  let plans = (st.extensionPlans || []).map(p => ({ ...p }));
+  $('#view').innerHTML = `
+    <h1>Configuración de la plataforma</h1>
+    <form id="acf">
+      <div class="card stack">
+        <div class="grid2">
+          <label class="field">Comisión de la plataforma (%)<input type="number" id="a-fee" min="0" max="50" step="0.1" value="${st.feePercent}" required></label>
+          <label class="field">Días de retención de originales<input type="number" id="a-ret" min="1" max="365" step="1" value="${st.retentionDays}" required>
+            <span class="hint">Desde que el fotógrafo sube las fotos de un evento.</span></label>
+        </div>
+      </div>
+      <div class="card stack">
+        <h2>Planes de extensión de retención</h2>
+        <p class="muted small" style="margin:0">El fotógrafo los paga para mantener sus originales disponibles por más tiempo.</p>
+        <div id="a-plans" class="stack"></div>
+        <button type="button" class="btn sm" id="a-plan-add" style="justify-self:start">+ Agregar plan</button>
+      </div>
+      <div class="row end" style="margin-top:14px"><button class="btn primary">Guardar</button></div>
+    </form>`;
+  const draw = () => {
+    $('#a-plans').innerHTML = plans.length ? plans.map((p, i) => `
+      <div class="row">
+        <input type="text" data-i="${i}" data-k="label" value="${esc(p.label)}" placeholder="Nombre (ej: +30 días)" style="flex:2;min-width:150px">
+        <input type="number" data-i="${i}" data-k="days" value="${p.days || ''}" placeholder="Días" min="1" style="flex:1;min-width:80px">
+        <input type="number" data-i="${i}" data-k="price" value="${p.price || ''}" placeholder="Precio ARS" min="1" style="flex:1;min-width:100px">
+        <button type="button" class="btn sm danger" data-rm="${i}">✕</button>
+      </div>`).join('') : '<p class="muted small" style="margin:0">Sin planes definidos.</p>';
+    $$('#a-plans input').forEach(inp => inp.oninput = () => { plans[inp.dataset.i][inp.dataset.k] = inp.type === 'number' ? Number(inp.value) : inp.value; });
+    $$('#a-plans [data-rm]').forEach(b => b.onclick = () => { plans.splice(+b.dataset.rm, 1); draw(); });
+  };
+  draw();
+  $('#a-plan-add').onclick = () => { plans.push({ id: newId(), label: '', days: 30, price: 0 }); draw(); };
+  $('#acf').onsubmit = async e => {
+    e.preventDefault();
+    const clean = plans.filter(p => p.label || p.price).map(p => ({ id: p.id || newId(), label: p.label.trim(), days: Math.round(p.days), price: Math.round(p.price) }));
+    if (clean.some(p => !p.label || !(p.days > 0) || !(p.price > 0))) return toast('Cada plan necesita nombre, días y precio.', 'error');
+    try {
+      await setDoc(doc(db, 'settings', 'platform'), {
+        feePercent: Number($('#a-fee').value), retentionDays: Math.round(Number($('#a-ret').value)),
+        extensionPlans: clean, updatedAt: serverTimestamp(),
+      }, { merge: true });
+      S.settings = await loadSettings();
+      toast('Configuración guardada');
+    } catch (err) { toast(errMsg(err), 'error'); }
+  };
+}
+
+// ================================================================ dialog helper
+function openDialog(title, body, foot) {
+  const dlg = document.createElement('dialog');
+  dlg.innerHTML = `
+    <div class="dlg-head"><h2>${esc(title)}</h2><button class="btn ghost sm" data-close>✕</button></div>
+    <div class="dlg-body">${body}</div>
+    ${foot ? `<div class="dlg-foot">${foot}</div>` : ''}`;
+  document.body.appendChild(dlg);
+  dlg.addEventListener('close', () => dlg.remove());
+  $$('[data-close]', dlg).forEach(b => b.onclick = () => dlg.close());
+  dlg.showModal();
+  return dlg;
+}
