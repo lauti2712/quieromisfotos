@@ -7,6 +7,17 @@ import {
 } from './util.js';
 import { loadTaxonomy, tagPills } from './data.js';
 import { mountGallery } from './gallery.js';
+import { renderCart } from './cart-view.js';
+import { cart } from './cart.js';
+
+const updateCartBadge = () => {
+  const n = cart.count();
+  const el = document.getElementById('cart-count');
+  el.textContent = n;
+  el.classList.toggle('hidden', !n);
+};
+window.addEventListener('cart:change', updateCartBadge);
+updateCartBadge();
 
 const app = $('#app');
 const PAGE = 24;
@@ -16,9 +27,11 @@ route();
 
 function route() {
   const { parts } = parseHash();
+  document.title = 'Quiero Mis Fotos';
   window.scrollTo(0, 0);
   if (parts[0] === 'evento' && parts[1]) return renderEvent(parts[1]);
   if (parts[0] === 'f' && parts[1]) return renderProfile(parts[1]);
+  if (parts[0] === 'carrito') return renderCart(app);
   return renderHome();
 }
 

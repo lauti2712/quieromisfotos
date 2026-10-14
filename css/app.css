@@ -240,3 +240,19 @@ dialog .dlg-foot { padding: 14px 18px; border-top: 1px solid var(--border); disp
 .lightbox .btn { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.2); color: #fff; }
 .lightbox .btn.primary { background: var(--accent); border-color: var(--accent); }
 .lightbox .lb-bottom { justify-content: space-between; flex-wrap: wrap; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+
+/* ---------- carrito ---------- */
+.cart-btn { position: relative; }
+.cart-count { background: var(--accent); color: var(--accent-ink); border-radius: 999px; font-size: .72rem; min-width: 18px; height: 18px; display: inline-grid; place-items: center; padding: 0 5px; }
+.g-add { position: absolute; right: 6px; bottom: 6px; width: 34px; height: 34px; border-radius: 50%; border: 0; background: rgba(0,0,0,.55); color: #fff; font-size: 20px; font-weight: 700; cursor: pointer; display: grid; place-items: center; }
+.g-add:hover { background: var(--accent); }
+.g-item.in-cart { outline: 3px solid var(--accent); outline-offset: -3px; }
+.g-item.in-cart .g-add { background: var(--accent); }
+.cart-thumbs { display: flex; gap: 6px; flex-wrap: wrap; }
+.cart-thumb { position: relative; width: 84px; aspect-ratio: 3/2; border-radius: 8px; overflow: hidden; background: var(--surface-2); }
+.cart-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.cart-thumb button { position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; cursor: pointer; }
+.breakdown { display: grid; gap: 6px; border-top: 1px solid var(--border); padding-top: 10px; }
+.bd-row { display: flex; justify-content: space-between; gap: 10px; }
+.bd-row.ok { color: var(--ok); }
+.bd-row.total { font-weight: 800; font-size: 1.15rem; border-top: 1px solid var(--border); padding-top: 8px; }

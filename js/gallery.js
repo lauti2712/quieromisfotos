@@ -1,6 +1,7 @@
 // Galería pública de un evento: filtros por fotógrafo y sub-álbum, scroll infinito y visor.
 import { db, collection, getDocs, query, where, orderBy, limit, startAfter } from './fb.js';
 import { $, $$, esc, fmtMoney, toast, errMsg } from './util.js';
+import { cart } from './cart.js';
 
 const PAGE = 60;
 
@@ -64,7 +65,10 @@ export function mountGallery(box, { ev, photographers, sets }) {
       const start = state.photos.length;
       state.photos.push(...fresh);
       $('#g-grid', box).insertAdjacentHTML('beforeend', fresh.map((p, i) =>
-        `<button class="g-item" data-i="${start + i}" aria-label="Ver foto"><img src="${esc(p.thumbUrl)}" alt="" loading="lazy" decoding="async"></button>`).join(''));
+        `<div class="g-item ${cart.has(p.id) ? 'in-cart' : ''}" data-i="${start + i}" data-id="${p.id}" role="button" tabindex="0" aria-label="Ver foto">
+          <img src="${esc(p.thumbUrl)}" alt="" loading="lazy" decoding="async">
+          <button class="g-add" data-add="${start + i}" aria-label="Agregar al carrito">${cart.has(p.id) ? '✓' : '+'}</button>
+        </div>`).join(''));
       if (!state.photos.length) $('#g-grid', box).innerHTML = '<div class="empty" style="grid-column:1/-1">No hay fotos con este filtro.</div>';
       $('#g-more', box).innerHTML = state.done ? '' : '<button class="btn">Ver más fotos</button>';
       $('#g-more button', box)?.addEventListener('click', loadMore);
@@ -77,9 +81,30 @@ export function mountGallery(box, { ev, photographers, sets }) {
   }
 
   $('#g-grid', box).addEventListener('click', e => {
+    const add = e.target.closest('[data-add]');
+    if (add) { toggleCart(state.photos[+add.dataset.add]); return; }
     const b = e.target.closest('.g-item');
     if (b) openViewer(+b.dataset.i);
   });
+  $('#g-grid', box).addEventListener('keydown', e => {
+    const b = e.target.closest('.g-item');
+    if (b && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openViewer(+b.dataset.i); }
+  });
+
+  function toggleCart(p) {
+    if (!p) return;
+    const added = cart.toggle(p);
+    toast(added ? 'Foto agregada al carrito' : 'Foto quitada del carrito');
+    syncCartMarks();
+  }
+  function syncCartMarks() {
+    $$('.g-item', box).forEach(el => {
+      const inCart = cart.has(el.dataset.id);
+      el.classList.toggle('in-cart', inCart);
+      el.querySelector('.g-add').textContent = inCart ? '✓' : '+';
+    });
+  }
+  window.addEventListener('cart:change', () => document.body.contains(box) && syncCartMarks());
 
   const io = new IntersectionObserver(entries => {
     if (!document.body.contains(box)) return io.disconnect();
@@ -96,7 +121,7 @@ export function mountGallery(box, { ev, photographers, sets }) {
     lb.innerHTML = `
       <div class="lb-top"><span class="small" id="lb-count"></span><span class="spacer"></span><button class="btn sm" id="lb-close" aria-label="Cerrar">✕</button></div>
       <div class="lb-stage"><button class="lb-nav lb-prev" aria-label="Anterior">‹</button><img id="lb-img" alt=""><button class="lb-nav lb-next" aria-label="Siguiente">›</button></div>
-      <div class="lb-bottom"><span id="lb-info" class="small"></span><button class="btn primary" disabled title="Próximamente">🛒 Agregar al carrito</button></div>`;
+      <div class="lb-bottom"><span id="lb-info" class="small"></span><span class="row"><a class="btn sm" href="#/carrito" id="lb-cart">Ver carrito</a><button class="btn primary" id="lb-add"></button></span></div>`;
     document.body.appendChild(lb);
     document.body.style.overflow = 'hidden';
 
@@ -107,7 +132,14 @@ export function mountGallery(box, { ev, photographers, sets }) {
       const set = sets.get(p.photographerUid) || {};
       $('#lb-img', lb).src = p.previewUrl;
       $('#lb-count', lb).textContent = `${i + 1} / ${state.photos.length}${state.done ? '' : '+'}`;
-      $('#lb-info', lb).innerHTML = `📷 ${esc(ph?.displayName || '')}${set.price ? ` · <strong>${fmtMoney(set.price)}</strong>` : ''}`;
+      const packs = (set.packs || []).map(k => `${k.qty} x ${fmtMoney(k.price)}`).join(' · ');
+      $('#lb-info', lb).innerHTML = `📷 ${esc(ph?.displayName || '')}${set.price ? ` · <strong>${fmtMoney(set.price)}</strong>` : ''}${packs ? `<br><span style="opacity:.75">Packs: ${packs}</span>` : ''}`;
+      const inCart = cart.has(p.id);
+      const addBtn = $('#lb-add', lb);
+      addBtn.textContent = inCart ? '✓ En el carrito' : '🛒 Agregar al carrito';
+      addBtn.classList.toggle('primary', !inCart);
+      addBtn.disabled = !set.price;
+      addBtn.onclick = () => { toggleCart(p); show(); };
       // precarga de la siguiente
       const n = state.photos[i + 1];
       if (n) new Image().src = n.previewUrl;

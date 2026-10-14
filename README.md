@@ -83,7 +83,7 @@ npx wrangler deploy
 
 1. ✅ Base: auth, roles, alta y aprobación de fotógrafos, etiquetas, eventos, sets y sub-álbumes, sitio público con filtros.
 2. ✅ Fotos: Worker, R2, marca de agua en el navegador (Web Worker), subida masiva, galería con visor. Falta el deploy del Worker en Cloudflare.
-3. Carrito: agrupado por fotógrafo, packs (combinación más barata) y comisión.
+3. ✅ Carrito: agrupado por fotógrafo + evento, packs (combinación más barata, `js/pricing.js` compartido con el Worker), comisión y sugerencia de pack.
 4. Pagos: OAuth de Mercado Pago, checkout, webhook, descargas firmadas, mail.
 5. Retención: cron, avisos, borrado y extensiones pagas.
 6. Superadmin: métricas.
