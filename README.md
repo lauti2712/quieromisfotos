@@ -89,7 +89,7 @@ python3 tools/seed-demo.py prod --delete   # borrar
 
 ## Deploy
 
-- Frontend: push a `main` y GitHub Pages lo publica solo.
+- Frontend: **antes de cada commit correr `python3 tools/stamp.py`** (versiona JS/CSS con un import map para que nadie quede con caché viejo) y después push a `main`; GitHub Pages lo publica solo.
 - Reglas e índices: `firebase deploy --only firestore`.
 
 ## Fases
