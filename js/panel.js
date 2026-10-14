@@ -10,9 +10,10 @@ import {
   $, $$, esc, slugify, SLUG_RE, searchTokens, fmtMoney, fmtDate, fmtTs, todayIso, parseHash,
   toast, errMsg, avatarHtml, coverHtml, SOCIALS, newId, normalize,
 } from './util.js';
-import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, tagPills, SERVICES, isPro } from './data.js';
+import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, tagPills, SERVICES, isPro, mpPlanOf } from './data.js';
+import { sellerNet } from './pricing.js';
 import { viewPortfolio } from './panel-portfolio.js';
-import { drawWatermark, drawSampleScene, DEFAULT_WATERMARK } from './watermark.js';
+import { drawWatermark, drawSampleScene, DEFAULT_WATERMARK, wantsLogo } from './watermark.js';
 import { uploadAsset, apiPost } from './api.js';
 import { resizeToJpeg } from './image-proc.js';
 import { mountPhotos } from './panel-photos.js';
@@ -147,7 +148,7 @@ function renderOnboarding() {
         avatarUrl: u.photoURL || '', bio: '', socials: {},
         mpConnected: false, mpUserId: null,
         defaults: { price: 0, packs: [], feeMode: 'absorb' },
-        watermark: { ...DEFAULT_WATERMARK, text: displayName },
+        watermark: { ...DEFAULT_WATERMARK },
         createdAt: serverTimestamp(),
       };
       const b = writeBatch(db);
@@ -289,7 +290,10 @@ function viewProfile() {
       </div>
       <label class="field">Bio<textarea id="pf-bio" maxlength="600" placeholder="Contá qué deportes cubrís, tu experiencia…">${esc(p.bio)}</textarea></label>
       <div class="field"><span>Deportes que cubrís</span>
-        <div class="pills" id="pf-sports">${sportTags().map(t => `<button type="button" class="chip ${(p.specialties || []).includes(t.id) ? 'on' : ''}" data-v="${t.id}">${esc(t.name)}</button>`).join('') || '<span class="muted small">Todavía no hay deportes cargados.</span>'}</div></div>
+        <div class="pills" id="pf-sports">${sportTags().map(t => `<button type="button" class="chip ${(p.specialties || []).includes(t.id) ? 'on' : ''}" data-v="${t.id}">${esc(t.name)}</button>`).join('')}</div>
+        ${isApproved() || S.isSuper ? `<div class="row" style="margin-top:6px">
+          <input type="text" id="pf-sport-new" maxlength="30" placeholder="¿No está tu deporte? Ej: Softball" style="max-width:260px">
+          <button type="button" class="btn sm" id="pf-sport-add">Agregar</button></div>` : ''}</div>
       <div class="field"><span>Tipos de trabajo</span>
         <div class="pills" id="pf-services">${SERVICES.map(v => `<button type="button" class="chip ${(p.services || []).includes(v) ? 'on' : ''}" data-v="${esc(v)}">${esc(v)}</button>`).join('')}</div></div>
       <h3 style="margin-top:6px">Contacto y redes</h3>
@@ -313,6 +317,28 @@ function viewProfile() {
     } catch (err) { toast(errMsg(err), 'error'); }
   });
   $$('#pf-sports .chip, #pf-services .chip').forEach(c => c.onclick = () => c.classList.toggle('on'));
+  const addSport = async () => {
+    const inp = $('#pf-sport-new');
+    const name = inp.value.trim();
+    if (name.length < 2) return toast('Escribí el nombre del deporte.', 'error');
+    const btn = $('#pf-sport-add'); btn.disabled = true;
+    try {
+      const { tag, created } = await apiPost('/tags', { type: 'deporte', name });
+      S.tax = await loadTaxonomy(true);
+      let chip = $(`#pf-sports .chip[data-v="${tag.id}"]`);
+      if (!chip) {
+        $('#pf-sports').insertAdjacentHTML('beforeend', `<button type="button" class="chip" data-v="${esc(tag.id)}">${esc(tag.name)}</button>`);
+        chip = $(`#pf-sports .chip[data-v="${tag.id}"]`);
+        chip.onclick = () => chip.classList.toggle('on');
+      }
+      chip.classList.add('on');
+      inp.value = '';
+      toast(created ? `Agregamos "${tag.name}". Tocá Guardar.` : `"${tag.name}" ya existía: lo marcamos.`);
+    } catch (err) { toast(errMsg(err), 'error'); }
+    btn.disabled = false;
+  };
+  $('#pf-sport-add')?.addEventListener('click', addSport);
+  $('#pf-sport-new')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addSport(); } });
   $('#pf-slug').oninput = e => { $('#pf-slug-prev').textContent = slugify(e.target.value); };
   $('#pf').onsubmit = async e => {
     e.preventDefault();
@@ -350,9 +376,12 @@ function sportTags() {
 }
 
 // ================================================================ precios y marca
-function packsEditor(el, packs) {
+// getFeeMode: función que devuelve el modo de comisión elegido (para calcular el neto de cada pack).
+function packsEditor(el, packs, getFeeMode = () => 'absorb') {
   let rows = (packs || []).map(p => ({ ...p }));
-  const hint = r => (r.qty > 1 && r.price > 0 ? `${fmtMoney(r.price / r.qty)} c/u` : '&nbsp;');
+  const hint = r => (r.qty > 1 && r.price > 0
+    ? `${fmtMoney(r.price / r.qty)} c/u · te quedan ${fmtMoney(netOf(r.price, getFeeMode()).net)}`
+    : '&nbsp;');
   const draw = () => {
     el.innerHTML = `
       ${rows.length ? '' : '<p class="muted small" style="margin:0">Sin packs: cada foto se cobra al precio individual.</p>'}
@@ -375,6 +404,7 @@ function packsEditor(el, packs) {
   el.classList.add('stack');
   draw();
   return {
+    refresh: () => rows.forEach((r, i) => { const h = el.querySelector(`[data-hint="${i}"]`); if (h) h.innerHTML = hint(r); }),
     get() {
       const clean = rows.filter(r => r.qty || r.price).map(r => ({ qty: Math.round(r.qty), price: Math.round(r.price) }));
       for (const r of clean) if (!(r.qty >= 2 && r.price > 0)) throw new Error('Cada pack necesita cantidad (2 o más) y precio.');
@@ -382,6 +412,26 @@ function packsEditor(el, packs) {
       return clean.sort((a, b) => a.qty - b.qty);
     },
   };
+}
+
+// Neto del fotógrafo para un monto (después de la comisión de la plataforma y la de MP).
+function netOf(amount, feeMode) {
+  return sellerNet(amount, { feeMode, feePercent: S.settings.feePercent, mpPercent: mpPlanOf(S.profile, S.settings).percent });
+}
+
+// Desglose de una venta de `amount` (precio que fijó el fotógrafo).
+function breakdownHtml(amount, feeMode) {
+  if (!(amount > 0)) return '<p class="muted small" style="margin:0">Poné un precio para ver cuánto te queda.</p>';
+  const plan = mpPlanOf(S.profile, S.settings);
+  const n = netOf(amount, feeMode);
+  return `
+    <div class="breakdown">
+      <div class="bd-row"><span>Paga el comprador</span><span>${fmtMoney(n.total)}</span></div>
+      <div class="bd-row muted"><span>Comisión Quiero Mis Fotos (${S.settings.feePercent}%)</span><span>−${fmtMoney(n.platformFee)}</span></div>
+      <div class="bd-row muted"><span>Comisión Mercado Pago (${plan.percent}% · ${esc(plan.label.toLowerCase())})</span><span>−${fmtMoney(n.mpFee)}</span></div>
+      <div class="bd-row total"><span>Te queda</span><span>${fmtMoney(n.net)}</span></div>
+    </div>
+    <p class="muted small" style="margin:0">La comisión de MP depende del plazo de acreditación que tengas configurado en tu cuenta de Mercado Pago (<a href="#/mp">cambiar</a>). Es una estimación con tarjeta de crédito.</p>`;
 }
 
 function feeModeHtml(name, value) {
@@ -394,7 +444,7 @@ function feeModeHtml(name, value) {
 function viewConfig() {
   const p = S.profile;
   const d = p.defaults || {};
-  const wm = { ...DEFAULT_WATERMARK, text: p.displayName, ...(p.watermark || {}) };
+  const wm = { ...DEFAULT_WATERMARK, ...(p.watermark || {}) };
   $('#view').innerHTML = `
     <h1>Precios y marca de agua</h1>
     <p class="muted">Estos valores se usan por defecto en cada evento nuevo. Después podés cambiarlos por evento.</p>
@@ -406,43 +456,45 @@ function viewConfig() {
         <div id="cf-packs"></div>
         <h3>Comisión de la plataforma (${S.settings.feePercent}%)</h3>
         <div class="stack">${feeModeHtml('cf-fee', d.feeMode)}</div>
+        <h3>¿Cuánto te queda por foto?</h3>
+        <div id="cf-net"></div>
       </div>
       <div class="card stack">
         <h2>Marca de agua</h2>
+        <p class="muted small" style="margin:0">Todas las muestras llevan <strong>www.quieromisfotos.com.ar</strong> en mosaico. Si querés, sumá tu logo en el centro. El original que descarga el comprador va sin marca.</p>
         <div class="grid2">
           <div class="stack">
-            <label class="field">Tipo
-              <select id="wm-type"><option value="text">Texto</option><option value="logo" ${wm.type === 'logo' ? 'selected' : ''}>Logo</option></select></label>
-            <label class="field" id="wm-text-f">Texto<input type="text" id="wm-text" maxlength="40" value="${esc(wm.text)}"></label>
-            <div class="field" id="wm-logo-f">Logo <span class="hint">PNG con fondo transparente, idealmente blanco.</span>
-              ${isApproved() ? `<label class="btn sm" style="justify-self:start">Subir logo<input type="file" id="wm-logo-file" accept="image/png,image/webp" hidden></label>` : '<span class="muted small">Disponible cuando tu cuenta esté aprobada.</span>'}
+            <label class="check"><input type="checkbox" id="wm-uselogo" ${wantsLogo(wm) ? 'checked' : ''}> Agregar mi logo en el centro</label>
+            <div class="field" id="wm-logo-f">
+              <span class="hint">PNG con fondo transparente, idealmente blanco. Máximo 2 MB.</span>
+              <div class="row">
+                <img id="wm-logo-img" alt="" class="${wm.logoUrl ? '' : 'hidden'}" style="height:48px;max-width:140px;object-fit:contain;background:#3a3f4b;border-radius:8px;padding:4px">
+                ${isApproved() ? `<label class="btn sm">${wm.logoUrl ? 'Cambiar logo' : 'Subir logo'}<input type="file" id="wm-logo-file" accept="image/png,image/webp" hidden></label>` : '<span class="muted small">Disponible cuando tu cuenta esté aprobada.</span>'}
+              </div>
             </div>
-            <label class="field">Posición
-              <select id="wm-pos">
-                <option value="both" ${wm.position === 'both' ? 'selected' : ''}>Mosaico + central</option>
-                <option value="tiled" ${wm.position === 'tiled' ? 'selected' : ''}>Solo mosaico</option>
-                <option value="center" ${wm.position === 'center' ? 'selected' : ''}>Solo central</option>
-              </select></label>
             <label class="field">Opacidad <span class="hint" id="wm-op-v">${Math.round(wm.opacity * 100)}%</span>
               <input type="range" id="wm-op" min="0.1" max="0.7" step="0.05" value="${wm.opacity}"></label>
           </div>
           <div><canvas class="wm-preview" id="wm-canvas" width="960" height="640"></canvas>
-            <p class="muted small">Vista previa. La marca se aplica a las muestras y miniaturas; el original se entrega sin marca.</p></div>
+            <p class="muted small">Vista previa de una muestra.</p></div>
         </div>
       </div>
       <div class="row end" style="margin-top:14px"><button class="btn primary" type="submit">Guardar</button></div>
     </form>`;
-  const packs = packsEditor($('#cf-packs'), d.packs);
+  const feeMode = () => $('input[name=cf-fee]:checked').value;
+  const packs = packsEditor($('#cf-packs'), d.packs, feeMode);
+  const drawNet = () => { $('#cf-net').innerHTML = breakdownHtml(Math.round(Number($('#cf-price').value) || 0), feeMode()); packs.refresh(); };
+  $('#cf-price').addEventListener('input', drawNet);
+  $$('input[name=cf-fee]').forEach(r => r.addEventListener('change', drawNet));
+  drawNet();
+
   let logo = { key: wm.logoKey || '', url: wm.logoUrl || '', img: null };
   const readWm = () => ({
-    type: $('#wm-type').value === 'logo' && logo.key ? 'logo' : 'text',
-    text: $('#wm-text').value.trim(), position: $('#wm-pos').value, opacity: Number($('#wm-op').value),
+    useLogo: $('#wm-uselogo').checked && !!logo.key, opacity: Number($('#wm-op').value),
     logoKey: logo.key, logoUrl: logo.url,
   });
   const preview = () => {
-    const isLogo = $('#wm-type').value === 'logo';
-    $('#wm-text-f').classList.toggle('hidden', isLogo);
-    $('#wm-logo-f').classList.toggle('hidden', !isLogo);
+    $('#wm-logo-f').classList.toggle('hidden', !$('#wm-uselogo').checked);
     const c = $('#wm-canvas'), ctx = c.getContext('2d');
     drawSampleScene(ctx, c.width, c.height);
     drawWatermark(ctx, c.width, c.height, readWm(), logo.img);
@@ -453,8 +505,9 @@ function viewConfig() {
     const img = new Image();
     img.onload = () => { logo.img = img; preview(); };
     img.src = url;
+    const thumb = $('#wm-logo-img'); thumb.src = url; thumb.classList.remove('hidden');
   };
-  ['wm-type', 'wm-text', 'wm-pos', 'wm-op'].forEach(id => $('#' + id).addEventListener('input', preview));
+  ['wm-uselogo', 'wm-op'].forEach(id => $('#' + id).addEventListener('input', preview));
   $('#wm-logo-file')?.addEventListener('change', async e => {
     const f = e.target.files[0];
     if (!f) return;
@@ -471,8 +524,9 @@ function viewConfig() {
   $('#cf').onsubmit = async e => {
     e.preventDefault();
     try {
+      if ($('#wm-uselogo').checked && !logo.key) return toast('Subí tu logo o destildá la opción.', 'error');
       const upd = {
-        defaults: { price: Math.round(Number($('#cf-price').value) || 0), packs: packs.get(), feeMode: $('input[name=cf-fee]:checked').value },
+        defaults: { price: Math.round(Number($('#cf-price').value) || 0), packs: packs.get(), feeMode: feeMode() },
         watermark: readWm(),
       };
       await updateDoc(doc(db, 'users', S.user.uid), upd);
@@ -506,7 +560,23 @@ async function viewMp() {
           : '<button class="btn primary" id="mp-connect">Vincular Mercado Pago</button>'}
       </div>
       <p class="muted small" style="margin:0">Te vamos a llevar a Mercado Pago para que autorices a Quiero Mis Fotos a cobrar en tu nombre. Nunca vemos tu contraseña.</p>
+    </div>
+    <div class="card stack">
+      <h2>¿Cuánto cobrás de cada venta?</h2>
+      <p class="muted" style="margin:0">Mercado Pago cobra una comisión que depende de cuándo querés tener la plata disponible. Elegí el plazo que tenés configurado en tu cuenta de MP (en Mercado Pago: <em>Tu negocio → Costos y cuotas</em>) para ver tu neto real.</p>
+      <div class="stack" id="mp-plans">
+        ${(S.settings.mpFeePlans || []).map(pl => `<label class="check"><input type="radio" name="mp-plan" value="${esc(pl.id)}" ${mpPlanOf(p, S.settings).id === pl.id ? 'checked' : ''}> ${esc(pl.label)} <span class="muted small">(${pl.percent}% con IVA)</span></label>`).join('')}
+      </div>
+      <h3>Ejemplo con tu precio por foto${p.defaults?.price ? ` (${fmtMoney(p.defaults.price)})` : ''}</h3>
+      <div id="mp-net"></div>
     </div>`;
+  const drawNet = () => { $('#mp-net').innerHTML = breakdownHtml(p.defaults?.price || 0, p.defaults?.feeMode || 'absorb'); };
+  drawNet();
+  $('#mp-plans').addEventListener('change', async e => {
+    const mpReleasePlan = e.target.value;
+    try { await updateDoc(doc(db, 'users', S.user.uid), { mpReleasePlan }); S.profile.mpReleasePlan = mpReleasePlan; drawNet(); toast('Plazo guardado'); }
+    catch (err) { toast(errMsg(err), 'error'); }
+  });
   $('#mp-connect').onclick = async e => {
     e.target.disabled = true;
     try { const { url } = await apiPost('/mp/connect-url'); location.href = url; }
@@ -524,7 +594,8 @@ async function viewSales() {
   const snap = await getDocs(query(collection(db, 'orders'), where('photographerUid', '==', S.user.uid), orderBy('createdAt', 'desc'), limit(300)));
   const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   const paid = orders.filter(o => o.status === 'approved');
-  const net = o => (o.subtotal || 0) - (o.feeMode === 'buyer' ? 0 : (o.platformFee || 0));
+  const mpPct = mpPlanOf(S.profile, S.settings).percent;
+  const net = o => (o.total || 0) - (o.platformFee || 0) - Math.round(((o.total || 0) * mpPct) / 100);
   const byEvent = new Map();
   for (const o of paid) {
     const e = byEvent.get(o.eventId) || { name: o.eventName, count: 0, photos: 0, total: 0, net: 0 };
@@ -539,7 +610,7 @@ async function viewSales() {
       <div class="stat"><span class="muted small">Fotos vendidas</span><strong>${paid.reduce((a, o) => a + (o.count || 0), 0)}</strong></div>
       <div class="stat"><span class="muted small">Neto para vos</span><strong>${fmtMoney(paid.reduce((a, o) => a + net(o), 0))}</strong></div>
     </div>
-    <p class="muted small">El neto es después de la comisión de la plataforma y antes de la comisión de Mercado Pago, que se descuenta en tu cuenta de MP.</p>
+    <p class="muted small">Neto estimado: descuenta la comisión de la plataforma y la de Mercado Pago (${mpPct}%, <a href="#/mp">según tu plazo de acreditación</a>). El detalle exacto lo ves en tu cuenta de MP.</p>
     ${byEvent.size ? `<div class="card"><h2>Por evento</h2><div class="table-wrap"><table class="list">
       <tr><th>Evento</th><th>Ventas</th><th>Fotos</th><th>Cobrado</th><th>Neto</th></tr>
       ${[...byEvent.values()].map(e => `<tr><td>${esc(e.name)}</td><td>${e.count}</td><td>${e.photos}</td><td>${fmtMoney(e.total)}</td><td>${fmtMoney(e.net)}</td></tr>`).join('')}
@@ -834,6 +905,8 @@ function renderSetEditor(ev, set, reload) {
       <div id="st-packs"></div>
       <h3>Comisión</h3>
       <div class="stack" id="st-fee">${feeModeHtml('st-fee', set.feeMode)}</div>
+      <h3>¿Cuánto te queda por foto?</h3>
+      <div id="st-net"></div>
       <h2 style="margin-top:8px">Sub-álbumes</h2>
       <p class="muted small" style="margin:0">Ej: categorías, partidos o turnos. Ayudan al comprador a encontrar sus fotos.</p>
       <div id="st-subs" class="stack"></div>
@@ -844,7 +917,12 @@ function renderSetEditor(ev, set, reload) {
   mountPhotos($('#set-photos'), { ev, set, uid: S.user.uid, profile: S.profile, settings: S.settings })
     .catch(e => { $('#set-photos').innerHTML = `<div class="notice danger">${esc(errMsg(e))}</div>`; });
 
-  let packs = packsEditor($('#st-packs'), set.packs);
+  const stFee = () => $('input[name=st-fee]:checked')?.value || 'absorb';
+  let packs = packsEditor($('#st-packs'), set.packs, stFee);
+  const drawNet = () => { $('#st-net').innerHTML = breakdownHtml(Math.round(Number($('#st-price').value) || 0), stFee()); packs.refresh(); };
+  $('#st-price').addEventListener('input', drawNet);
+  $('#st-fee').addEventListener('change', drawNet);
+  drawNet();
   const drawSubs = () => {
     $('#st-subs').innerHTML = subs.length ? subs.map((s, i) => `
       <div class="row">
@@ -871,8 +949,9 @@ function renderSetEditor(ev, set, reload) {
   $('#use-def').onclick = () => {
     const d = S.profile.defaults || {};
     $('#st-price').value = d.price || '';
-    packs = packsEditor($('#st-packs'), d.packs);
+    packs = packsEditor($('#st-packs'), d.packs, stFee);
     $('#st-fee').innerHTML = feeModeHtml('st-fee', d.feeMode);
+    drawNet();
   };
   $('#set-form').onsubmit = async e => {
     e.preventDefault();
@@ -1083,6 +1162,14 @@ async function viewAdminConfig() {
         </div>
       </div>
       <div class="card stack">
+        <h2>Comisiones de Mercado Pago</h2>
+        <p class="muted small" style="margin:0">Se usan solo para mostrarle al fotógrafo su neto estimado. Porcentaje con IVA incluido, según el plazo de acreditación. Revisalas cuando MP cambie sus tarifas.</p>
+        <div id="a-mp" class="stack">${(st.mpFeePlans || DEFAULT_SETTINGS.mpFeePlans).map(pl => `
+          <div class="row"><span style="flex:1;min-width:120px">${esc(pl.label)}</span>
+            <input type="number" data-mp="${esc(pl.id)}" data-label="${esc(pl.label)}" value="${pl.percent}" min="0" max="30" step="0.01" style="max-width:110px"> <span class="muted small">%</span></div>`).join('')}
+        </div>
+      </div>
+      <div class="card stack">
         <h2>Plan Pro (portfolio)</h2>
         <div class="grid2">
           <label class="field">Precio mensual (ARS)<input type="number" id="a-pro-price" min="0" step="1" value="${st.proPrice}" required></label>
@@ -1121,6 +1208,7 @@ async function viewAdminConfig() {
         feePercent: Number($('#a-fee').value), retentionDays: Math.round(Number($('#a-ret').value)),
         extensionPlans: clean,
         proPrice: Math.round(Number($('#a-pro-price').value) || 0),
+        mpFeePlans: $$('#a-mp [data-mp]').map(i => ({ id: i.dataset.mp, label: i.dataset.label, percent: Math.round(Number(i.value) * 100) / 100 })),
         freePortfolioLimit: Math.round(Number($('#a-free-lim').value) || 0),
         proPortfolioLimit: Math.round(Number($('#a-pro-lim').value) || 1),
         updatedAt: serverTimestamp(),

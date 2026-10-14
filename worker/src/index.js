@@ -18,6 +18,7 @@
 //   POST   /orders/{id}/checkout       Bearer (comprador)                     reintentar pago
 //   POST   /orders/{id}/downloads      Bearer (comprador)                     -> links de 15 min
 //   GET    /dl/{token}                                                        descarga del original
+//   POST   /tags                       Bearer (fotógrafo aprobado) {type, name}  alta de deporte sin duplicados
 //
 // Claves en R2:
 //   qmf-public:  e/{eid}/{uid}/{pid}_p.jpg  (muestra)   e/{eid}/{uid}/{pid}_t.jpg  (miniatura)
@@ -29,6 +30,7 @@ import { signToken, verifyToken } from './tokens.js';
 import { json, httpError, apiUrl } from './http.js';
 import { connectUrl, callback, disconnect } from './mp.js';
 import { checkout, webhook, syncOrder, retryCheckout, downloadLinks, download } from './orders.js';
+import { createTag } from './tags.js';
 
 const MAX = { preview: 6e6, thumb: 1e6, original: 80e6, avatar: 3e6, logo: 2e6, cover: 6e6, portfolio: 6e6 };
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
@@ -68,6 +70,7 @@ async function route(req, env, ctx) {
   if (m === 'POST' && url.pathname === '/mp/disconnect') return disconnect(req, env);
   if (m === 'POST' && url.pathname === '/mp/webhook') return webhook(req, env);
   if (m === 'POST' && url.pathname === '/checkout') return checkout(req, env);
+  if (m === 'POST' && url.pathname === '/tags') return createTag(req, env);
   if (m === 'POST' && parts[0] === 'orders' && parts.length === 3 && ID_RE.test(parts[1])) {
     if (parts[2] === 'sync') return syncOrder(req, env, parts[1]);
     if (parts[2] === 'checkout') return retryCheckout(req, env, parts[1]);

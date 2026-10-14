@@ -77,3 +77,10 @@ export async function apiPost(path, body = {}) {
   if (!res.ok) throw Object.assign(new Error(data.error || `Error ${res.status}`), { status: res.status });
   return data;
 }
+
+// Carga el logo del fotógrafo como bitmap (vía la API, que agrega CORS).
+export async function loadLogoBitmap(key) {
+  const res = await fetch(`${API_BASE}/public/${key}`);
+  if (!res.ok) throw new Error('No se pudo cargar el logo');
+  return createImageBitmap(await res.blob());
+}

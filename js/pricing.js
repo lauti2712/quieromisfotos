@@ -52,3 +52,12 @@ export function computeTotals({ count, price, packs, feeMode, feePercent }) {
     sellerNet: b.subtotal - (buyer ? 0 : fee),
   };
 }
+
+// Lo que le queda al fotógrafo de un subtotal, descontando la comisión de la plataforma
+// y la de Mercado Pago (que MP cobra sobre el total que paga el comprador).
+export function sellerNet(subtotal, { feeMode, feePercent, mpPercent = 0 }) {
+  const platformFee = Math.round((subtotal * (Number(feePercent) || 0)) / 100);
+  const total = subtotal + (feeMode === 'buyer' ? platformFee : 0);
+  const mpFee = Math.round((total * (Number(mpPercent) || 0)) / 100);
+  return { total, platformFee, mpFee, net: total - platformFee - mpFee };
+}

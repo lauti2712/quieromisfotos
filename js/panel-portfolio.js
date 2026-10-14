@@ -2,8 +2,8 @@
 import { db, collection, doc, getDocs, setDoc, deleteDoc, updateDoc, query, where, serverTimestamp } from './fb.js';
 import { $, $$, esc, fmtMoney, fmtTs, toast, errMsg } from './util.js';
 import { processFile } from './image-proc.js';
-import { uploadAsset, deleteAsset, API_BASE } from './api.js';
-import { DEFAULT_WATERMARK } from './watermark.js';
+import { uploadAsset, deleteAsset, loadLogoBitmap } from './api.js';
+import { DEFAULT_WATERMARK, wantsLogo } from './watermark.js';
 import { isPro, portfolioLimit } from './data.js';
 
 export async function viewPortfolio(view, { uid, profile, settings }) {
@@ -22,7 +22,7 @@ export async function viewPortfolio(view, { uid, profile, settings }) {
         <strong>Arrastrá fotos acá o tocá para elegirlas</strong>
         <span class="muted small">Se guarda una versión web (1600px); el original no se sube.</span>
       </label>
-      <label class="check"><input type="checkbox" id="pf-wm" checked> Aplicar mi marca de agua</label>
+      <p class="muted small" style="margin:0">Se aplica tu marca de agua (www.quieromisfotos.com.ar${wantsLogo(profile.watermark) ? ' + tu logo' : ''}).</p>
       <div id="pf-progress" class="small muted"></div>
     </div>
     <div class="card"><div class="photo-grid" id="pf-grid"></div></div>`;
@@ -79,11 +79,9 @@ export async function viewPortfolio(view, { uid, profile, settings }) {
     if (!free.length) return toast(`Llegaste al límite de ${max} fotos de tu plan.`, 'error');
     if (free.length < files.length) toast(`Solo entran ${free.length} foto(s) más en tu plan.`, 'error');
 
-    const wm = $('#pf-wm').checked ? { ...DEFAULT_WATERMARK, text: profile.displayName, ...(profile.watermark || {}) } : null;
+    const wm = { ...DEFAULT_WATERMARK, ...(profile.watermark || {}) };
     let logo = null;
-    if (wm?.type === 'logo' && wm.logoKey) {
-      try { logo = await createImageBitmap(await (await fetch(`${API_BASE}/public/${wm.logoKey}`)).blob()); } catch { wm.type = 'text'; }
-    }
+    if (wantsLogo(wm)) { try { logo = await loadLogoBitmap(wm.logoKey); } catch { /* va la marca del sitio */ } }
     busy = true;
     let done = 0;
     const list = [...files].slice(0, free.length);

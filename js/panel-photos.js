@@ -4,8 +4,8 @@ import {
 } from './fb.js';
 import { $, $$, esc, toast, errMsg } from './util.js';
 import { createUploader } from './uploader.js';
-import { uploadSession, apiDelete, API_BASE } from './api.js';
-import { DEFAULT_WATERMARK } from './watermark.js';
+import { uploadSession, apiDelete, loadLogoBitmap } from './api.js';
+import { DEFAULT_WATERMARK, wantsLogo } from './watermark.js';
 
 const PAGE = 120;
 let activeUploader = null;
@@ -158,11 +158,11 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings }) {
   };
 
   // ------------------------------------------------ subida
-  const wm = { ...DEFAULT_WATERMARK, text: profile.displayName, ...(profile.watermark || {}) };
+  const wm = { ...DEFAULT_WATERMARK, ...(profile.watermark || {}) };
   let logo = null;
-  if (wm.type === 'logo' && wm.logoKey) {
-    try { logo = await createImageBitmap(await (await fetch(`${API_BASE}/public/${wm.logoKey}`)).blob()); }
-    catch { wm.type = 'text'; toast('No se pudo cargar tu logo; se usa marca de texto.', 'error'); }
+  if (wantsLogo(wm)) {
+    try { logo = await loadLogoBitmap(wm.logoKey); }
+    catch { toast('No se pudo cargar tu logo; en el centro va la marca del sitio.', 'error'); }
   }
 
   if (activeUploader && !activeUploader.busy()) activeUploader.destroy();

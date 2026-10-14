@@ -1,14 +1,18 @@
-// Dibujo de marca de agua sobre un canvas 2D (sirve para canvas y OffscreenCanvas).
-// wm: { type: 'text'|'logo', text, position: 'tiled'|'center'|'both', opacity: 0..1 }
-// logo: ImageBitmap/HTMLImageElement opcional (si type === 'logo').
+// Marca de agua sobre un canvas 2D (sirve para canvas y OffscreenCanvas).
+// Siempre lleva el sitio (www.quieromisfotos.com.ar) en mosaico. En el centro va el logo del fotógrafo
+// si lo activó y está cargado; si no, el sitio.
+// wm: { useLogo: bool, opacity: 0..1, logoKey, logoUrl }   logo: ImageBitmap/HTMLImageElement opcional.
 
-export const DEFAULT_WATERMARK = { type: 'text', text: '', position: 'both', opacity: 0.35 };
+export const SITE_MARK = 'www.quieromisfotos.com.ar';
+export const DEFAULT_WATERMARK = { useLogo: false, opacity: 0.35 };
+
+// Compatibilidad con perfiles guardados con el formato anterior ({ type: 'logo' | 'text', ... }).
+export const wantsLogo = wm => !!(wm && wm.logoKey && (wm.useLogo || wm.type === 'logo'));
 
 export function drawWatermark(ctx, w, h, wm, logo = null) {
   const opts = { ...DEFAULT_WATERMARK, ...wm };
   const alpha = Math.min(0.9, Math.max(0.05, Number(opts.opacity) || 0.35));
-  const useLogo = opts.type === 'logo' && logo;
-  const text = (opts.text || 'www.quieromisfotos.com.ar').toUpperCase();
+  const tiled = SITE_MARK.toUpperCase();
   const big = Math.max(w, h);
 
   ctx.save();
@@ -16,41 +20,36 @@ export function drawWatermark(ctx, w, h, wm, logo = null) {
   ctx.textBaseline = 'middle';
   ctx.lineJoin = 'round';
 
-  if (opts.position === 'tiled' || opts.position === 'both') {
-    const size = Math.max(12, Math.round(big * 0.028));
-    ctx.font = `700 ${size}px system-ui, -apple-system, Arial, sans-serif`;
-    ctx.globalAlpha = alpha * 0.75;
-    const stepX = useLogo ? size * 9 : Math.max(ctx.measureText(text).width + size * 3, size * 8);
-    const stepY = size * 5.5;
-    ctx.translate(w / 2, h / 2);
-    ctx.rotate(-Math.PI / 6);
-    const R = Math.hypot(w, h) / 2 + stepX;
-    let row = 0;
-    for (let y = -R; y < R; y += stepY, row++) {
-      const offset = row % 2 ? stepX / 2 : 0;
-      for (let x = -R + offset; x < R; x += stepX) {
-        if (useLogo) drawLogo(ctx, logo, x, y, size * 4);
-        else stamp(ctx, text, x, y, size);
-      }
-    }
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+  // Mosaico diagonal con el sitio
+  const size = Math.max(11, Math.round(big * 0.024));
+  ctx.font = `700 ${size}px system-ui, -apple-system, Arial, sans-serif`;
+  ctx.globalAlpha = alpha * 0.75;
+  const stepX = ctx.measureText(tiled).width + size * 3;
+  const stepY = size * 5.5;
+  ctx.translate(w / 2, h / 2);
+  ctx.rotate(-Math.PI / 6);
+  const R = Math.hypot(w, h) / 2 + stepX;
+  let row = 0;
+  for (let y = -R; y < R; y += stepY, row++) {
+    const offset = row % 2 ? stepX / 2 : 0;
+    for (let x = -R + offset; x < R; x += stepX) stamp(ctx, tiled, x, y, size);
   }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-  if (opts.position === 'center' || opts.position === 'both') {
-    ctx.globalAlpha = Math.min(0.95, alpha * 1.4);
-    if (useLogo) {
-      drawLogo(ctx, logo, w / 2, h / 2, Math.min(w, h) * 0.45);
-    } else {
-      let size = Math.round(Math.min(w, h) * 0.1);
-      ctx.font = `800 ${size}px system-ui, -apple-system, Arial, sans-serif`;
-      const max = w * 0.8;
-      const tw = ctx.measureText(text).width;
-      if (tw > max) {
-        size = Math.max(12, Math.floor(size * max / tw));
-        ctx.font = `800 ${size}px system-ui, -apple-system, Arial, sans-serif`;
-      }
-      stamp(ctx, text, w / 2, h / 2, size);
+  // Centro: logo del fotógrafo o el sitio
+  ctx.globalAlpha = Math.min(0.95, alpha * 1.4);
+  if (wantsLogo(opts) && logo) {
+    drawLogo(ctx, logo, w / 2, h / 2, Math.min(w, h) * 0.4);
+  } else {
+    let cs = Math.round(Math.min(w, h) * 0.075);
+    ctx.font = `800 ${cs}px system-ui, -apple-system, Arial, sans-serif`;
+    const max = w * 0.85;
+    const tw = ctx.measureText(SITE_MARK).width;
+    if (tw > max) {
+      cs = Math.max(11, Math.floor(cs * max / tw));
+      ctx.font = `800 ${cs}px system-ui, -apple-system, Arial, sans-serif`;
     }
+    stamp(ctx, SITE_MARK, w / 2, h / 2, cs);
   }
   ctx.restore();
 }

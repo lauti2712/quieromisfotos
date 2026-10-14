@@ -8,7 +8,21 @@ export const DEFAULT_SETTINGS = {
   proPrice: 3000,
   freePortfolioLimit: 12,
   proPortfolioLimit: 200,
+  // Comisión de Mercado Pago por plazo de acreditación (tarjeta de crédito, IVA incluido). Editable por el superadmin.
+  mpFeePlans: [
+    { id: '0', label: 'Al instante', percent: 7.85 },
+    { id: '10', label: 'A 10 días', percent: 5.19 },
+    { id: '18', label: 'A 18 días', percent: 4.10 },
+    { id: '35', label: 'A 35 días', percent: 2.17 },
+    { id: '70', label: 'A 70 días', percent: 0 },
+  ],
 };
+
+// Plan de acreditación de MP elegido por el fotógrafo (por defecto, al instante).
+export function mpPlanOf(user, settings) {
+  const plans = settings.mpFeePlans?.length ? settings.mpFeePlans : DEFAULT_SETTINGS.mpFeePlans;
+  return plans.find(p => p.id === user?.mpReleasePlan) || plans[0];
+}
 
 export const SERVICES = ['Deportes', 'Eventos sociales', 'Retratos / books', 'Institucional', 'Producto', 'Video'];
 

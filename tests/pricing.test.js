@@ -25,3 +25,10 @@ test('comisión absorb vs buyer', () => {
   const b = computeTotals({ count: 2, price: 5000, packs: [], feeMode: 'buyer', feePercent: 3 });
   assert.deepEqual([b.total, b.serviceFee, b.platformFee, b.sellerNet], [10300, 300, 300, 10000]);
 });
+
+test('neto del fotógrafo descuenta plataforma y Mercado Pago', async () => {
+  const { sellerNet } = await import('../js/pricing.js');
+  assert.deepEqual(sellerNet(3000, { feeMode: 'absorb', feePercent: 3, mpPercent: 7.85 }), { total: 3000, platformFee: 90, mpFee: 236, net: 2674 });
+  // si paga el comprador, MP cobra sobre el total con el costo de servicio incluido
+  assert.deepEqual(sellerNet(3000, { feeMode: 'buyer', feePercent: 3, mpPercent: 7.85 }), { total: 3090, platformFee: 90, mpFee: 243, net: 2757 });
+});
