@@ -102,7 +102,17 @@ async function applyPayment(env, orderId, order, payment) {
   } else if (order.status !== 'approved') {
     upd.status = status; // un pago rechazado no pisa uno aprobado
   }
-  await adminUpdate(env, `orders/${orderId}`, upd);
+  const transition = (upd.status === 'approved' && order.status !== 'approved') || (upd.status === 'refunded' && order.status === 'approved');
+  if (transition) {
+    // El webhook y la sincronización pueden llegar a la vez: solo cuenta el que escribe primero.
+    const won = await adminUpdate(env, `orders/${orderId}`, upd, { ifUpdateTime: order._updateTime });
+    if (!won) {
+      const fresh = await adminGet(env, `orders/${orderId}`);
+      return fresh || { ...order, ...upd };
+    }
+  } else {
+    await adminUpdate(env, `orders/${orderId}`, upd);
+  }
   // Contador de ventas en el set del fotógrafo (solo la primera vez que el pedido pasa a aprobado o se reembolsa).
   const setPath = `events/${order.eventId}/sets/${order.photographerUid}`;
   if (upd.status === 'approved' && order.status !== 'approved') {

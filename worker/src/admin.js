@@ -59,7 +59,7 @@ const encodeFields = obj => Object.fromEntries(Object.entries(obj).filter(([, v]
 
 export async function adminGet(env, path) {
   const d = await call(env, 'GET', `${root(env)}/${path}`);
-  return d ? { id: path.split('/').pop(), ...decodeFields(d.fields || {}) } : null;
+  return d ? { id: path.split('/').pop(), ...decodeFields(d.fields || {}), _updateTime: d.updateTime } : null;
 }
 
 export async function adminGetMany(env, paths) {
@@ -76,9 +76,22 @@ export async function adminSet(env, path, data, { mustNotExist = false } = {}) {
 }
 
 // Actualiza solo los campos indicados (de primer nivel). El documento tiene que existir.
-export async function adminUpdate(env, path, data) {
+// ifUpdateTime: solo escribe si el documento no cambió desde esa lectura (devuelve false si otro lo cambió antes).
+export async function adminUpdate(env, path, data, { ifUpdateTime } = {}) {
   const mask = Object.keys(data).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join('&');
-  return call(env, 'PATCH', `${root(env)}/${path}?${mask}&currentDocument.exists=true`, { fields: encodeFields(data) });
+  const pre = ifUpdateTime ? `currentDocument.updateTime=${encodeURIComponent(ifUpdateTime)}` : 'currentDocument.exists=true';
+  const res = await fetch(`${root(env)}/${path}?${mask}&${pre}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${await accessToken(env)}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: encodeFields(data) }),
+  });
+  if (ifUpdateTime && (res.status === 400 || res.status === 409)) {
+    const t = await res.text();
+    if (/FAILED_PRECONDITION|ABORTED|update_time|updateTime/i.test(t)) return false;
+    throw httpError(502, `Firestore ${res.status}: ${t.slice(0, 200)}`);
+  }
+  if (!res.ok) throw httpError(502, `Firestore ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return true;
 }
 
 // Suma `by` a campos numéricos (atómico, no pisa otros campos). fields: { campo: número }
