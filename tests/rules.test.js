@@ -228,3 +228,21 @@ test('comprador lee sus pedidos y no los ajenos', async () => {
   await assertSucceeds(getDoc(doc(user('ana'), 'orders/o2')));  // el fotógrafo ve sus ventas
   await assertFails(setDoc(doc(user('cliente1'), 'orders/o3'), { buyerUid: 'cliente1', status: 'approved' }));
 });
+
+// ---------- planes web
+test('plan Web también amplía el portfolio; pedidos de plan solo propios', async () => {
+  await env.withSecurityRulesDisabled(async ctx => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'settings/platform'), { freePortfolioLimit: 12, proPortfolioLimit: 200 });
+    await updateDoc(doc(db, 'users/beto'), { plan: 'web', proUntil: new Date(Date.now() + 86400000) });
+  });
+  const pf = (uid, slot) => ({ photographerUid: uid, slot, url: `https://x/u/${uid}/a.jpg`, thumbUrl: `https://x/u/${uid}/a_t.jpg`, cleanUrl: `https://x/u/${uid}/c.jpg` });
+  await assertSucceeds(setDoc(doc(user('beto'), 'portfolio/beto_100'), pf('beto', 100)));
+  await assertFails(setDoc(doc(user('beto'), 'portfolio/beto_101'), { ...pf('beto', 101), cleanUrl: 'https://x/u/ana/c.jpg' }));
+  await assertSucceeds(updateDoc(doc(user('beto'), 'portfolio/beto_100'), { album: 'Rugby' }));
+  await assertSucceeds(setDoc(doc(user('pepe'), 'planRequests/pepe'), { plan: 'web', displayName: 'Pepe' }));
+  await assertFails(setDoc(doc(user('pepe'), 'planRequests/ana'), { plan: 'web' }));
+  await assertFails(setDoc(doc(user('pepe'), 'planRequests/pepe'), { plan: 'gratis-para-siempre' }));
+  await assertFails(updateDoc(doc(user('beto'), 'users/beto'), { domainActive: true, siteDomain: 'x.com' }));
+  await assertFails(setDoc(doc(user('beto'), 'domains/x.com'), { uid: 'beto' }));
+});

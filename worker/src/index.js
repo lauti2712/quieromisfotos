@@ -18,6 +18,7 @@
 //   POST   /orders/{id}/checkout       Bearer (comprador)                     reintentar pago
 //   POST   /orders/{id}/downloads      Bearer (comprador)                     -> links de 15 min
 //   GET    /dl/{token}                                                        descarga del original
+//   GET    /w/{slug}  ·  {slug}.quieromisfotos.com.ar  ·  dominio propio           web personal del fotógrafo (planes Web)
 //   POST   /tags                       Bearer (fotógrafo aprobado) {type, name}  alta de actividad/club/lugar sin duplicados
 //
 // Claves en R2:
@@ -31,6 +32,7 @@ import { json, httpError, apiUrl } from './http.js';
 import { connectUrl, callback, disconnect } from './mp.js';
 import { checkout, webhook, syncOrder, retryCheckout, downloadLinks, download } from './orders.js';
 import { createTag } from './tags.js';
+import { renderSite } from './site.js';
 
 const MAX = { preview: 6e6, thumb: 1e6, original: 80e6, avatar: 3e6, logo: 2e6, cover: 6e6, portfolio: 6e6 };
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
@@ -59,6 +61,15 @@ async function route(req, env, ctx) {
   const parts = url.pathname.split('/').filter(Boolean);
   const m = req.method;
 
+  // Web personal del fotógrafo: {slug}.quieromisfotos.com.ar, dominio propio activado o /w/{slug} (vista previa).
+  if (m === 'GET') {
+    if (parts[0] === 'w' && parts[1] && parts.length === 2) return renderSite(req, env, ctx, { slug: parts[1].toLowerCase() });
+    const host = url.hostname.toLowerCase();
+    const sub = host.match(/^([a-z0-9-]+)\.quieromisfotos\.com\.ar$/)?.[1];
+    if (url.pathname === '/' && sub && !['api', 'fotos', 'www'].includes(sub)) return renderSite(req, env, ctx, { slug: sub });
+    const ours = /(^|\.)(quieromisfotos\.com\.ar|solucionescotidianas\.com\.ar|workers\.dev)$/.test(host) || host === 'localhost';
+    if (url.pathname === '/' && !ours) return renderSite(req, env, ctx, { host: host.replace(/^www\./, '') });
+  }
   if (m === 'GET' && parts[0] === 'public') return servePublic(req, env, ctx, parts.slice(1).join('/'));
   if (m === 'GET' && url.pathname === '/') return json({ ok: true, service: 'qmf-api' });
   if (m === 'POST' && url.pathname === '/upload-session') return uploadSession(req, env);

@@ -5,7 +5,7 @@ import {
 import {
   $, $$, esc, fmtDate, parseHash, queryWords, avatarHtml, coverHtml, SOCIALS, toast, errMsg, waLink, normalize,
 } from './util.js';
-import { loadTaxonomy, tagPills, loadSettings, isPro, portfolioLimit, GEAR_TYPES, GEAR_PLURAL } from './data.js';
+import { loadTaxonomy, tagPills, loadSettings, isPro, portfolioLimit, GEAR_TYPES, GEAR_PLURAL, hasWeb, siteUrlOf } from './data.js';
 import { openViewer } from './viewer.js';
 import { mountGallery } from './gallery.js';
 import { renderCart } from './cart-view.js';
@@ -313,6 +313,7 @@ async function renderProfile(slug) {
         <div class="row">
           ${user.demo ? '<button class="btn primary" data-demo-quote>💬 Pedir presupuesto</button>'
             : wa ? `<a class="btn primary" target="_blank" rel="noopener" href="${esc(waLink(wa, quoteMsg))}">💬 Pedir presupuesto</a>` : ''}
+          ${hasWeb(user) && !user.demo ? `<a class="btn" target="_blank" rel="noopener" href="${esc(siteUrlOf(user))}">🌐 Ver su web</a>` : ''}
           ${socials.map(s => user.demo
             ? `<button class="btn sm" data-demo-quote>${s.label}</button>`
             : `<a class="btn sm" target="_blank" rel="noopener" href="${esc(s.url(user.socials[s.key]))}">${s.label}</a>`).join('')}

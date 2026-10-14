@@ -26,7 +26,8 @@ service cloud.firestore {
     function eventData(eid) { return get(/databases/$(database)/documents/events/$(eid)).data; }
     // El vencimiento del set lo fija el fotógrafo una sola vez (primera subida): ahora + retentionDays.
     function initialExpiry() {
-      let days = get(/databases/$(database)/documents/settings/platform).data.retentionDays;
+      let sp = /databases/$(database)/documents/settings/platform;
+      let days = exists(sp) ? get(sp).data.get('retentionDays', 14) : 14;
       return resource.data.get('expiresAt', null) == null
         && request.resource.data.expiresAt is timestamp
         && request.resource.data.expiresAt > request.time + duration.value(days, 'd') - duration.value(1, 'h')
@@ -66,7 +67,7 @@ service cloud.firestore {
             && request.resource.data.mpConnected == false)
           || (isSuper() && request.resource.data.role == 'superadmin'));
       allow update: if isSuper() || (signedIn() && uid() == userId
-          && !changed().hasAny(['role', 'status', 'mpConnected', 'mpUserId', 'createdAt', 'plan', 'proUntil'])
+          && !changed().hasAny(['role', 'status', 'mpConnected', 'mpUserId', 'createdAt', 'plan', 'proUntil', 'domainActive', 'siteDomain'])
           && (!changed().hasAny(['slug']) || slugOwnedAfter(userId)));
       allow delete: if isSuper();
     }
@@ -148,8 +149,9 @@ service cloud.firestore {
     // Id = {uid}_{slot}; el slot tiene que ser menor al límite del plan (gratis / Pro).
     function portfolioLimit() {
       let u = get(userPath(uid())).data;
-      let st = get(/databases/$(database)/documents/settings/platform).data;
-      let pro = u.get('plan', 'free') == 'pro' && u.get('proUntil', null) != null && u.proUntil > request.time;
+      let sp = /databases/$(database)/documents/settings/platform;
+      let st = exists(sp) ? get(sp).data : {};
+      let pro = u.get('plan', 'free') in ['pro', 'web', 'webdomain'] && u.get('proUntil', null) != null && u.proUntil > request.time;
       return pro ? st.get('proPortfolioLimit', 200) : st.get('freePortfolioLimit', 12);
     }
     match /portfolio/{id} {
@@ -161,9 +163,24 @@ service cloud.firestore {
         && request.resource.data.slot < portfolioLimit()
         && id == uid() + '_' + string(request.resource.data.slot)
         && request.resource.data.thumbUrl.matches('.*/u/' + uid() + '/.*')
-        && request.resource.data.url.matches('.*/u/' + uid() + '/.*');
-      allow update: if signedIn() && resource.data.photographerUid == uid() && changed().hasOnly(['caption', 'order']);
+        && request.resource.data.url.matches('.*/u/' + uid() + '/.*')
+        && (!('cleanUrl' in request.resource.data) || request.resource.data.cleanUrl.matches('.*/u/' + uid() + '/.*'));
+      allow update: if signedIn() && resource.data.photographerUid == uid() && changed().hasOnly(['caption', 'order', 'album']);
       allow delete: if isSuper() || (signedIn() && resource.data.photographerUid == uid());
+    }
+
+    // ---------- pedidos de plan (el fotógrafo pide Pro / Web; el superadmin lo activa)
+    match /planRequests/{userId} {
+      allow read: if isSuper() || (signedIn() && uid() == userId);
+      allow create, update: if signedIn() && uid() == userId && isActivePhotographer()
+        && request.resource.data.keys().hasOnly(['plan', 'domain', 'createdAt', 'displayName'])
+        && request.resource.data.plan in ['pro', 'web', 'webdomain'];
+      allow delete: if isSuper() || (signedIn() && uid() == userId);
+    }
+
+    // ---------- dominios propios activados (los da de alta el superadmin; los lee solo el Worker)
+    match /domains/{host} {
+      allow read, write: if isSuper();
     }
 
     // ---------- órdenes y extensiones: solo las escribe el Worker ----------

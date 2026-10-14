@@ -5,7 +5,9 @@ export const DEFAULT_SETTINGS = {
   feePercent: 3,
   retentionDays: 14,
   extensionPlans: [],
-  proPrice: 3000,
+  proPrice: 4500,
+  webPrice: 9000,
+  webDomainPrice: 12000,
   freePortfolioLimit: 12,
   proPortfolioLimit: 200,
   // Comisión de Mercado Pago por plazo de acreditación (tarjeta de crédito, IVA incluido). Editable por el superadmin.
@@ -30,9 +32,35 @@ export const GEAR_PLURAL = { 'Cámara': 'Cámaras', 'Lente': 'Lentes', 'Drone': 
 
 export const SERVICES = ['Deportes', 'Eventos sociales', 'Retratos / books', 'Institucional', 'Producto', 'Video'];
 
-export function isPro(user) {
+// Planes pagos. `proUntil` es la fecha hasta la que está pago el plan (cualquiera de los pagos).
+export const PLANS = {
+  free: { label: 'Gratis' },
+  pro: { label: 'Portfolio Pro', priceKey: 'proPrice' },
+  web: { label: 'Web', priceKey: 'webPrice', web: true },
+  webdomain: { label: 'Web + Dominio', priceKey: 'webDomainPrice', web: true, domain: true },
+};
+
+// Plan vigente (si venció, vuelve a gratis).
+export function planOf(user) {
   const t = user?.proUntil?.toMillis ? user.proUntil.toMillis() : 0;
-  return user?.plan === 'pro' && t > Date.now();
+  return PLANS[user?.plan] && user.plan !== 'free' && t > Date.now() ? user.plan : 'free';
+}
+
+// Pro, Web y Web + Dominio incluyen todo lo de Pro (más fotos, destacado).
+export function isPro(user) {
+  return planOf(user) !== 'free';
+}
+
+export function hasWeb(user) {
+  return !!PLANS[planOf(user)].web;
+}
+
+// Dirección de la web personal. Hasta que quieromisfotos.com.ar esté activo en Cloudflare se usa la del servidor.
+export const WEB_SUBDOMAINS_READY = false;
+export function siteUrlOf(user) {
+  if (!user?.slug) return '';
+  if (user.domainActive && user.siteDomain) return `https://${user.siteDomain}`;
+  return WEB_SUBDOMAINS_READY ? `https://${user.slug}.quieromisfotos.com.ar` : `https://qmf-api.solucionescotidianas.com.ar/w/${user.slug}`;
 }
 
 export function portfolioLimit(user, settings) {

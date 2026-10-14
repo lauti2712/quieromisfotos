@@ -10,7 +10,8 @@ import {
   $, $$, esc, slugify, SLUG_RE, searchTokens, fmtMoney, fmtDate, fmtTs, todayIso, parseHash,
   toast, errMsg, avatarHtml, coverHtml, SOCIALS, newId, normalize,
 } from './util.js';
-import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, ACTIVITY_TYPE, USER_TAG_TYPES, tagPills, SERVICES, isPro, mpPlanOf, GEAR_TYPES } from './data.js';
+import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, ACTIVITY_TYPE, USER_TAG_TYPES, tagPills, SERVICES, isPro, mpPlanOf, GEAR_TYPES, PLANS, planOf, siteUrlOf } from './data.js';
+import { viewWeb } from './panel-web.js';
 import { sellerNet } from './pricing.js';
 import { viewPortfolio } from './panel-portfolio.js';
 import { drawWatermark, drawSampleScene, DEFAULT_WATERMARK, wantsLogo } from './watermark.js';
@@ -206,6 +207,7 @@ function navItems() {
     { href: '#/eventos', label: '🏟️ Mis eventos', need: true },
     { href: '#/ventas', label: '💰 Ventas', need: true },
     { href: '#/portfolio', label: '🖼️ Portfolio' },
+    { href: '#/web', label: '🌐 Mi web' },
     { group: 'Cuenta' },
     { href: '#/perfil', label: '👤 Perfil' },
     ...(isApproved() && S.profile.slug ? [{ href: `index.html#/f/${encodeURIComponent(S.profile.slug)}`, label: '👁️ Mi perfil público', external: true, blank: true, mobileOnly: true }] : []),
@@ -251,6 +253,7 @@ function route() {
   if (a === 'evento' && b && (isApproved() || S.isSuper)) return run(() => viewEvent(b));
   if (a === 'eventos' && isApproved() && !S.isSuper) return run(viewMyEvents);
   if (a === 'ventas' && isApproved()) return run(viewSales);
+  if (a === 'web' && !S.isSuper) return run(() => viewWeb($('#view'), { uid: S.user.uid, profile: S.profile, settings: S.settings }));
   if (a === 'portfolio' && !S.isSuper) return run(() => viewPortfolio($('#view'), { uid: S.user.uid, profile: S.profile, settings: S.settings }));
   if (S.isSuper) return run(viewAdminPhotographers);
   return run(viewHome);
@@ -1101,6 +1104,7 @@ async function viewAdminPhotographers() {
   const users = snap.docs.map(d => ({ uid: d.id, ...d.data() })).filter(u => u.role === 'photographer')
     .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
   const privs = await Promise.all(users.map(u => getDoc(doc(db, 'userPrivate', u.uid)).then(s => s.data() || {}).catch(() => ({}))));
+  const reqs = await Promise.all(users.map(u => getDoc(doc(db, 'planRequests', u.uid)).then(s => s.data() || null).catch(() => null)));
   $('#pl').innerHTML = users.length ? users.map((u, i) => `
     <div class="item-row">
       ${avatarHtml(u)}
@@ -1108,30 +1112,52 @@ async function viewAdminPhotographers() {
         <strong>${esc(u.displayName)}</strong> <span class="muted small">/${esc(u.slug)}</span><br>
         <span class="muted small">${esc(privs[i].email || '')}${u.zone ? ' · ' + esc(u.zone) : ''} · alta ${esc(fmtTs(u.createdAt))}</span><br>
         ${u.mpConnected ? '<span class="pill ok">MP vinculado</span>' : '<span class="pill">MP sin vincular</span>'}
-        ${isPro(u) ? `<span class="pill accent">⭐ Pro hasta ${esc(fmtTs(u.proUntil))}</span>` : '<span class="pill">Gratis</span>'}
+        ${planOf(u) !== 'free' ? `<span class="pill accent">⭐ ${esc(PLANS[planOf(u)].label)} hasta ${esc(fmtTs(u.proUntil))}</span>` : '<span class="pill">Gratis</span>'}
+        ${reqs[i] && reqs[i].plan !== planOf(u) ? `<span class="pill warn">Pidió: ${esc(PLANS[reqs[i].plan]?.label || reqs[i].plan)}</span>` : ''}
+        ${u.site?.requestedDomain && !u.domainActive ? `<span class="pill warn">Dominio pedido: ${esc(u.site.requestedDomain)}</span>` : ''}
+        ${u.domainActive ? `<span class="pill ok">🌐 ${esc(u.siteDomain)}</span>` : ''}
       </div>
       <div class="row">
         <a class="btn sm" target="_blank" href="index.html#/f/${esc(u.slug)}">Perfil</a>
         ${u.status !== 'approved' ? `<button class="btn sm ok" data-st="approved" data-uid="${u.uid}">Aprobar</button>` : ''}
         ${u.status !== 'suspended' ? `<button class="btn sm danger" data-st="suspended" data-uid="${u.uid}">Suspender</button>` : ''}
         ${u.status === 'suspended' ? `<button class="btn sm" data-st="pending" data-uid="${u.uid}">Volver a pendiente</button>` : ''}
-        ${u.status === 'approved' ? `<button class="btn sm" data-pro="${u.uid}">${isPro(u) ? '+30 días Pro' : 'Dar Pro 30 días'}</button>` : ''}
-        ${isPro(u) ? `<button class="btn sm ghost" data-unpro="${u.uid}">Quitar Pro</button>` : ''}
+        ${u.status === 'approved' ? `<select data-plan-sel="${u.uid}" style="width:auto">${Object.entries(PLANS).filter(([k]) => k !== 'free').map(([k, p]) => `<option value="${k}" ${(reqs[i]?.plan || planOf(u)) === k ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}</select>
+          <button class="btn sm" data-pro="${u.uid}">+30 días</button>` : ''}
+        ${isPro(u) ? `<button class="btn sm ghost" data-unpro="${u.uid}">Quitar plan</button>` : ''}
+        ${planOf(u) === 'webdomain' && u.site?.requestedDomain && !u.domainActive ? `<button class="btn sm ok" data-dom="${u.uid}">Activar dominio</button>` : ''}
+        ${planOf(u) !== 'free' && PLANS[planOf(u)].web ? `<a class="btn sm" target="_blank" href="${esc(siteUrlOf(u))}">Web</a>` : ''}
       </div>
     </div>`).join('') : '<div class="empty">No hay fotógrafos en esta lista.</div>';
   $$('[data-pro]').forEach(b => b.onclick = async () => {
     const u = users.find(x => x.uid === b.dataset.pro);
+    const plan = $(`[data-plan-sel="${u.uid}"]`).value;
     const from = isPro(u) ? u.proUntil.toMillis() : Date.now();
     try {
-      await updateDoc(doc(db, 'users', u.uid), { plan: 'pro', proUntil: Timestamp.fromMillis(from + 30 * 86400000) });
-      toast('Plan Pro actualizado');
+      await updateDoc(doc(db, 'users', u.uid), { plan, proUntil: Timestamp.fromMillis(from + 30 * 86400000) });
+      await deleteDoc(doc(db, 'planRequests', u.uid)).catch(() => {});
+      toast(`Plan ${PLANS[plan].label} activo por 30 días más`);
       viewAdminPhotographers();
     } catch (e) { toast(errMsg(e), 'error'); }
   });
   $$('[data-unpro]').forEach(b => b.onclick = async () => {
-    if (!confirm('¿Quitar el plan Pro? Las fotos de portfolio que superen el límite gratis se ocultan (no se borran).')) return;
+    if (!confirm('¿Quitar el plan? Las fotos de portfolio que superen el límite gratis se ocultan (no se borran) y su web deja de estar disponible.')) return;
     try { await updateDoc(doc(db, 'users', b.dataset.unpro), { plan: 'free', proUntil: null }); viewAdminPhotographers(); }
     catch (e) { toast(errMsg(e), 'error'); }
+  });
+  $$('[data-dom]').forEach(b => b.onclick = async () => {
+    const u = users.find(x => x.uid === b.dataset.dom);
+    const d = u.site.requestedDomain;
+    if (!confirm(`¿Activar ${d} para ${u.displayName}?\n\nAntes agregalo en Cloudflare (quieromisfotos.com.ar → SSL/TLS → Custom Hostnames) como ${d} y www.${d}, y verificá que el fotógrafo apuntó su DNS.`)) return;
+    try {
+      const bt = writeBatch(db);
+      bt.set(doc(db, 'domains', d), { uid: u.uid, createdAt: serverTimestamp() });
+      bt.set(doc(db, 'domains', `www.${d}`), { uid: u.uid, createdAt: serverTimestamp() });
+      bt.update(doc(db, 'users', u.uid), { domainActive: true, siteDomain: d });
+      await bt.commit();
+      toast('Dominio activado');
+      viewAdminPhotographers();
+    } catch (e) { toast(errMsg(e), 'error'); }
   });
   $$('[data-st]').forEach(b => b.onclick = async () => {
     try {
@@ -1277,9 +1303,11 @@ async function viewAdminConfig() {
         </div>
       </div>
       <div class="card stack">
-        <h2>Plan Pro (portfolio)</h2>
+        <h2>Planes</h2>
         <div class="grid2">
-          <label class="field">Precio mensual (ARS)<input type="number" id="a-pro-price" min="0" step="1" value="${st.proPrice}" required></label>
+          <label class="field">Portfolio Pro (ARS/mes)<input type="number" id="a-pro-price" min="0" step="1" value="${st.proPrice}" required></label>
+          <label class="field">Web (ARS/mes)<input type="number" id="a-web-price" min="0" step="1" value="${st.webPrice}" required></label>
+          <label class="field">Web + Dominio (ARS/mes)<input type="number" id="a-webdom-price" min="0" step="1" value="${st.webDomainPrice}" required></label>
           <span></span>
           <label class="field">Fotos de portfolio — Gratis<input type="number" id="a-free-lim" min="0" max="500" step="1" value="${st.freePortfolioLimit}" required></label>
           <label class="field">Fotos de portfolio — Pro<input type="number" id="a-pro-lim" min="1" max="2000" step="1" value="${st.proPortfolioLimit}" required></label>
@@ -1315,6 +1343,8 @@ async function viewAdminConfig() {
         feePercent: Number($('#a-fee').value), retentionDays: Math.round(Number($('#a-ret').value)),
         extensionPlans: clean,
         proPrice: Math.round(Number($('#a-pro-price').value) || 0),
+        webPrice: Math.round(Number($('#a-web-price').value) || 0),
+        webDomainPrice: Math.round(Number($('#a-webdom-price').value) || 0),
         mpFeePlans: $$('#a-mp [data-mp]').map(i => ({ id: i.dataset.mp, label: i.dataset.label, percent: Math.round(Number(i.value) * 100) / 100 })),
         freePortfolioLimit: Math.round(Number($('#a-free-lim').value) || 0),
         proPortfolioLimit: Math.round(Number($('#a-pro-lim').value) || 1),

@@ -94,6 +94,20 @@ export async function adminIncrement(env, path, fields) {
   });
 }
 
+// Consulta simple: filters [[campo, op, valor]] con op '==' | 'array-contains'; orderBy [[campo, 'asc'|'desc']].
+export async function adminQuery(env, collectionId, { filters = [], orderBy = [], limit = 100 } = {}) {
+  const ops = { '==': 'EQUAL', 'array-contains': 'ARRAY_CONTAINS' };
+  const ff = filters.map(([f, op, v]) => ({ fieldFilter: { field: { fieldPath: f }, op: ops[op], value: encodeValue(v) } }));
+  const structuredQuery = {
+    from: [{ collectionId }],
+    ...(ff.length ? { where: ff.length === 1 ? ff[0] : { compositeFilter: { op: 'AND', filters: ff } } } : {}),
+    ...(orderBy.length ? { orderBy: orderBy.map(([f, d]) => ({ field: { fieldPath: f }, direction: d === 'desc' ? 'DESCENDING' : 'ASCENDING' })) } : {}),
+    limit,
+  };
+  const out = await call(env, 'POST', `${root(env)}:runQuery`, { structuredQuery });
+  return (out || []).filter(r => r.document).map(r => ({ id: r.document.name.split('/').pop(), ...decodeFields(r.document.fields || {}) }));
+}
+
 export async function adminDelete(env, path) {
   return call(env, 'DELETE', `${root(env)}/${path}`);
 }
