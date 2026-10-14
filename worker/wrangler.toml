@@ -15,6 +15,8 @@ MP_CLIENT_ID = "7944412158224473"
 MP_REDIRECT_URI = "https://qmf-api.solucionescotidianas.com.ar/mp/callback"
 # "1" mientras se prueba con cuentas de prueba de MP; vaciar al salir a producción
 MP_TEST_MODE = "1"
+# TEMPORAL: no pedir a MP que retenga la comisión (app real + vendedor de prueba no se pueden mezclar). Sacar en producción.
+MP_TEST_NO_FEE = "1"
 
 [[r2_buckets]]
 binding = "PUBLIC"

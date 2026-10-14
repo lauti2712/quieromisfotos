@@ -63,7 +63,9 @@ export async function checkout(req, env) {
     headers: { 'X-Idempotency-Key': orderId },
     body: JSON.stringify({
       items,
-      marketplace_fee: t.platformFee,
+      // MP_TEST_NO_FEE: solo para pruebas, cuando la app de MP es de una cuenta real y el vendedor es de prueba
+      // (MP no permite mezclar). La comisión igual queda registrada en el pedido.
+      ...(env.MP_TEST_NO_FEE === '1' ? {} : { marketplace_fee: t.platformFee }),
       external_reference: orderId,
       notification_url: `${api}/mp/webhook?o=${orderId}`,
       back_urls: { success: back, failure: back, pending: back },
