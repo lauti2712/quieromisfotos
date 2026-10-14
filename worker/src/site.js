@@ -88,8 +88,9 @@ function page({ env, user, site, photos, events, tax, slug }) {
   const activities = (user.specialties || []).map(tagName).filter(Boolean);
   const albums = [...new Set(photos.map(p => p.album).filter(Boolean))];
   const services = (site.services || []).filter(s => s.name);
-  const wa = user.socials?.whatsapp ? `https://wa.me/${waNumber(user.socials.whatsapp)}?text=${encodeURIComponent(`¡Hola ${user.displayName}! Vi tu web y quería consultarte por `)}` : '';
-  const socials = Object.entries(SOCIAL).filter(([k]) => user.socials?.[k]).map(([k, f]) => `<a href="${esc(f(user.socials[k]))}" target="_blank" rel="noopener">${k === 'web' ? 'Web' : k[0].toUpperCase() + k.slice(1)}</a>`);
+  // El fotógrafo de ejemplo tiene contactos ficticios: no se enlazan.
+  const wa = !user.demo && user.socials?.whatsapp ? `https://wa.me/${waNumber(user.socials.whatsapp)}?text=${encodeURIComponent(`¡Hola ${user.displayName}! Vi tu web y quería consultarte por `)}` : '';
+  const socials = Object.entries(SOCIAL).filter(([k]) => !user.demo && user.socials?.[k]).map(([k, f]) => `<a href="${esc(f(user.socials[k]))}" target="_blank" rel="noopener">${k === 'web' ? 'Web' : k[0].toUpperCase() + k.slice(1)}</a>`);
   const gear = (user.gear || []).filter(g => g.name);
   const site0 = siteUrl(env);
   const desc = `${user.displayName} · ${tagline}${user.zone ? ` · ${user.zone}` : ''}`;
@@ -217,7 +218,7 @@ ${events.length && site.showEvents !== false ? `<section id="eventos" style="pad
 
 <section class="contact" id="contacto"><div class="wrap">
   <h2>¿Hablamos?</h2>
-  <p class="muted">Contame qué necesitás y te paso un presupuesto.</p>
+  <p class="muted">${user.demo ? 'Esta es una web de ejemplo de Quiero Mis Fotos: en una web real, acá están el WhatsApp y las redes del fotógrafo.' : 'Contame qué necesitás y te paso un presupuesto.'}</p>
   <div class="row">
     ${wa ? `<a class="btn" href="${esc(wa)}" target="_blank" rel="noopener">💬 WhatsApp</a>` : ''}
     ${socials.map(s => s.replace('<a ', '<a class="btn ghost" ')).join('')}
