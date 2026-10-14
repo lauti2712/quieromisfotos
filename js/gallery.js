@@ -6,10 +6,13 @@ import { openViewer } from './viewer.js';
 
 const PAGE = 60;
 
-export function mountGallery(box, { ev, photographers, sets }) {
+export function mountGallery(box, { ev, photographers, sets, initialUid = '' }) {
   const byUid = new Map(photographers.map(p => [p.uid, p]));
   const withPhotos = photographers.filter(p => (sets.get(p.uid)?.photoCount || 0) > 0);
   const state = { uid: '', sub: '', photos: [], cursor: null, done: false, loading: false };
+
+  // Link de álbum de un fotógrafo (#/evento/{id}?f={uid}): arranca filtrado por él.
+  if (initialUid && withPhotos.some(p => p.uid === initialUid)) state.uid = initialUid;
 
   if (!withPhotos.length) {
     box.innerHTML = '<div class="empty">📷 Las fotos de este evento van a estar disponibles muy pronto.</div>';

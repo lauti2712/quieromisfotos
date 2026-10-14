@@ -17,6 +17,7 @@ import { drawWatermark, drawSampleScene, DEFAULT_WATERMARK, wantsLogo } from './
 import { uploadAsset, apiPost } from './api.js';
 import { resizeToJpeg } from './image-proc.js';
 import { mountPhotos } from './panel-photos.js';
+import { shareLink, eventUrl } from './share.js';
 
 const root = $('#root');
 const S = { user: null, profile: null, isSuper: false, settings: { ...DEFAULT_SETTINGS }, tax: null };
@@ -678,6 +679,7 @@ async function viewMyEvents() {
       : `<div class="card"><div class="empty">Todavía no estás en ningún evento.<br>Creá uno nuevo o sumate a un evento general.</div></div>`}`;
   $('#new').onclick = () => eventDialog(null);
   $('#join').onclick = joinDialog;
+  $$('[data-share]').forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation(); shareEvent(evs.find(x => x.id === b.dataset.share)); });
 }
 
 function statusPill(ev) {
@@ -688,6 +690,7 @@ function panelEventCard(ev) {
   const mine = ev.createdBy === S.user.uid && ev.kind === 'own';
   return `
     <a class="event-card" href="#/evento/${ev.id}">
+      <button class="card-share" data-share="${ev.id}" title="Compartir" aria-label="Compartir">🔗</button>
       ${coverHtml(ev, statusPill(ev))}
       <div class="body">
         <span class="date">${esc(fmtDate(ev.date))}</span>
@@ -719,6 +722,15 @@ function setStatsHtml(set) {
       <span class="stat-chip ${set.soldPhotos ? 'ok' : ''}" title="Fotos vendidas">🛒 ${set.soldPhotos || 0} vendida${set.soldPhotos === 1 ? '' : 's'}</span>
       ${exp}
     </div>`;
+}
+
+// Compartir: el fotógrafo comparte su álbum (galería filtrada por él); el superadmin, el evento completo.
+function shareEvent(ev) {
+  if (!ev) return;
+  if (ev.status !== 'published') toast('Ojo: el evento está en borrador. Publicalo para que el link funcione.', 'error');
+  const mine = !S.isSuper && (ev.photographerUids || []).includes(S.user.uid);
+  const url = eventUrl(ev.id, mine && (ev.photographerUids || []).length > 1 ? S.user.uid : '');
+  shareLink({ title: ev.name, text: `📸 Ya están las fotos de ${ev.name}. Buscate y descargalas acá:`, url });
 }
 
 async function joinDialog() {
@@ -890,6 +902,7 @@ async function viewEvent(id) {
         </div>
         <div class="row">
           ${ev.status === 'published' ? `<a class="btn sm" target="_blank" href="index.html#/evento/${ev.id}">Ver público</a>` : ''}
+          <button class="btn sm share-btn" id="ev-share">🔗 Compartir</button>
           ${canEdit ? `<button class="btn sm" id="ev-edit">Editar</button>` : ''}
           ${canEdit ? `<button class="btn sm" id="ev-toggle">${ev.status === 'published' ? 'Despublicar' : 'Publicar'}</button>` : ''}
         </div>
@@ -899,6 +912,7 @@ async function viewEvent(id) {
     <div class="row end" style="margin-top:14px" id="ev-danger"></div>`;
 
   const reload = () => viewEvent(id);
+  $('#ev-share').onclick = () => shareEvent(ev);
   if (canEdit) {
     $('#ev-edit').onclick = () => eventDialog(ev, reload);
     $('#ev-toggle').onclick = async () => {
@@ -1143,6 +1157,7 @@ async function viewAdminEvents() {
     ${evs.length ? `<div class="events-grid">${evs.map(ev => panelEventCard(ev)).join('')}</div>` : '<div class="card"><div class="empty">No hay eventos.</div></div>'}`;
   $('#new').onclick = () => eventDialog(null);
   $$('[data-f]').forEach(b => b.onclick = () => { adminEvFilter = b.dataset.f; viewAdminEvents(); });
+  $$('[data-share]').forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation(); shareEvent(evs.find(x => x.id === b.dataset.share)); });
 }
 
 // ================================================================ superadmin: etiquetas

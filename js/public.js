@@ -11,6 +11,8 @@ import { mountGallery } from './gallery.js';
 import { renderCart } from './cart-view.js';
 import { renderAccount } from './account.js';
 import { renderOrder } from './order-view.js';
+import { maybeShowIntro } from './intro.js';
+import { shareLink, eventUrl } from './share.js';
 import { cart } from './cart.js';
 
 const updateCartBadge = () => {
@@ -25,6 +27,7 @@ updateCartBadge();
 const app = $('#app');
 const PAGE = 24;
 
+maybeShowIntro();
 window.addEventListener('hashchange', route);
 // Al ingresar/salir se re-dibujan las vistas que dependen de la cuenta.
 window.addEventListener('account:change', () => { const p = parseHash().parts[0]; if (p === 'cuenta' || p === 'carrito' || p === 'pedido') route(); });
@@ -167,6 +170,7 @@ async function renderEvent(id) {
       </div>
     </div>
     ${tags.length ? `<div class="pills" style="margin-bottom:18px">${tags.map(t => `<span class="pill accent">${esc(t.name)}</span>`).join('')}</div>` : ''}
+    <div class="row" style="margin-bottom:14px"><button class="btn share-btn" id="ev-share">🔗 Compartir evento</button></div>
     ${ev.demo ? '<div class="notice warn">👀 <strong>Evento de ejemplo.</strong> Está para que veas cómo funciona la plataforma: podés ver las fotos y armar el carrito, pero no se pueden comprar.</div>' : ''}
     <section class="card">
       <h2>Fotógrafos</h2>
@@ -178,7 +182,8 @@ async function renderEvent(id) {
       <h2>Fotos</h2>
       <div id="gallery"></div>
     </section>`;
-  mountGallery($('#gallery'), { ev, photographers, sets });
+  mountGallery($('#gallery'), { ev, photographers, sets, initialUid: parseHash().query.get('f') || '' });
+  $('#ev-share').onclick = () => shareLink({ title: ev.name, text: `📸 Fotos de ${ev.name} en Quiero Mis Fotos:`, url: eventUrl(ev.id) });
 }
 
 function gearHtml(gear) {
