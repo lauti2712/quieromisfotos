@@ -1,6 +1,7 @@
 // Página "Soy fotógrafo": explica cómo funciona la plataforma para fotógrafos, con animaciones.
-import { $$, esc, fmtMoney } from './util.js';
-import { loadSettings } from './data.js';
+import { $, $$, esc, fmtMoney } from './util.js';
+import { loadSettings, DEFAULT_SETTINGS } from './data.js';
+import { sellerNet } from './pricing.js';
 
 // Fotos de la animación (Pexels, licencia libre): una disciplina por ciclo.
 const SLIDES = [
@@ -21,7 +22,7 @@ const FEATURES = [
   { ic: '💲', t: 'Tus precios', d: 'Precio por foto y packs (ej: 5 fotos x $8.500). Al comprador se le aplica solo la combinación más barata.' },
   { ic: '📊', t: 'Ventas claras', d: 'Ves cuánto vendiste, cuánto te queda neto y qué álbumes venden más.' },
   { ic: '🔔', t: 'Aviso de cada venta', d: 'Te llega una notificación al celular cada vez que alguien compra.' },
-  { ic: '🕒', t: 'Fácil de encontrarse', d: 'Filtro por horario, favoritas y sub-álbumes: el que busca su foto la encuentra rápido y compra más.' },
+  { ic: '🕒', t: 'Fácil de encontrar', d: 'Filtro por horario, favoritas y sub-álbumes: el que busca su foto la encuentra rápido y compra más.' },
   { ic: '👥', t: 'Seguidores', d: 'La gente puede seguirte y activar el aviso de un evento: cuando subís las fotos, les llega la notificación.' },
   { ic: '📅', t: 'Eventos futuros', d: 'Cargá el evento antes de que pase: aparece en el calendario y la gente ya puede pedir el aviso.' },
   { ic: '🖼️', t: 'Perfil y portfolio', d: 'Tu perfil con tu trabajo, tu equipo y un botón de WhatsApp para pedirte presupuesto.' },
@@ -33,6 +34,34 @@ export async function renderPhotographerLanding(app) {
   const st = await loadSettings();
   const v2 = !!st.plansV2;
   const free = v2 ? st.freeFeePercent ?? 5 : st.feePercent ?? 3;
+  const fee = st.feePercent ?? 3, freeFee = st.freeFeePercent ?? 5;
+  const mpPlans = st.mpFeePlans?.length ? st.mpFeePlans : DEFAULT_SETTINGS.mpFeePlans;
+
+  // Planes: sin v2, Gratis + Web; con v2, Gratis + Profesional + Profesional + Dominio.
+  const plans = v2 ? [
+    { name: 'Gratis', price: 0, cta: 'Empezar gratis', items: ['1 álbum activo a la vez', `Hasta ${st.freeAlbumLimitGB ?? 3} GB por álbum`,
+      `Perfil y portfolio de ${st.freePortfolioLimit ?? 12} fotos`, `Comisión ${freeFee}% por venta`] },
+    { name: 'Profesional', price: st.webPrice, hot: true, cta: 'Quiero este plan', items: ['Álbumes ilimitados',
+      st.albumLimitGB > 0 ? `${st.albumLimitGB} GB por álbum (ampliable)` : 'Más espacio por álbum', `Portfolio de ${st.proPortfolioLimit ?? 80} fotos`,
+      'Tu web: tunombre.quieromisfotos.com.ar', 'Fotos de tu web sin marca de agua', 'Destacado en el directorio', `Comisión ${fee}% por venta`] },
+    { name: 'Profesional + Dominio', price: st.webDomainPrice, cta: 'Quiero este plan',
+      first: st.webDomainFirstPrice > st.webDomainPrice ? st.webDomainFirstPrice : 0,
+      items: ['Todo lo de Profesional', 'Tu propio dominio (tunombre.com.ar)'] },
+  ] : [
+    { name: 'Gratis', price: 0, cta: 'Empezar gratis', items: ['Vendé tus fotos en eventos', 'Álbumes ilimitados', 'Marca de agua, galería y cobro incluidos',
+      `Portfolio de ${st.freePortfolioLimit ?? 12} fotos`, `Comisión ${fee}% por venta`] },
+    { name: 'Web', price: st.webPrice, hot: true, cta: 'Quiero este plan', items: ['Todo lo de Gratis', `Portfolio de ${st.proPortfolioLimit ?? 80} fotos`,
+      'Tu web: tunombre.quieromisfotos.com.ar', 'Fotos de tu web sin marca de agua', 'Destacado en el directorio', `Comisión ${fee}% por venta`] },
+  ];
+  const planCard = (p, i) => `
+        <div class="lp-plan ${p.hot ? 'hot' : ''} reveal" style="--d:${i * 120}ms">
+          ${p.hot ? '<span class="lp-tag">Más elegido</span>' : ''}
+          <h3>${esc(p.name)}</h3>
+          <div class="lp-price">${p.price ? `${fmtMoney(p.price)}<small>/mes</small>` : '$0'}</div>
+          ${p.first ? `<p class="muted small">Primer mes ${fmtMoney(p.first)} (incluye el dominio)</p>` : ''}
+          <ul>${p.items.map(t => `<li>${esc(t)}</li>`).join('')}</ul>
+          <a class="btn ${p.hot ? 'primary' : ''} lp-plan-cta" href="panel.html">${esc(p.cta)}</a>
+        </div>`;
 
   app.innerHTML = `
   <div class="lp">
@@ -86,15 +115,34 @@ export async function renderPhotographerLanding(app) {
         <div class="lp-feat reveal" style="--d:${(i % 4) * 90}ms"><span>${f.ic}</span><h3>${f.t}</h3><p>${f.d}</p></div>`).join('')}</div>
     </section>
 
-    <section class="lp-sec">
+    <section id="planes" class="lp-sec">
       <h2 class="reveal">Planes</h2>
-      ${v2 ? `<div class="lp-plans">
-        <div class="lp-plan reveal"><h3>Gratis</h3><div class="lp-price">$0</div><ul><li>1 álbum activo a la vez</li><li>Hasta ${st.freeAlbumLimitGB ?? 3} GB por álbum</li><li>Perfil y portfolio de ${st.freePortfolioLimit ?? 12} fotos</li><li>Comisión ${st.freeFeePercent ?? 5}% por venta</li></ul></div>
-        <div class="lp-plan hot reveal" style="--d:120ms"><span class="lp-tag">Más elegido</span><h3>Profesional</h3><div class="lp-price">${fmtMoney(st.webPrice)}<small>/mes</small></div><ul><li>Álbumes ilimitados</li><li>${st.albumLimitGB > 0 ? `${st.albumLimitGB} GB por álbum (ampliable)` : 'Más espacio por álbum'}</li><li>Portfolio de ${st.proPortfolioLimit ?? 80} fotos</li><li>Tu web: tunombre.quieromisfotos.com.ar</li><li>Comisión ${st.feePercent ?? 3}% por venta</li></ul></div>
-        <div class="lp-plan reveal" style="--d:240ms"><h3>Profesional + Dominio</h3><div class="lp-price">${fmtMoney(st.webDomainPrice)}<small>/mes</small></div>
-          ${st.webDomainFirstPrice > st.webDomainPrice ? `<p class="muted small">Primer mes ${fmtMoney(st.webDomainFirstPrice)} (incluye el dominio)</p>` : ''}
-          <ul><li>Todo lo de Profesional</li><li>Tu propio dominio (tunombre.com.ar)</li></ul></div>
-      </div>` : `<div class="lp-box us reveal" style="text-align:center"><p class="lp-big" style="margin:0">Empezás gratis.</p><p>Solo pagás una comisión del ${esc(String(st.feePercent ?? 3))}% cuando vendés. Si querés tu propia web, tenés planes desde ${fmtMoney(st.webPrice)}/mes.</p></div>`}
+      <div class="lp-plans ${plans.length === 2 ? 'two' : ''}">${plans.map(planCard).join('')}
+      </div>
+      <p class="muted small lp-note reveal">En todos los planes elegís quién paga la comisión: la absorbés vos o se le suma al comprador como costo de servicio. Los planes pagos se cobran por Mercado Pago y los cancelás cuando quieras.</p>
+    </section>
+
+    <section id="cuanto-te-queda" class="lp-sec">
+      <h2 class="reveal">¿Cuánto te queda?</h2>
+      <div class="lp-calc reveal">
+        <div class="lp-calc-in">
+          <label class="field">Precio por foto<input type="number" id="lc-price" min="0" step="100" value="2000" inputmode="numeric"></label>
+          <label class="field">Fotos vendidas<input type="number" id="lc-count" min="0" step="1" value="10" inputmode="numeric"></label>
+          <label class="field">¿Quién paga la comisión?
+            <select id="lc-mode"><option value="buyer">El comprador (costo de servicio)</option><option value="absorb">La absorbo yo</option></select></label>
+          <label class="field">¿Cuándo cobrás en Mercado Pago?
+            <select id="lc-mp">${mpPlans.map(p => `<option value="${esc(String(p.percent))}">${esc(p.label)} · ${esc(String(p.percent).replace('.', ','))}%</option>`).join('')}</select></label>
+          ${v2 && freeFee !== fee ? `<label class="field">Plan
+            <select id="lc-plan"><option value="${esc(String(freeFee))}">Gratis · ${esc(String(freeFee))}%</option><option value="${esc(String(fee))}">Profesional · ${esc(String(fee))}%</option></select></label>` : ''}
+        </div>
+        <div class="lp-calc-out">
+          <div class="lp-calc-row"><span>El comprador paga</span><strong id="lc-total"></strong></div>
+          <div class="lp-calc-row"><span id="lc-fee-l"></span><span id="lc-fee"></span></div>
+          <div class="lp-calc-row"><span>Comisión Mercado Pago</span><span id="lc-mpfee"></span></div>
+          <div class="lp-calc-net"><span>Te queda</span><strong id="lc-net"></strong></div>
+          <p class="muted small" style="margin:0">La comisión de Mercado Pago depende del plazo de acreditación que elijas. Son valores de referencia con tarjeta de crédito, IVA incluido.</p>
+        </div>
+      </div>
     </section>
 
     <section class="lp-sec lp-faq">
@@ -125,6 +173,20 @@ export async function renderPhotographerLanding(app) {
     app.querySelector('#lp-t1').textContent = `¡Vendiste ${s.sold} fotos!`;
     app.querySelector('#lp-t2').textContent = `${s.ev} · ${fmtMoney(s.total)}`;
   });
+  // Calculadora: mismo cálculo que el panel (sellerNet).
+  const calc = () => {
+    const price = Math.max(0, Math.round(Number($('#lc-price', app).value) || 0));
+    const count = Math.max(0, Math.floor(Number($('#lc-count', app).value) || 0));
+    const pct = $('#lc-plan', app) ? Number($('#lc-plan', app).value) : (v2 ? freeFee : fee);
+    const r = sellerNet(price * count, { feeMode: $('#lc-mode', app).value, feePercent: pct, mpPercent: Number($('#lc-mp', app).value) });
+    $('#lc-total', app).textContent = fmtMoney(r.total);
+    $('#lc-fee-l', app).textContent = `Comisión Quiero Mis Fotos (${String(pct).replace('.', ',')}%)`;
+    $('#lc-fee', app).textContent = `−${fmtMoney(r.platformFee)}`;
+    $('#lc-mpfee', app).textContent = `−${fmtMoney(r.mpFee)}`;
+    $('#lc-net', app).textContent = fmtMoney(r.net);
+  };
+  $$('.lp-calc input, .lp-calc select', app).forEach(el => el.addEventListener('input', calc));
+  calc();
   $$('[data-scroll]', app).forEach(a => a.onclick = e => { e.preventDefault(); document.getElementById('como-funciona')?.scrollIntoView({ behavior: 'smooth' }); });
   // Aparición al hacer scroll.
   const io = new IntersectionObserver(es => es.forEach(en => { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } }), { threshold: 0.15 });
