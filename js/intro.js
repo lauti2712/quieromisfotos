@@ -57,7 +57,7 @@ export function showIntro() {
   };
   el.querySelectorAll('[data-choice]').forEach(b => b.addEventListener('click', () => {
     remember(b.dataset.choice);
-    if (b.dataset.choice === 'fotografo') { location.href = 'panel.html'; return; }
+    if (b.dataset.choice === 'fotografo') { close(); location.hash = '#/soy-fotografo'; return; }
     close();
     setTimeout(() => $('#f-q')?.focus(), 500);
   }));

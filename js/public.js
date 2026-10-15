@@ -16,6 +16,7 @@ import { initRefresh } from './refresh.js';
 import { shareLink, eventUrl } from './share.js';
 import { cart } from './cart.js';
 import { renderCalendar } from './calendar.js';
+import { renderPhotographerLanding } from './landing.js';
 import { myFollows, toggleFollow } from './follows.js';
 
 const updateCartBadge = () => {
@@ -48,6 +49,7 @@ function route() {
   if (parts[0] === 'pedido' && parts[1]) return renderOrder(app, parts[1], parseHash().query);
   if (parts[0] === 'fotografos') return renderDirectory();
   if (parts[0] === 'calendario') return renderCalendar(app);
+  if (parts[0] === 'soy-fotografo') return renderPhotographerLanding(app);
   return renderHome();
 }
 

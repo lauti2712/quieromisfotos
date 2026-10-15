@@ -468,3 +468,77 @@ body:has(.lightbox, .intro, dialog[open]) .wa-fab { display: none; }
   .cal-agenda { display: block; }
   .cal-none { display: none; }
 }
+
+/* ---------- página "Soy fotógrafo" ---------- */
+.lp { --lp-acc: var(--accent); }
+.reveal { opacity: 0; transform: translateY(18px); transition: opacity .6s ease, transform .6s ease; transition-delay: var(--d, 0ms); }
+.reveal.in { opacity: 1; transform: none; }
+.lp-hero { display: grid; grid-template-columns: 1.1fr .9fr; gap: 36px; align-items: center; padding: 26px 0 40px; }
+.lp-kicker { display: inline-block; font-size: .75rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); padding: 5px 10px; border-radius: 99px; margin-bottom: 12px; }
+.lp-hero h1 { font-size: clamp(2rem, 4.6vw, 3.2rem); line-height: 1.05; margin: 0 0 14px; }
+.lp-hero h1 span { background: linear-gradient(90deg, #ff5a1f, #ffb03d); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.lp-hero p { font-size: 1.05rem; line-height: 1.55; }
+.lp-cta { padding: 13px 22px; font-size: 1.05rem; box-shadow: 0 8px 24px rgba(255, 90, 31, .35); }
+.lp-stage { position: relative; aspect-ratio: 4/3.4; }
+.lp-card { position: absolute; inset: 0 8% 12% 0; border-radius: 18px; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,.35); transform: rotate(-2deg); animation: lpCard 9s ease-in-out infinite; }
+.lp-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.lp-wm { position: absolute; inset: 0; opacity: 0; animation: lpWm 9s infinite;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='120'%3E%3Ctext x='10' y='70' transform='rotate(-24 130 60)' font-family='Arial' font-size='17' font-weight='700' fill='white' fill-opacity='.55'%3Ewww.quieromisfotos.com.ar%3C/text%3E%3C/svg%3E"); }
+.lp-up { position: absolute; left: 14px; right: 14px; bottom: 14px; background: rgba(0,0,0,.65); color: #fff; border-radius: 12px; padding: 10px 12px; font-size: .85rem; backdrop-filter: blur(6px); animation: lpUp 9s infinite; }
+.lp-up i { display: block; height: 5px; border-radius: 9px; background: rgba(255,255,255,.2); margin-top: 7px; position: relative; overflow: hidden; }
+.lp-up i::after { content: ""; position: absolute; inset: 0; background: var(--accent); transform-origin: left; animation: lpBar 9s infinite; }
+.lp-chip { position: absolute; left: 14px; background: #fff; color: #14161b; font-weight: 700; font-size: .85rem; padding: 7px 12px; border-radius: 99px; box-shadow: 0 6px 18px rgba(0,0,0,.25); opacity: 0; }
+.lp-chip.c1 { top: 14px; animation: lpChip1 9s infinite; }
+.lp-chip.c2 { top: 54px; animation: lpChip2 9s infinite; }
+.lp-toast { position: absolute; right: 0; bottom: 0; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 16px; padding: 12px 16px; box-shadow: 0 16px 40px rgba(0,0,0,.3); display: grid; gap: 2px; min-width: 210px; opacity: 0; animation: lpToast 9s infinite; }
+.lp-toast small { color: var(--muted); }
+@keyframes lpCard { 0%, 100% { transform: rotate(-2deg) translateY(0); } 50% { transform: rotate(-1deg) translateY(-6px); } }
+@keyframes lpBar { 0% { transform: scaleX(0); } 22%, 100% { transform: scaleX(1); } }
+@keyframes lpUp { 0%, 24% { opacity: 1; transform: none; } 30%, 100% { opacity: 0; transform: translateY(10px); } }
+@keyframes lpWm { 0%, 26% { opacity: 0; } 34%, 92% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes lpChip1 { 0%, 30% { opacity: 0; transform: translateY(-6px); } 36%, 92% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+@keyframes lpChip2 { 0%, 48% { opacity: 0; transform: translateY(-6px); } 54%, 92% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+@keyframes lpToast { 0%, 64% { opacity: 0; transform: translateY(16px) scale(.95); } 70%, 92% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+.lp-sec { padding: 34px 0; }
+.lp-sec > h2 { font-size: clamp(1.5rem, 3vw, 2.1rem); text-align: center; margin: 0 0 24px; }
+.lp-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.lp-step { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 22px 18px; }
+.lp-n { position: absolute; top: 14px; right: 16px; font-weight: 800; font-size: 2rem; color: var(--border); }
+.lp-ic { font-size: 2rem; display: block; margin-bottom: 8px; }
+.lp-step h3, .lp-feat h3 { margin: 0 0 6px; font-size: 1.05rem; }
+.lp-step p, .lp-feat p { margin: 0; color: var(--muted); font-size: .92rem; line-height: 1.45; }
+.lp-split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.lp-box { border-radius: 18px; padding: 24px; border: 1px solid var(--border); background: var(--surface); }
+.lp-box.you { background: linear-gradient(135deg, #ff5a1f, #ff9a3d); color: #fff; border: 0; }
+.lp-box h3 { margin-top: 0; }
+.lp-box ul { margin: 0; padding-left: 20px; line-height: 1.9; }
+.lp-big { font-size: 1.5rem; font-weight: 800; margin: 14px 0 0; }
+.lp-feats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.lp-feat { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 18px; }
+.lp-feat > span { font-size: 1.6rem; display: block; margin-bottom: 6px; }
+.lp-plans { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.lp-plan { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 22px; }
+.lp-plan.hot { border: 2px solid var(--accent); box-shadow: 0 16px 40px rgba(255, 90, 31, .18); }
+.lp-tag { position: absolute; top: -12px; left: 22px; background: var(--accent); color: #fff; font-size: .72rem; font-weight: 800; padding: 4px 10px; border-radius: 99px; }
+.lp-plan h3 { margin: 0; }
+.lp-price { font-size: 1.8rem; font-weight: 800; margin: 6px 0 10px; }
+.lp-price small { font-size: .9rem; color: var(--muted); font-weight: 500; }
+.lp-plan ul { margin: 0; padding-left: 18px; line-height: 1.8; }
+.lp-faq details { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 18px; margin: 0 auto 10px; max-width: 760px; }
+.lp-faq summary { font-weight: 700; cursor: pointer; }
+.lp-faq details p { margin: 10px 0 0; color: var(--muted); line-height: 1.5; }
+.lp-final { text-align: center; padding: 40px 20px; margin: 20px 0 10px; border-radius: 22px; background: radial-gradient(circle at 30% 0%, rgba(255, 90, 31, .25), transparent 60%), var(--surface); border: 1px solid var(--border); }
+.lp-final h2 { font-size: 2rem; margin: 0 0 8px; }
+@media (max-width: 900px) {
+  .lp-hero { grid-template-columns: 1fr; gap: 26px; }
+  .lp-stage { max-width: 460px; width: 100%; margin: 0 auto; }
+  .lp-steps, .lp-feats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lp-plans, .lp-split { grid-template-columns: 1fr; }
+}
+@media (max-width: 520px) { .lp-steps, .lp-feats { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1; transform: none; transition: none; }
+  .lp-card, .lp-wm, .lp-up, .lp-up i::after, .lp-chip, .lp-toast { animation: none; }
+  .lp-wm, .lp-chip, .lp-toast { opacity: 1; }
+  .lp-up { display: none; }
+}

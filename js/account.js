@@ -151,7 +151,7 @@ export async function renderAccount(app) {
     <div id="orders"><div class="spinner"></div></div>
     <h2 style="margin-top:26px">🔔 Mis avisos</h2>
     <div id="follows"><div class="spinner"></div></div>
-    <p class="muted small" style="margin-top:24px" id="photog-hint">¿Sos fotógrafo? <a href="panel.html">Entrá al panel para vender tus fotos</a>.</p>`;
+    <p class="muted small" style="margin-top:24px" id="photog-hint">¿Sos fotógrafo? <a href="#/soy-fotografo">Mirá cómo vender tus fotos</a>.</p>`;
   $('#logout').onclick = async () => { await signOut(auth); location.hash = '#/'; };
 
   drawFollows(u).catch(() => { $('#follows').innerHTML = ''; });
