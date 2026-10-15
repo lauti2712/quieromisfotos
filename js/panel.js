@@ -632,11 +632,6 @@ function viewConfig() {
             <p class="muted small">Vista previa de una muestra.</p></div>
         </div>
       </div>
-      <div class="card stack">
-        <h2>Originales</h2>
-        <label class="check"><input type="checkbox" id="cf-optimize" ${p.optimizeOriginals !== false ? 'checked' : ''}> Optimizar los originales al subir (recomendado)</label>
-        <p class="muted small" style="margin:0">Se guardan a la misma resolución con calidad JPEG alta (92%): a simple vista no se distingue, ni impresa, pero ocupan alrededor de la mitad. La subida es más rápida y tu álbum rinde el doble de fotos. Si lo destildás, se guarda el archivo exacto de la cámara.</p>
-      </div>
       <div class="row end" style="margin-top:14px"><button class="btn primary" type="submit">Guardar</button></div>
     </form>`;
   const feeMode = () => $('input[name=cf-fee]:checked').value;
@@ -686,7 +681,6 @@ function viewConfig() {
       const upd = {
         defaults: { price: Math.round(Number($('#cf-price').value) || 0), packs: packs.get(), feeMode: feeMode() },
         watermark: readWm(),
-        optimizeOriginals: $('#cf-optimize').checked,
       };
       await updateDoc(doc(db, 'users', S.user.uid), upd);
       Object.assign(S.profile, upd);
@@ -1495,6 +1489,8 @@ async function viewAdminStorage() {
       <p class="muted small" style="margin:0">Espacio que cada fotógrafo puede usar por álbum (originales + muestras). Al llegar al límite no puede subir más fotos hasta comprar espacio adicional, que se paga con Mercado Pago a tu cuenta. 0 = sin límite.
         Referencia: una foto ocupa ~${fmtBytes(top.length ? top.reduce((a, t) => a + t.bytes, 0) / Math.max(1, top.reduce((a, t) => a + (t.photos || 0), 0)) : 12e6)} (sin optimizar).</p>
       <label class="field" style="max-width:240px">Límite por álbum (GB)<input type="number" id="lim-gb" min="0" step="0.5" value="${S.settings.albumLimitGB || 0}"></label>
+      <label class="check"><input type="checkbox" id="lim-opt" ${S.settings.optimizeOriginals !== false ? 'checked' : ''}> Optimizar los originales al subir (todos los fotógrafos)</label>
+      <p class="muted small" style="margin:0">Se guardan a la misma resolución con calidad JPEG 92%: no se nota a simple vista ni impresa, ocupan ~40-50% y la subida es más rápida. Si lo destildás, se guarda el archivo exacto de la cámara.</p>
       <h3 style="margin:4px 0 0">Packs de espacio adicional</h3>
       <div id="lim-plans" class="stack"></div>
       <div class="row"><button type="button" class="btn sm" id="lim-add">+ Agregar pack</button><span class="spacer" style="flex:1"></span><button class="btn primary">Guardar</button></div>
@@ -1540,7 +1536,7 @@ async function viewAdminStorage() {
     const clean = sp.filter(p => p.label || p.price).map(p => ({ id: p.id || newId(), label: (p.label || '').trim() || `+${p.gb} GB`, gb: Number(p.gb), price: Math.round(p.price) }));
     if (clean.some(p => !(p.gb > 0) || !(p.price > 0))) return toast('Cada pack necesita GB y precio.', 'error');
     try {
-      await setDoc(doc(db, 'settings', 'platform'), { albumLimitGB: Math.max(0, Number($('#lim-gb').value) || 0), storagePlans: clean, updatedAt: serverTimestamp() }, { merge: true });
+      await setDoc(doc(db, 'settings', 'platform'), { albumLimitGB: Math.max(0, Number($('#lim-gb').value) || 0), optimizeOriginals: $('#lim-opt').checked, storagePlans: clean, updatedAt: serverTimestamp() }, { merge: true });
       S.settings = await loadSettings();
       toast('Límite guardado');
     } catch (err) { toast(errMsg(err), 'error'); }

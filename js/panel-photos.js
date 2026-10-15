@@ -186,7 +186,7 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings }) {
   };
   let up;
   if (activeUploader?.busy() && activeUploader.eventId === ev.id) { up = activeUploader; up.setHandlers(handlers); }
-  else up = activeUploader = createUploader({ eventId: ev.id, uid, wm, logo, optimize: profile.optimizeOriginals !== false, ...handlers });
+  else up = activeUploader = createUploader({ eventId: ev.id, uid, wm, logo, optimize: settings.optimizeOriginals !== false, ...handlers });
   // El vencimiento de los originales arranca con la primera subida (una sola vez).
   let expiryStarted = !!set.expiresAt;
   function startExpiry() {

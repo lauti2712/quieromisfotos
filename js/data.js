@@ -7,6 +7,8 @@ export const DEFAULT_SETTINGS = {
   extensionPlans: [],
   // Límite de espacio por álbum en GB (0 = sin límite) y packs de espacio adicional que compra el fotógrafo.
   albumLimitGB: 0,
+  // Recomprimir los originales al subir (JPEG 92%, misma resolución). Lo decide el superadmin.
+  optimizeOriginals: true,
   storagePlans: [],
   proPrice: 4500,
   webPrice: 9000,
