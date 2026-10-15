@@ -2,6 +2,14 @@
 import { $$, esc, fmtMoney } from './util.js';
 import { loadSettings } from './data.js';
 
+// Fotos de la animación (Pexels, licencia libre): una disciplina por ciclo.
+const SLIDES = [
+  { img: 'demo/lp-futbol.jpg', n: 120, ev: 'Liga Amateur · Fecha 8', sold: 3, total: 6000 },
+  { img: 'demo/lp-rugby.jpg', n: 340, ev: 'Torneo de Rugby · Semifinal', sold: 5, total: 8500 },
+  { img: 'demo/lp-hockey.jpg', n: 210, ev: 'Hockey · Final Sub-16', sold: 4, total: 7600 },
+  { img: 'demo/lp-running.jpg', n: 860, ev: 'Maratón 10K', sold: 2, total: 4000 },
+];
+
 const STEPS = [
   { ic: '📸', t: 'Subís las fotos', d: 'Desde la compu o el celular, de a cientos. Se ordenan solas por hora y las podés separar en sub-álbumes.' },
   { ic: '🪄', t: 'Nosotros las preparamos', d: 'Les ponemos la marca de agua, armamos la galería y guardamos los originales seguros. Vos no tocás nada.' },
@@ -41,13 +49,13 @@ export async function renderPhotographerLanding(app) {
       </div>
       <div class="lp-stage" aria-hidden="true">
         <div class="lp-card">
-          <img src="demo/lp-clean.jpg" alt="">
+          ${SLIDES.map((s, i) => `<img src="${s.img}" alt="" class="${i ? '' : 'on'}" ${i ? 'loading="lazy"' : ''}>`).join('')}
           <div class="lp-wm"></div>
-          <div class="lp-up"><span>Subiendo 120 fotos…</span><i></i></div>
+          <div class="lp-up"><span id="lp-up-t">Subiendo ${SLIDES[0].n} fotos…</span><i></i></div>
           <span class="lp-chip c1">✓ Marca de agua</span>
           <span class="lp-chip c2">🔗 Link listo para compartir</span>
         </div>
-        <div class="lp-toast">💰 <b>¡Vendiste 3 fotos!</b><small>Torneo Apertura · $6.000</small></div>
+        <div class="lp-toast">💰 <b id="lp-t1">¡Vendiste ${SLIDES[0].sold} fotos!</b><small id="lp-t2">${esc(SLIDES[0].ev)} · ${fmtMoney(SLIDES[0].total)}</small></div>
       </div>
     </section>
 
@@ -106,6 +114,17 @@ export async function renderPhotographerLanding(app) {
     </section>
   </div>`;
 
+  // Cada vuelta de la animación cambia de disciplina (se cambia al reiniciar, cuando no hay marca ni carteles).
+  let k = 0;
+  app.querySelector('.lp-up')?.addEventListener('animationiteration', e => {
+    if (e.animationName !== 'lpUp') return; // la barra de progreso también reinicia: se ignora
+    k = (k + 1) % SLIDES.length;
+    const s = SLIDES[k];
+    app.querySelectorAll('.lp-card > img').forEach((im, i) => im.classList.toggle('on', i === k));
+    app.querySelector('#lp-up-t').textContent = `Subiendo ${s.n} fotos…`;
+    app.querySelector('#lp-t1').textContent = `¡Vendiste ${s.sold} fotos!`;
+    app.querySelector('#lp-t2').textContent = `${s.ev} · ${fmtMoney(s.total)}`;
+  });
   $$('[data-scroll]', app).forEach(a => a.onclick = e => { e.preventDefault(); document.getElementById('como-funciona')?.scrollIntoView({ behavior: 'smooth' }); });
   // Aparición al hacer scroll.
   const io = new IntersectionObserver(es => es.forEach(en => { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } }), { threshold: 0.15 });

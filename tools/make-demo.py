@@ -106,9 +106,6 @@ for i in range(6):
     save(watermark(s, opacity=.3), f'pf-{i}_p.jpg', 80)
     save(watermark(s.resize((400, int(400 * H / W)), Image.LANCZOS), opacity=.3), f'pf-{i}_t.jpg', 72)
 
-# sin marca, para la animación de la página "Soy fotógrafo"
-save(scene(500).resize((1200, 800)), 'lp-clean.jpg', 80)
-
 # portada y avatar
 save(scene(42).resize((1600, 900)), 'cover.jpg', 78)
 av = Image.new('RGB', (400, 400), (255, 90, 31))

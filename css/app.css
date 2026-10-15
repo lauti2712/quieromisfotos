@@ -481,7 +481,8 @@ body:has(.lightbox, .intro, dialog[open]) .wa-fab { display: none; }
 .lp-cta { padding: 13px 22px; font-size: 1.05rem; box-shadow: 0 8px 24px rgba(255, 90, 31, .35); }
 .lp-stage { position: relative; aspect-ratio: 4/3.4; }
 .lp-card { position: absolute; inset: 0 8% 12% 0; border-radius: 18px; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,.35); transform: rotate(-2deg); animation: lpCard 9s ease-in-out infinite; }
-.lp-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.lp-card > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; transition: opacity .8s ease; }
+.lp-card > img.on { opacity: 1; }
 .lp-wm { position: absolute; inset: 0; opacity: 0; animation: lpWm 9s infinite;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='120'%3E%3Ctext x='10' y='70' transform='rotate(-24 130 60)' font-family='Arial' font-size='17' font-weight='700' fill='white' fill-opacity='.55'%3Ewww.quieromisfotos.com.ar%3C/text%3E%3C/svg%3E"); }
 .lp-up { position: absolute; left: 14px; right: 14px; bottom: 14px; background: rgba(0,0,0,.65); color: #fff; border-radius: 12px; padding: 10px 12px; font-size: .85rem; backdrop-filter: blur(6px); animation: lpUp 9s infinite; }
