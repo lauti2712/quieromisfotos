@@ -40,6 +40,7 @@ import { createTag } from './tags.js';
 import { renderSite } from './site.js';
 import { scanRequest, scanStorage } from './storage.js';
 import { runBackup, backupRequest } from './backup.js';
+import { notifyFollowersOnce, drainPushQueue } from './push.js';
 import { extensionCheckout, extensionSync } from './extensions.js';
 import { subscribe, syncRequest, cancelSubscription, syncAllSubscriptions } from './subscriptions.js';
 
@@ -47,6 +48,8 @@ const MAX = { preview: 6e6, thumb: 1e6, original: 80e6, avatar: 3e6, logo: 2e6, 
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
 const SESSION_TTL = 2 * 3600;
 const BACKUP_CRON = '0 7 * * 1'; // lunes 04:00 (Argentina)
+const PUSH_CRON = '*/5 * * * *'; // cola de avisos a seguidores
+const NOTIFY_AT_PHOTOS = 20; // aviso a seguidores cuando el álbum llega a esta cantidad de fotos
 
 export default {
   async fetch(req, env, ctx) {
@@ -67,6 +70,7 @@ export default {
   // Cron diario: recalcula el uso de R2.
   async scheduled(event, env, ctx) {
     if (event.cron === BACKUP_CRON) { ctx.waitUntil(runBackup(env)); return; }
+    if (event.cron === PUSH_CRON) { ctx.waitUntil(drainPushQueue(env)); return; }
     ctx.waitUntil(scanStorage(env));
     ctx.waitUntil(syncAllSubscriptions(env));
   },
@@ -96,7 +100,7 @@ async function route(req, env, ctx) {
   if (m === 'GET' && parts[0] === 'public') return servePublic(req, env, ctx, parts.slice(1).join('/'));
   if (m === 'GET' && url.pathname === '/') return json({ ok: true, service: 'qmf-api' });
   if (m === 'POST' && url.pathname === '/upload-session') return uploadSession(req, env);
-  if (m === 'PUT' && parts[0] === 'upload' && parts.length === 4) return uploadPhotoPart(req, env, parts[1], parts[2], parts[3]);
+  if (m === 'PUT' && parts[0] === 'upload' && parts.length === 4) return uploadPhotoPart(req, env, parts[1], parts[2], parts[3], ctx);
   if (m === 'PUT' && parts[0] === 'asset' && parts.length === 2) return uploadAsset(req, env, parts[1]);
   if (m === 'DELETE' && parts[0] === 'photo' && parts.length === 3) return deletePhoto(req, env, parts[1], parts[2]);
   if (m === 'DELETE' && url.pathname === '/asset') return deleteAsset(req, env, url.searchParams.get('key') || '');
@@ -170,7 +174,7 @@ function checkSize(req, kind) {
 }
 
 // ------------------------------------------------------------------ fotos
-async function uploadPhotoPart(req, env, kind, eid, pid) {
+async function uploadPhotoPart(req, env, kind, eid, pid, ctx) {
   if (!['preview', 'thumb', 'original'].includes(kind)) throw httpError(400, 'Tipo inválido');
   if (!ID_RE.test(eid) || !ID_RE.test(pid)) throw httpError(400, 'Id inválido');
   const s = await session(req, env);
@@ -186,6 +190,10 @@ async function uploadPhotoPart(req, env, kind, eid, pid) {
       const used = (set.bytesOriginal || 0) + (set.bytesPublic || 0);
       const max = limit + (set.extraBytes || 0);
       if (used >= max) throw httpError(402, `El álbum llegó a su límite de ${Math.round(max / 1e8) / 10} GB. Comprá más espacio para seguir subiendo.`);
+    }
+    // Avisar a los seguidores del evento y del fotógrafo cuando el álbum ya tiene fotos.
+    if (set && !set.followersNotifiedAt && (set.photoCount || 0) >= NOTIFY_AT_PHOTOS) {
+      ctx.waitUntil(notifyFollowersOnce(env, eid, s.uid).catch(e => console.error('seguidores', e)));
     }
   }
   if (kind === 'original') {

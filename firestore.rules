@@ -194,6 +194,15 @@ service cloud.firestore {
       allow read: if isSuper() || (signedIn() && (resource.data.photographerUid == uid() || resource.data.buyerUid == uid()));
       allow write: if false;
     }
+    // Avisos del público: eventos y fotógrafos que sigue cada usuario
+    match /follows/{fid} {
+      allow read, delete: if signedIn() && uid() == fid;
+      allow create, update: if signedIn() && uid() == fid
+        && request.resource.data.keys().hasOnly(['events', 'photographers', 'updatedAt'])
+        && request.resource.data.get('events', []).size() <= 300
+        && request.resource.data.get('photographers', []).size() <= 300;
+    }
+
     // Clientes registrados (los escribe cada uno al ingresar; los lee el superadmin)
     match /customers/{cid} {
       allow read: if isSuper() || (signedIn() && uid() == cid);

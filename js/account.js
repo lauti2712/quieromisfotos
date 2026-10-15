@@ -149,8 +149,12 @@ export async function renderAccount(app) {
     </div>
     <h2>Mis compras</h2>
     <div id="orders"><div class="spinner"></div></div>
+    <h2 style="margin-top:26px">🔔 Mis avisos</h2>
+    <div id="follows"><div class="spinner"></div></div>
     <p class="muted small" style="margin-top:24px" id="photog-hint">¿Sos fotógrafo? <a href="panel.html">Entrá al panel para vender tus fotos</a>.</p>`;
   $('#logout').onclick = async () => { await signOut(auth); location.hash = '#/'; };
+
+  drawFollows(u).catch(() => { $('#follows').innerHTML = ''; });
 
   // Un fotógrafo que entra a "Mis compras" no ve la invitación a vender.
   if (isPhotographer) $('#photog-hint')?.remove();
@@ -172,4 +176,38 @@ export async function renderAccount(app) {
   } catch (e) {
     $('#orders').innerHTML = `<div class="notice danger">${esc(errMsg(e))}</div>`;
   }
+}
+
+// Eventos y fotógrafos que sigue el usuario + estado de las notificaciones en este dispositivo.
+async function drawFollows(u) {
+  const { myFollows, toggleFollow } = await import('./follows.js');
+  const { pushAvailable, pushOn, enablePush, isIos, isStandalone } = await import('./push.js');
+  const f = await myFollows();
+  const [evs, phs] = await Promise.all([
+    Promise.all([...f.events].map(id => getDoc(doc(db, 'events', id)).then(s => (s.exists() ? { id, ...s.data() } : null)).catch(() => null))),
+    Promise.all([...f.photographers].map(id => getDoc(doc(db, 'users', id)).then(s => (s.exists() ? { id, ...s.data() } : null)).catch(() => null))),
+  ]);
+  const today = new Date().toISOString().slice(0, 10);
+  const box = $('#follows');
+  if (!box) return;
+  const canPush = await pushAvailable();
+  const pushHtml = pushOn() ? '<p class="muted small">✅ Las notificaciones están activadas en este dispositivo.</p>'
+    : canPush ? '<div class="notice row" style="justify-content:space-between"><span>Activá las notificaciones para enterarte al instante.</span><button class="btn sm primary" id="push-on">Activar</button></div>'
+    : isIos() && !isStandalone() ? '<div class="notice small">En iPhone, para recibir los avisos agregá el sitio a tu pantalla de inicio (Compartir → Agregar a inicio) y abrilo desde ese ícono.</div>' : '';
+  const list = [
+    ...evs.filter(Boolean).sort((a, b) => (a.date || '').localeCompare(b.date || '')).map(ev => `
+      <div class="card row" style="justify-content:space-between;margin-bottom:8px">
+        <a href="#/evento/${ev.id}" style="flex:1;min-width:0;text-decoration:none"><strong>${esc(ev.name)}</strong><br>
+          <span class="muted small">${ev.date > today ? `📅 Es el ${esc(new Date(ev.date + 'T12:00').toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' }))}` : '📷 Ver fotos'}</span></a>
+        <button class="btn sm ghost" data-unf-e="${ev.id}">Quitar</button></div>`),
+    ...phs.filter(Boolean).map(p => `
+      <div class="card row" style="justify-content:space-between;margin-bottom:8px">
+        <a href="#/f/${esc(p.slug)}" style="flex:1;min-width:0;text-decoration:none"><strong>📸 ${esc(p.displayName)}</strong><br><span class="muted small">Te avisamos cuando suba fotos nuevas</span></a>
+        <button class="btn sm ghost" data-unf-p="${p.id}">Dejar de seguir</button></div>`),
+  ];
+  box.innerHTML = list.length ? pushHtml + list.join('')
+    : '<div class="card"><p class="muted" style="margin:0">Todavía no seguís eventos ni fotógrafos. En cada evento tocá <strong>🔔 Avisarme</strong> y te avisamos cuando suban las fotos. <a href="#/calendario">Ver el calendario</a></p></div>';
+  $('#push-on')?.addEventListener('click', async () => { try { await enablePush(u.uid); toast('🔔 Notificaciones activadas'); drawFollows(u); } catch (e) { toast(errMsg(e), 'error'); } });
+  box.querySelectorAll('[data-unf-e]').forEach(b => b.onclick = async () => { await toggleFollow('events', b.dataset.unfE); drawFollows(u); });
+  box.querySelectorAll('[data-unf-p]').forEach(b => b.onclick = async () => { await toggleFollow('photographers', b.dataset.unfP); drawFollows(u); });
 }

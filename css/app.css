@@ -438,3 +438,33 @@ body:has(.lightbox, .intro, dialog[open]) .wa-fab { display: none; }
   .event-hero .cover { aspect-ratio: auto; min-height: 300px; }
   .event-hero .meta h1 { font-size: 1.4rem; }
 }
+
+/* ---------- próximos eventos y calendario ---------- */
+.upcoming-row { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(240px, 280px); gap: 14px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x mandatory; }
+.upcoming-row > * { scroll-snap-align: start; }
+.hero-actions { position: absolute; top: 14px; right: 14px; z-index: 2; display: flex; gap: 8px; }
+.hero-btn { background: rgba(0,0,0,.45); color: #fff; border-color: rgba(255,255,255,.35); backdrop-filter: blur(6px); }
+.hero-btn:hover { background: rgba(0,0,0,.65); }
+.hero-btn.on { background: var(--accent); border-color: var(--accent); }
+.cal-nav { gap: 8px; align-items: center; }
+.cal-title { min-width: 150px; text-align: center; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; margin-bottom: 12px; }
+.cal-dow { font-size: .75rem; color: var(--muted); text-align: center; font-weight: 600; padding: 4px 0; }
+.cal-cell { min-height: 96px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 4px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cal-cell.empty { background: transparent; border: 0; }
+.cal-cell.past .cal-d { opacity: .5; }
+.cal-cell.today { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.cal-d { font-size: .75rem; font-weight: 700; }
+.cal-ev { font-size: .72rem; line-height: 1.2; padding: 3px 5px; border-radius: 5px; background: var(--surface-2); text-decoration: none; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-ev.future { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.cal-agenda { display: none; }
+.cal-day { margin-bottom: 14px; }
+.cal-day-h { text-transform: capitalize; margin-bottom: 6px; }
+.cal-day.today .cal-day-h strong { color: var(--accent); }
+.cal-item { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); text-decoration: none; margin-bottom: 6px; }
+.cal-none { display: block; }
+@media (max-width: 760px) {
+  .cal-grid { display: none; }
+  .cal-agenda { display: block; }
+  .cal-none { display: none; }
+}

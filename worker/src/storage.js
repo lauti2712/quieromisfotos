@@ -8,7 +8,7 @@ import { verifyIdToken } from './firebase.js';
 import { adminGet, adminGetMany, adminSet, adminUpdateMany } from './admin.js';
 import { json, httpError } from './http.js';
 import { setAvailableUntil } from './orders.js';
-import { notifyUser } from './push.js';
+import { notifyUser, notifyFollowersOnce } from './push.js';
 import { cleanOrphans } from './cleanup.js';
 
 const GRACE_DAYS = 7;
@@ -81,6 +81,13 @@ export async function scanStorage(env) {
   }
   retention.upcoming.sort((a, b) => a.deleteAt - b.deleteAt).splice(40);
   const warnUpd = await sendWarnings(env, warnings).catch(e => { console.error('avisos', e); return {}; });
+  // Avisos a seguidores pendientes (álbumes con menos de 20 fotos o eventos publicados después de subir).
+  for (const [i, id] of ids.entries()) {
+    const set = docs[i];
+    if (!set || set.followersNotifiedAt || !(set.photoCount > 0) || set.originalsDeleted) continue;
+    const [eid, uid] = id.split('/');
+    await notifyFollowersOnce(env, eid, uid).catch(e => console.error('seguidores', e));
+  }
 
   // ---- archivos sueltos (álbumes/portadas/fotos borrados, imágenes de perfil reemplazadas)
   const cleanup = await cleanOrphans(env, { sets, ids, docs, profileObjs, coverObjs }).catch(e => { console.error('limpieza', e); return { mode: 'error', error: String(e.message || e) }; });

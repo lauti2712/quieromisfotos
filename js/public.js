@@ -3,7 +3,7 @@ import {
   db, collection, doc, getDoc, getDocs, query, where, orderBy, limit, startAfter,
 } from './fb.js';
 import {
-  $, $$, esc, fmtDate, parseHash, queryWords, avatarHtml, coverHtml, SOCIALS, toast, errMsg, waLink, normalize,
+  $, $$, esc, fmtDate, parseHash, queryWords, avatarHtml, coverHtml, SOCIALS, toast, errMsg, waLink, normalize, todayIso,
 } from './util.js';
 import { loadTaxonomy, tagPills, loadSettings, isPro, portfolioLimit, GEAR_TYPES, GEAR_PLURAL, hasWeb, siteUrlOf } from './data.js';
 import { openViewer } from './viewer.js';
@@ -15,6 +15,8 @@ import { maybeShowIntro } from './intro.js';
 import { initRefresh } from './refresh.js';
 import { shareLink, eventUrl } from './share.js';
 import { cart } from './cart.js';
+import { renderCalendar } from './calendar.js';
+import { myFollows, toggleFollow } from './follows.js';
 
 const updateCartBadge = () => {
   const n = cart.count();
@@ -45,6 +47,7 @@ function route() {
   if (parts[0] === 'cuenta') return renderAccount(app);
   if (parts[0] === 'pedido' && parts[1]) return renderOrder(app, parts[1], parseHash().query);
   if (parts[0] === 'fotografos') return renderDirectory();
+  if (parts[0] === 'calendario') return renderCalendar(app);
   return renderHome();
 }
 
@@ -60,6 +63,7 @@ async function renderHome() {
       <h1>Encontrá tus fotos</h1>
       <p class="muted">Buscá el evento donde participaste y comprá tus fotos en alta calidad.</p>
     </section>
+    <section id="upcoming"></section>
     <div class="filters">
       <input class="search" type="text" id="f-q" placeholder="Buscar evento por nombre o lugar…" value="${esc(filters.q)}">
       ${tax.types.map(t => `
@@ -76,7 +80,7 @@ async function renderHome() {
     <div id="results" class="events-grid"></div>
     <div id="more" class="row" style="justify-content:center;margin-top:20px"></div>`;
 
-  const reload = () => { cursor = null; $('#results').innerHTML = ''; loadEvents(tax); };
+  const reload = () => { cursor = null; $('#results').innerHTML = ''; loadEvents(tax); drawUpcoming(tax); };
   let t;
   $('#f-q').addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => { filters.q = e.target.value; reload(); }, 350); });
   $('#f-from').addEventListener('change', e => { filters.from = e.target.value; reload(); });
@@ -103,6 +107,8 @@ async function loadEvents(tax) {
   else if (tagIds.length) cons.push(where('tagIds', 'array-contains', tagIds[0]));
   if (filters.from) cons.push(where('date', '>=', filters.from));
   if (filters.to) cons.push(where('date', '<=', filters.to));
+  // Sin fechas elegidas, los eventos futuros van en "Próximos eventos" (arriba) y acá solo los que ya pasaron.
+  else if (!filters.from) cons.push(where('date', '<=', todayIso()));
   cons.push(orderBy('date', 'desc'));
   if (cursor) cons.push(startAfter(cursor));
   cons.push(limit(PAGE));
@@ -127,11 +133,30 @@ async function loadEvents(tax) {
   }
 }
 
+// Próximos eventos (fecha futura), solo con el buscador sin filtros.
+async function drawUpcoming(tax) {
+  const box = $('#upcoming');
+  if (!box) return;
+  const clean = !filters.q && !filters.from && !filters.to && !Object.keys(filters.tags).length;
+  if (!clean) { box.innerHTML = ''; return; }
+  try {
+    const snap = await getDocs(query(collection(db, 'events'), where('status', '==', 'published'), where('date', '>', todayIso()), orderBy('date'), limit(8)));
+    const evs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    box.innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:10px">
+        <h2 style="margin:0">📅 Próximos eventos</h2><a class="btn sm" href="#/calendario">Ver calendario</a></div>
+      ${evs.length ? `<div class="upcoming-row">${evs.map(ev => eventCard(ev, tax)).join('')}</div>`
+        : '<p class="muted small">Todavía no hay eventos próximos cargados. <a href="#/calendario">Ver el calendario</a></p>'}
+      <h2 style="margin:22px 0 10px">Eventos con fotos</h2>`;
+  } catch { box.innerHTML = ''; }
+}
+
+export const isUpcoming = ev => !!ev.date && ev.date > todayIso();
+
 function eventCard(ev, tax) {
   const tags = tagPills(ev.tagIds, tax, 3);
   return `
     <a class="event-card" href="#/evento/${ev.id}">
-      ${coverHtml(ev)}
+      ${coverHtml(ev, isUpcoming(ev) ? '📅 Próximamente' : '')}
       <div class="body">
         <span class="date">${esc(fmtDate(ev.date))}</span>
         <span class="name">${esc(ev.name)}</span>
@@ -165,7 +190,10 @@ async function renderEvent(id) {
     <div class="event-hero" style="margin-top:10px">
       <div class="cover">
         ${ev.coverUrl ? `<img src="${esc(ev.coverUrl)}" alt="">` : ''}
-        <button class="btn sm hero-share" id="ev-share">🔗 Compartir</button>
+        <div class="hero-actions">
+          <button class="btn sm hero-btn" id="ev-follow">🔔 Avisarme</button>
+          <button class="btn sm hero-btn" id="ev-share">🔗 Compartir</button>
+        </div>
         <div class="meta">
           <h1>${esc(ev.name)}</h1>
           <div>${esc(fmtDate(ev.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}${ev.location ? ` · 📍 ${esc(ev.location)}` : ''}</div>
@@ -181,6 +209,11 @@ async function renderEvent(id) {
     </section>`;
   mountGallery($('#gallery'), { ev, photographers, sets, initialUid: parseHash().query.get('f') || '', initialPhoto: parseHash().query.get('foto') || '' });
   $('#ev-share').onclick = () => shareLink({ title: ev.name, text: `📸 Fotos de ${ev.name} en Quiero Mis Fotos:`, url: eventUrl(ev.id) });
+  // Aviso cuando suban las fotos.
+  const fb = $('#ev-follow');
+  const drawFollow = on => { fb.textContent = on ? '🔔 Te avisamos' : '🔔 Avisarme'; fb.classList.toggle('on', on); fb.title = on ? 'Te avisamos cuando suban fotos. Tocá para cancelar.' : 'Te avisamos cuando suban las fotos'; };
+  myFollows().then(f => drawFollow(f.events.has(ev.id))).catch(() => {});
+  fb.onclick = async () => { fb.disabled = true; drawFollow(await toggleFollow('events', ev.id, ev.name)); fb.disabled = false; };
 }
 
 function gearHtml(gear) {
@@ -311,6 +344,7 @@ async function renderProfile(slug) {
           ${user.demo ? '<button class="btn primary" data-demo-quote>💬 Pedir presupuesto</button>'
             : wa ? `<a class="btn primary" target="_blank" rel="noopener" href="${esc(waLink(wa, quoteMsg))}">💬 Pedir presupuesto</a>` : ''}
           ${hasWeb(user) && !user.demo ? `<a class="btn" target="_blank" rel="noopener" href="${esc(siteUrlOf(user))}">🌐 Ver su web</a>` : ''}
+          ${user.demo ? '' : '<button class="btn" id="pf-follow">🔔 Seguir</button>'}
           ${socials.map(s => user.demo
             ? `<button class="btn sm" data-demo-quote>${s.label}</button>`
             : `<a class="btn sm" target="_blank" rel="noopener" href="${esc(s.url(user.socials[s.key]))}">${s.label}</a>`).join('')}
@@ -324,6 +358,12 @@ async function renderProfile(slug) {
     <div id="p-events" class="events-grid"><div class="spinner"></div></div>`;
 
   $$('[data-demo-quote]').forEach(b => b.addEventListener('click', () => toast('Es un perfil de ejemplo: en un perfil real este botón abre el contacto del fotógrafo.')));
+  const pfb = $('#pf-follow');
+  if (pfb) {
+    const draw = on => { pfb.textContent = on ? '✓ Siguiendo' : '🔔 Seguir'; pfb.title = on ? 'Te avisamos cuando suba fotos nuevas. Tocá para dejar de seguir.' : 'Te avisamos cada vez que suba fotos'; };
+    myFollows().then(f => draw(f.photographers.has(user.uid))).catch(() => {});
+    pfb.onclick = async () => { pfb.disabled = true; draw(await toggleFollow('photographers', user.uid, user.displayName)); pfb.disabled = false; };
+  }
   loadPortfolio(user, settings);
   try {
     const [snap] = await Promise.all([

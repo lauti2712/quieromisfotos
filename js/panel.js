@@ -813,6 +813,7 @@ function panelEventCard(ev) {
         <div class="pills">
           ${ev.kind === 'general' ? '<span class="pill accent">Evento general</span>' : mine ? '<span class="pill">Creado por mí</span>' : '<span class="pill">Compartido</span>'}
           <span class="pill">👥 ${(ev.photographerUids || []).length}</span>
+          ${ev.date > todayIso() ? '<span class="pill accent">📅 Próximamente</span>' : ''}
         </div>
         ${ev.mySet ? setStatsHtml(ev.mySet) : ''}
       </div>
@@ -947,7 +948,8 @@ function eventDialog(ev, onSaved) {
   const dlg = openDialog(isNew ? (general ? 'Nuevo evento general' : 'Nuevo evento') : 'Editar evento', `
     <label class="field">Nombre<input type="text" id="ev-name" required maxlength="100" value="${esc(ev.name)}" placeholder="Ej: Torneo Apertura Sub-14 — Fecha 3"></label>
     <div class="grid2">
-      <label class="field">Fecha<input type="date" id="ev-date" required value="${esc(ev.date)}"></label>
+      <label class="field">Fecha<input type="date" id="ev-date" required value="${esc(ev.date)}">
+        <span class="hint">Podés crear eventos futuros: aparecen en "Próximos eventos" y en el calendario, y la gente puede activar 🔔 para que le avisemos cuando subas las fotos.</span></label>
       <label class="field">Sede / dirección<input type="text" id="ev-loc" maxlength="100" value="${esc(ev.location)}" placeholder="Ej: Cancha de Querandí, Santa Fe"></label>
     </div>
     ${tax.types.map(t => {

@@ -1,6 +1,6 @@
 // Galería pública de un evento: filtros por fotógrafo y sub-álbum, scroll infinito y visor.
 import { db, collection, getDocs, query, where, orderBy, limit, startAfter, Timestamp, getCountFromServer, doc, getDoc } from './fb.js';
-import { $, $$, esc, fmtMoney, toast, errMsg } from './util.js';
+import { $, $$, esc, fmtMoney, toast, errMsg, todayIso, fmtDate } from './util.js';
 import { cart } from './cart.js';
 import { openViewer } from './viewer.js';
 import { setForSale, setUntil } from './data.js';
@@ -20,7 +20,9 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
   if (initialUid && withPhotos.some(p => p.uid === initialUid)) state.uid = initialUid;
 
   if (!withPhotos.length) {
-    box.innerHTML = '<div class="empty">📷 Las fotos de este evento van a estar disponibles muy pronto.</div>';
+    box.innerHTML = ev.date > todayIso()
+      ? `<div class="empty">📅 Este evento es el <strong>${esc(fmtDate(ev.date, { weekday: 'long', day: 'numeric', month: 'long' }))}</strong>.<br>Tocá <strong>🔔 Avisarme</strong> arriba y te avisamos apenas suban las fotos.</div>`
+      : '<div class="empty">📷 Las fotos de este evento van a estar disponibles muy pronto.<br>Tocá <strong>🔔 Avisarme</strong> arriba y te avisamos.</div>';
     return;
   }
 
