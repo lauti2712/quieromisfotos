@@ -133,9 +133,9 @@ service cloud.firestore {
         allow read: if true;
         allow create: if isApproved() && uid() == pid
           && uid() in eventAfter(eid).photographerUids
-          && !request.resource.data.keys().hasAny(['expiresAt', 'extendedUntil', 'originalsDeleted', 'extraBytes', 'soldPhotos', 'soldOrders']);
+          && !request.resource.data.keys().hasAny(['expiresAt', 'extendedUntil', 'originalsDeleted', 'extraBytes', 'extraPhotos', 'soldPhotos', 'soldOrders']);
         allow update: if isSuper() || (isApproved() && uid() == pid
-          && !changed().hasAny(['extendedUntil', 'originalsDeleted', 'soldPhotos', 'soldOrders', 'storageAt', 'originalsDeletedAt', 'extraBytes'])
+          && !changed().hasAny(['extendedUntil', 'originalsDeleted', 'soldPhotos', 'soldOrders', 'storageAt', 'originalsDeletedAt', 'extraBytes', 'extraPhotos'])
           && (!changed().hasAny(['expiresAt']) || initialExpiry()));
         allow delete: if isSuper() || (signedIn() && uid() == pid && resource.data.photoCount == 0);
       }

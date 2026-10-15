@@ -1,6 +1,7 @@
 // Lecturas compartidas (taxonomía de etiquetas, settings).
 import { db, doc, getDoc } from './fb.js';
-import { planOf as corePlanOf, planSpec as corePlanSpec, rulesFor, albumLimitBytes } from './plans-core.js';
+import { planOf as corePlanOf, planSpec as corePlanSpec, rulesFor, albumLimitBytes, albumPhotoLimit } from './plans-core.js';
+export { albumPhotoLimit };
 export { rulesFor };
 
 export const DEFAULT_SETTINGS = {
@@ -144,7 +145,7 @@ export const setActive = set => !!set && (set.photoCount || 0) > 0 && !set.origi
 export function planFeatures(id, st) {
   const p = planSpec(id, st);
   const fee = `Comisión ${String(p.fee).replace('.', ',')}% por venta`;
-  const gb = `${String(p.albumGB).replace('.', ',')} GB por álbum`;
+  const gb = `${p.albumPhotos.toLocaleString('es-AR')} fotos por álbum`;
   const days = `Cada álbum se vende ${p.days} días`;
   if (id === 'free') return ['Vendé tus fotos en eventos', '1 álbum activo a la vez', `Hasta ${gb}`, days, `Portfolio de ${p.portfolio} fotos`, 'Estadísticas básicas', fee];
   if (id === 'lite') return ['Álbumes ilimitados', `${gb} (ampliable)`, days, `Portfolio de ${p.portfolio} fotos`, 'Estadísticas por evento', 'Portada y color en tu perfil',

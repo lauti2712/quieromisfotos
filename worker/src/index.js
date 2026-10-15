@@ -32,7 +32,7 @@
 
 import { verifyIdToken, getDocAsUser } from './firebase.js';
 import { adminGet, adminGetMany, adminQuery } from './admin.js';
-import { freeLimited, albumLimitBytes, setActive } from './plans.js';
+import { freeLimited, albumLimitBytes, albumPhotoLimit, setActive } from './plans.js';
 import { signToken, verifyToken } from './tokens.js';
 import { json, httpError, apiUrl } from './http.js';
 import { connectUrl, callback, disconnect } from './mp.js';
@@ -194,6 +194,13 @@ async function uploadPhotoPart(req, env, kind, eid, pid, ctx) {
   // Límite de espacio por álbum (settings.albumLimitGB + espacio comprado): se controla al empezar cada foto.
   if (kind === 'preview') {
     const [set, st, user] = await adminGetMany(env, [`events/${eid}/sets/${s.uid}`, 'settings/platform', `users/${s.uid}`]);
+    // Planes nuevos: tope en cantidad de fotos. Esquema anterior: en espacio.
+    const maxPhotos = albumPhotoLimit(set, st, user);
+    if (maxPhotos > 0 && set && (set.photoCount || 0) >= maxPhotos) {
+      throw httpError(402, freeLimited(user, st)
+        ? `Tu álbum llegó al tope de ${maxPhotos} fotos del plan Gratis. Pasate a un plan pago para seguir subiendo.`
+        : `El álbum llegó a su tope de ${maxPhotos} fotos. Sumá más fotos con un pack para seguir subiendo.`);
+    }
     const max = albumLimitBytes(set, st, user);
     if (max > 0 && set) {
       const used = (set.bytesOriginal || 0) + (set.bytesPublic || 0);

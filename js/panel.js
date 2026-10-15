@@ -10,7 +10,7 @@ import {
   $, $$, esc, slugify, SLUG_RE, searchTokens, fmtMoney, fmtDate, fmtTs, todayIso, parseHash,
   toast, errMsg, avatarHtml, coverHtml, SOCIALS, newId, normalize, fmtBytes, setBytes,
 } from './util.js';
-import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, ACTIVITY_TYPE, USER_TAG_TYPES, tagPills, SERVICES, isPro, mpPlanOf, GEAR_TYPES, PLANS, planOf, siteUrlOf, setUntil, setDeleteAt, GRACE_DAYS, albumLimit, feePercentFor, freeLimited, setActive, planSpec, rulesFor } from './data.js';
+import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, ACTIVITY_TYPE, USER_TAG_TYPES, tagPills, SERVICES, isPro, mpPlanOf, GEAR_TYPES, PLANS, planOf, siteUrlOf, setUntil, setDeleteAt, GRACE_DAYS, albumLimit, albumPhotoLimit, feePercentFor, freeLimited, setActive, planSpec, rulesFor } from './data.js';
 import { viewWeb } from './panel-web.js';
 import { sellerNet } from './pricing.js';
 import { viewPortfolio } from './panel-portfolio.js';
@@ -915,21 +915,30 @@ function retentionHtml(set) {
       <span>⛔ Este álbum dejó de venderse el ${fmtMs(r.until)}. <strong>Los originales se borran el ${fmtMs(r.deleteAt)}</strong>: extendé el plazo para volver a venderlo.</span>${btn}</div>`;
 }
 
-// Elegir plan y pagar con Mercado Pago (a la plataforma): kind 'time' = más días de venta, 'space' = más GB en el álbum.
+// Tope del álbum: con planes nuevos, cantidad de fotos; con el esquema anterior, espacio en bytes.
+function capOf(set) {
+  if (S.settings.plansV2) {
+    const max = albumPhotoLimit(set, S.settings, S.profile);
+    return { max, used: set?.photoCount || 0, fmt: n => `${Number(n).toLocaleString('es-AR')} fotos`, photos: true };
+  }
+  return { max: albumLimit(set, S.settings, S.profile), used: setBytes(set), fmt: fmtBytes, photos: false };
+}
+
+// Elegir plan y pagar con Mercado Pago (a la plataforma): kind 'time' = más días de venta, 'space' = más fotos (o GB) en el álbum.
 function extensionDialog(ev, set, kind = 'time') {
   const space = kind === 'space';
-  const plans = (space ? S.settings.storagePlans : S.settings.extensionPlans || []).filter(p => (space ? p.gb : p.days) > 0 && p.price > 0);
+  const cap = capOf(set);
+  const plans = (space ? S.settings.storagePlans : S.settings.extensionPlans || []).filter(p => (space ? (cap.photos ? p.photos : p.gb) : p.days) > 0 && p.price > 0);
   if (!plans.length) return toast(`Todavía no hay planes de ${space ? 'espacio' : 'extensión'}. Escribinos por WhatsApp.`, 'error');
   const from = Math.max(setUntil(set), Date.now());
-  const limit = albumLimit(set, S.settings, S.profile);
   const dlg = openDialog(space ? 'Más espacio para el álbum' : 'Extender plazo', `
     <p class="muted" style="margin-top:0">${space
-      ? `Tu álbum de <strong>${esc(ev.name)}</strong> usa ${fmtBytes(setBytes(set))} de ${fmtBytes(limit)}. Sumá espacio para seguir subiendo.`
+      ? `Tu álbum de <strong>${esc(ev.name)}</strong> tiene ${cap.fmt(cap.used)} de ${cap.fmt(cap.max)}. Sumá lugar para seguir subiendo.`
       : `Tus fotos de <strong>${esc(ev.name)}</strong> se siguen vendiendo y los originales no se borran.`}</p>
     <div class="stack">${plans.map((p, i) => `
       <label class="check card" style="margin:0;padding:12px"><input type="radio" name="ext-plan" value="${esc(p.id)}" ${i === 0 ? 'checked' : ''}>
-        <span class="grow"><strong>${esc(p.label || (space ? `+${p.gb} GB` : `+${p.days} días`))}</strong> · ${fmtMoney(p.price)}<br><span class="muted small">${space
-          ? `El álbum queda con ${fmtBytes(limit + p.gb * 1e9)} (≈ ${Math.round((p.gb * 1e9) / 6e6)} fotos más)`
+        <span class="grow"><strong>${esc(cap.photos ? `+${p.photos} fotos` : (p.label || `+${p.gb} GB`))}</strong> · ${fmtMoney(p.price)}<br><span class="muted small">${space
+          ? `El álbum queda con ${cap.fmt(cap.max + (cap.photos ? p.photos : p.gb * 1e9))}`
           : `Se vende hasta el ${fmtMs(from + p.days * 86400000)}`}</span></span></label>`).join('')}
     </div>`, '<button class="btn primary" id="ext-pay">Pagar con Mercado Pago</button>');
   $('#ext-pay', dlg).onclick = async () => {
@@ -954,7 +963,8 @@ function setStatsHtml(set) {
   return `
     <div class="set-stats">
       <span class="stat-chip" title="Fotos en el álbum">📷 ${set.photoCount || 0}</span>
-      <span class="stat-chip ${albumLimit(set, S.settings, S.profile) && setBytes(set) >= albumLimit(set, S.settings, S.profile) * 0.9 ? 'warn' : ''}" title="Espacio que ocupa el álbum (originales + muestras)">💾 ${fmtBytes(setBytes(set))}${albumLimit(set, S.settings, S.profile) ? ` / ${fmtBytes(albumLimit(set, S.settings, S.profile))}` : ''}</span>
+      ${(c => c.photos ? (c.max ? `<span class="stat-chip ${c.used >= c.max * 0.9 ? 'warn' : ''}" title="Fotos del álbum y tope del plan">🗂️ ${c.used} / ${c.fmt(c.max)}</span>` : '')
+        : `<span class="stat-chip ${c.max && c.used >= c.max * 0.9 ? 'warn' : ''}" title="Espacio que ocupa el álbum (originales + muestras)">💾 ${fmtBytes(c.used)}${c.max ? ` / ${fmtBytes(c.max)}` : ''}</span>`)(capOf(set))}
       <span class="stat-chip ${set.soldPhotos ? 'ok' : ''}" title="Fotos vendidas">🛒 ${set.soldPhotos || 0} vendida${set.soldPhotos === 1 ? '' : 's'}</span>
       ${exp}
     </div>`;
@@ -1298,10 +1308,10 @@ function renderSetEditor(ev, set, reload) {
       ${S.profile.mpConnected ? '' : '<div class="notice warn">Para que puedan comprar tus fotos tenés que <a href="#/mp">vincular Mercado Pago</a>.</div>'}
       <div class="row">
         <span class="pill">📷 ${set.photoCount || 0} fotos</span>
-        <span class="pill">💾 ${fmtBytes(setBytes(set))}${albumLimit(set, S.settings, S.profile) ? ` de ${fmtBytes(albumLimit(set, S.settings, S.profile))}` : ''}</span>
-        ${freeLimited(S.profile, S.settings) ? '<a class="btn sm" href="#/web">⭐ Más espacio con el plan Profesional</a>' : albumLimit(set, S.settings, S.profile) ? '<button class="btn sm" id="space-btn">➕ Más espacio</button>' : ''}
+        ${(c => c.photos ? `<span class="pill">🗂️ ${c.max ? `${c.used} de ${c.fmt(c.max)}` : 'Sin tope de fotos'}</span>` : `<span class="pill">💾 ${fmtBytes(c.used)}${c.max ? ` de ${fmtBytes(c.max)}` : ''}</span>`)(capOf(set))}
+        ${freeLimited(S.profile, S.settings) ? '<a class="btn sm" href="#/web">⭐ Más fotos por álbum con un plan pago</a>' : capOf(set).max ? `<button class="btn sm" id="space-btn">➕ ${capOf(set).photos ? 'Más fotos' : 'Más espacio'}</button>` : ''}
       </div>
-      ${albumLimit(set, S.settings, S.profile) ? `<div class="meter"><span class="${setBytes(set) >= albumLimit(set, S.settings, S.profile) ? 'danger' : setBytes(set) >= albumLimit(set, S.settings, S.profile) * 0.9 ? 'warn' : ''}" style="width:${Math.min(100, (setBytes(set) / albumLimit(set, S.settings, S.profile)) * 100).toFixed(1)}%"></span></div>` : ''}
+      ${(c => c.max ? `<div class="meter"><span class="${c.used >= c.max ? 'danger' : c.used >= c.max * 0.9 ? 'warn' : ''}" style="width:${Math.min(100, (c.used / c.max) * 100).toFixed(1)}%"></span></div>` : '')(capOf(set))}
       ${retentionHtml(set)}
       <div id="short-link"></div>
     </div>
@@ -1705,7 +1715,8 @@ async function viewAdminStorage() {
       </div>
       <label class="check"><input type="checkbox" id="lim-opt" ${S.settings.optimizeOriginals !== false ? 'checked' : ''}> Optimizar los originales al subir (todos los fotógrafos)</label>
       <p class="muted small" style="margin:0">Se guardan a la misma resolución con calidad JPEG 92%: no se nota a simple vista ni impresa, ocupan ~40-50% y la subida es más rápida. Si lo destildás, se guarda el archivo exacto de la cámara.</p>
-      <h3 style="margin:4px 0 0">Packs de espacio adicional</h3>
+      <h3 style="margin:4px 0 0">Packs adicionales para un álbum</h3>
+      <p class="muted small" style="margin:0">Fotos extra (planes nuevos) o GB extra (esquema anterior). Solo planes pagos.</p>
       <div id="lim-plans" class="stack"></div>
       <div class="row"><button type="button" class="btn sm" id="lim-add">+ Agregar pack</button><span class="spacer" style="flex:1"></span><button class="btn primary">Guardar</button></div>
     </form>
@@ -1753,7 +1764,8 @@ async function viewAdminStorage() {
     $('#lim-plans').innerHTML = sp.length ? sp.map((p, i) => `
       <div class="row">
         <input type="text" data-i="${i}" data-k="label" value="${esc(p.label || '')}" placeholder="Nombre (ej: +5 GB)" style="flex:2;min-width:140px">
-        <input type="number" data-i="${i}" data-k="gb" value="${p.gb || ''}" placeholder="GB" min="0.5" step="0.5" style="flex:1;min-width:70px">
+        <input type="number" data-i="${i}" data-k="photos" value="${p.photos || ''}" placeholder="Fotos" min="50" step="50" style="flex:1;min-width:80px" title="Fotos extra (planes nuevos)">
+        <input type="number" data-i="${i}" data-k="gb" value="${p.gb || ''}" placeholder="GB" min="0.5" step="0.5" style="flex:1;min-width:70px" title="GB extra (esquema anterior)">
         <input type="number" data-i="${i}" data-k="price" value="${p.price || ''}" placeholder="Precio ARS" min="1" style="flex:1;min-width:100px">
         <button type="button" class="btn sm danger" data-rm="${i}">✕</button>
       </div>`).join('') : '<p class="muted small" style="margin:0">Sin packs: si un álbum se llena, el fotógrafo no puede comprar más.</p>';
@@ -1761,11 +1773,12 @@ async function viewAdminStorage() {
     $$('#lim-plans [data-rm]').forEach(b => b.onclick = () => { sp.splice(+b.dataset.rm, 1); drawPlans(); });
   };
   drawPlans();
-  $('#lim-add').onclick = () => { sp.push({ id: newId(), label: '', gb: 5, price: 0 }); drawPlans(); };
+  $('#lim-add').onclick = () => { sp.push({ id: newId(), label: '', photos: 500, gb: 3, price: 0 }); drawPlans(); };
   $('#lim-form').onsubmit = async e => {
     e.preventDefault();
-    const clean = sp.filter(p => p.label || p.price).map(p => ({ id: p.id || newId(), label: (p.label || '').trim() || `+${p.gb} GB`, gb: Number(p.gb), price: Math.round(p.price) }));
-    if (clean.some(p => !(p.gb > 0) || !(p.price > 0))) return toast('Cada pack necesita GB y precio.', 'error');
+    const clean = sp.filter(p => p.label || p.price).map(p => ({ id: p.id || newId(), label: (p.label || '').trim() || (p.photos ? `+${p.photos} fotos` : `+${p.gb} GB`),
+      photos: Math.round(Number(p.photos) || 0), gb: Number(p.gb) || 0, price: Math.round(p.price) }));
+    if (clean.some(p => !(p.photos > 0 || p.gb > 0) || !(p.price > 0))) return toast('Cada pack necesita fotos (o GB) y precio.', 'error');
     try {
       await setDoc(doc(db, 'settings', 'platform'), { albumLimitGB: Math.max(0, Number($('#lim-gb').value) || 0), optimizeOriginals: $('#lim-opt').checked, storagePlans: clean, updatedAt: serverTimestamp() }, { merge: true });
       S.settings = await loadSettings();
@@ -1885,11 +1898,11 @@ async function viewAdminTags() {
 // ================================================================ superadmin: plataforma
 // Tabla de condiciones por plan (Plataforma) -> campos de settings/platform.
 const PLAN_KEYS = {
-  free: { fee: 'freeFeePercent', portfolio: 'freePortfolioLimit', albumGB: 'freeAlbumLimitGB', days: 'freeRetentionDays' },
-  lite: { price: 'litePrice', year: 'liteYearPrice', fee: 'liteFeePercent', portfolio: 'litePortfolioLimit', albumGB: 'liteAlbumGB', days: 'liteRetentionDays', featured: 'liteFeatured' },
-  web: { price: 'webPrice', year: 'webYearPrice', fee: 'webFeePercent', portfolio: 'webPortfolioLimit', albumGB: 'webAlbumGB', days: 'webRetentionDays', featured: 'webFeatured' },
+  free: { fee: 'freeFeePercent', portfolio: 'freePortfolioLimit', albumPhotos: 'freeAlbumPhotos', days: 'freeRetentionDays' },
+  lite: { price: 'litePrice', year: 'liteYearPrice', fee: 'liteFeePercent', portfolio: 'litePortfolioLimit', albumPhotos: 'liteAlbumPhotos', days: 'liteRetentionDays', featured: 'liteFeatured' },
+  web: { price: 'webPrice', year: 'webYearPrice', fee: 'webFeePercent', portfolio: 'webPortfolioLimit', albumPhotos: 'webAlbumPhotos', days: 'webRetentionDays', featured: 'webFeatured' },
   webdomain: { price: 'webDomainPrice', first: 'webDomainFirstPrice', year: 'webDomainYearPrice', fee: 'webDomainFeePercent', portfolio: 'webDomainPortfolioLimit',
-    albumGB: 'webDomainAlbumGB', days: 'webDomainRetentionDays', featured: 'webDomainFeatured' },
+    albumPhotos: 'webDomainAlbumPhotos', days: 'webDomainRetentionDays', featured: 'webDomainFeatured' },
 };
 function readPlanCfg() {
   const out = {};
@@ -1897,7 +1910,7 @@ function readPlanCfg() {
     const keys = PLAN_KEYS[tr.dataset.plan];
     tr.querySelectorAll('[data-k]').forEach(inp => {
       const k = keys[inp.dataset.k];
-      if (k) out[k] = inp.type === 'checkbox' ? inp.checked : ['fee', 'albumGB'].includes(inp.dataset.k) ? Number(inp.value) || 0 : Math.round(Number(inp.value) || 0);
+      if (k) out[k] = inp.type === 'checkbox' ? inp.checked : inp.dataset.k === 'fee' ? Number(inp.value) || 0 : Math.round(Number(inp.value) || 0);
     });
   });
   return out;
@@ -1939,7 +1952,7 @@ async function viewAdminConfig() {
         <label class="check"><input type="checkbox" id="a-v2" ${st.plansV2 ? 'checked' : ''}> <strong>Planes nuevos activados</strong></label>
         <p class="muted small" style="margin:0">Gratis: 1 álbum activo a la vez y tope de ${st.freeAlbumLimitGB ?? 3} GB por álbum (se cambia en Almacenamiento). Los planes pagos tienen álbumes ilimitados y packs de espacio. Mientras esté apagado, todos los fotógrafos usan las reglas anteriores (una sola comisión y un solo límite de portfolio para los planes pagos).</p>
         <div class="table-wrap"><table class="list plan-cfg">
-          <tr><th>Plan</th><th>Precio</th><th>Comisión %</th><th>Portfolio</th><th>GB por álbum</th><th>Días de venta</th><th>Destacado</th></tr>
+          <tr><th>Plan</th><th>Precio</th><th>Comisión %</th><th>Portfolio</th><th>Fotos por álbum</th><th>Días de venta</th><th>Destacado</th></tr>
           ${[['free', 'Gratis'], ['lite', 'Profesional Lite'], ['web', 'Profesional'], ['webdomain', 'Profesional Premium']].map(([id, label]) => {
             const p = planSpec(id, st);
             const num = (k, v, step = 1) => `<input type="number" data-k="${k}" min="0" step="${step}" value="${v ?? ''}">`;
@@ -1949,7 +1962,7 @@ async function viewAdminConfig() {
                 <span class="hint">Anual</span>${num('year', p.year)}`}</td>
               <td>${num('fee', p.fee, 0.1)}</td>
               <td>${num('portfolio', p.portfolio)}</td>
-              <td>${num('albumGB', p.albumGB, 0.5)}</td>
+              <td>${num('albumPhotos', p.albumPhotos, 50)}</td>
               <td>${num('days', p.days)}</td>
               <td>${id === 'free' ? '—' : `<input type="checkbox" data-k="featured" ${p.featured ? 'checked' : ''}>`}</td></tr>`;
           }).join('')}
