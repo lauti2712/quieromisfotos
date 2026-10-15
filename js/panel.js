@@ -1807,7 +1807,7 @@ async function viewAdminConfig() {
           <label class="field">Profesional (ARS/mes)<input type="number" id="a-web-price" min="0" step="1" value="${st.webPrice}" required></label>
           <label class="field">Profesional + Dominio (ARS/mes)<input type="number" id="a-webdom-price" min="0" step="1" value="${st.webDomainPrice}" required></label>
           <label class="field">Fotos de portfolio — Gratis<input type="number" id="a-free-lim" min="0" max="500" step="1" value="${st.freePortfolioLimit}" required></label>
-          <label class="field">Fotos de portfolio — Pro<input type="number" id="a-pro-lim" min="1" max="2000" step="1" value="${st.proPortfolioLimit}" required></label>
+          <label class="field">Fotos de portfolio — Profesional<input type="number" id="a-pro-lim" min="1" max="2000" step="1" value="${st.proPortfolioLimit}" required><span class="hint">Para Profesional y Profesional + Dominio.</span></label>
         </div>
       </div>
       <div class="card stack">

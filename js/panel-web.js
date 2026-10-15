@@ -15,7 +15,7 @@ const TEMPLATES = [
 // Planes que se ofrecen (el viejo "Portfolio Pro" ya no).
 const planInfo = st => [
   { id: 'free', items: ['Vendé tus fotos en eventos', '1 álbum activo a la vez', `Hasta ${st.freeAlbumLimitGB ?? 3} GB por álbum`, `Portfolio de ${st.freePortfolioLimit ?? 12} fotos`, `Comisión ${st.freeFeePercent ?? 5}% por venta`] },
-  { id: 'web', items: ['Álbumes ilimitados', st.albumLimitGB > 0 ? `${st.albumLimitGB} GB por álbum (ampliable)` : 'Más espacio por álbum', `Portfolio de ${st.proPortfolioLimit ?? 200} fotos`,
+  { id: 'web', items: ['Álbumes ilimitados', st.albumLimitGB > 0 ? `${st.albumLimitGB} GB por álbum (ampliable)` : 'Más espacio por álbum', `Portfolio de ${st.proPortfolioLimit ?? 80} fotos`,
     'Tu web: tunombre.quieromisfotos.com.ar', 'Fotos de tu web sin marca de agua', 'Destacado en el directorio', `Comisión ${st.feePercent ?? 3}% por venta`] },
   { id: 'webdomain', items: ['Todo lo de Profesional', 'Tu propio dominio (ej: tunombre.com.ar)'] },
 ];

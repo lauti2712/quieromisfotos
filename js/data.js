@@ -17,7 +17,7 @@ export const DEFAULT_SETTINGS = {
   webPrice: 9000,
   webDomainPrice: 12000,
   freePortfolioLimit: 12,
-  proPortfolioLimit: 200,
+  proPortfolioLimit: 80,
   // Comisión de Mercado Pago por plazo de acreditación (tarjeta de crédito, IVA incluido). Editable por el superadmin.
   mpFeePlans: [
     { id: '0', label: 'Al instante', percent: 7.85 },

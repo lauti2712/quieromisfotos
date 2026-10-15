@@ -152,7 +152,7 @@ service cloud.firestore {
       let sp = /databases/$(database)/documents/settings/platform;
       let st = exists(sp) ? get(sp).data : {};
       let pro = u.get('plan', 'free') in ['pro', 'web', 'webdomain'] && u.get('proUntil', null) != null && u.proUntil > request.time;
-      return pro ? st.get('proPortfolioLimit', 200) : st.get('freePortfolioLimit', 12);
+      return pro ? st.get('proPortfolioLimit', 80) : st.get('freePortfolioLimit', 12);
     }
     match /portfolio/{id} {
       allow read: if true;
