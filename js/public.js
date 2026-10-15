@@ -165,21 +165,16 @@ async function renderEvent(id) {
     <div class="event-hero" style="margin-top:10px">
       <div class="cover">
         ${ev.coverUrl ? `<img src="${esc(ev.coverUrl)}" alt="">` : ''}
+        <button class="btn sm hero-share" id="ev-share">🔗 Compartir</button>
         <div class="meta">
           <h1>${esc(ev.name)}</h1>
           <div>${esc(fmtDate(ev.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}${ev.location ? ` · 📍 ${esc(ev.location)}` : ''}</div>
+          ${photographers.length ? `<div class="hero-people">${photographers.map(p => `<a class="hero-person" href="#/f/${esc(p.slug)}" title="Ver perfil de ${esc(p.displayName)}">${avatarHtml(p)}<span><strong>${esc(p.displayName)}</strong>${p.zone ? `<small>${esc(p.zone)}</small>` : ''}</span></a>`).join('')}</div>` : ''}
         </div>
       </div>
     </div>
     ${tags.length ? `<div class="pills" style="margin-bottom:18px">${tags.map(t => `<span class="pill accent">${esc(t.name)}</span>`).join('')}</div>` : ''}
-    <div class="row" style="margin-bottom:14px"><button class="btn share-btn" id="ev-share">🔗 Compartir evento</button></div>
     ${ev.demo ? '<div class="notice warn">👀 <strong>Evento de ejemplo.</strong> Está para que veas cómo funciona la plataforma: podés ver las fotos y armar el carrito, pero no se pueden comprar.</div>' : ''}
-    <section class="card">
-      <h2>Fotógrafos</h2>
-      ${photographers.length
-        ? `<div class="people">${photographers.map(p => `<a class="person" href="#/f/${esc(p.slug)}">${avatarHtml(p)}<span><strong>${esc(p.displayName)}</strong>${p.zone ? `<br><span class="muted small">${esc(p.zone)}</span>` : ''}</span></a>`).join('')}</div>`
-        : '<p class="muted">Todavía no hay fotógrafos en este evento.</p>'}
-    </section>
     <section class="card">
       <h2>Fotos</h2>
       <div id="gallery"></div>

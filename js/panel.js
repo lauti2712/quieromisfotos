@@ -1196,6 +1196,9 @@ function renderSetEditor(ev, set, reload) {
       <p class="muted small" style="margin:0">Ej: categorías, partidos o turnos. Ayudan al comprador a encontrar sus fotos.</p>
       <div id="st-subs" class="stack"></div>
       <div class="row"><input type="text" id="st-sub-new" placeholder="Nombre del sub-álbum" style="max-width:300px"><button type="button" class="btn" id="st-sub-add">Agregar</button></div>
+      <h2 style="margin-top:8px">Galería</h2>
+      <label class="check"><input type="checkbox" id="st-hours" ${set.showHours !== false ? 'checked' : ''}> Mostrar el filtro por horario</label>
+      <p class="muted small" style="margin:0">Botones por hora (ej: “15:00 a 16:00”) según la hora en que sacaste cada foto, para que cada uno encuentre la suya más rápido. Desactivalo si la hora de tu cámara no está bien configurada.</p>
       <div class="row end"><button class="btn primary" type="submit">Guardar set</button></div>
     </form>
     <div id="set-photos"></div>`;
@@ -1257,6 +1260,7 @@ function renderSetEditor(ev, set, reload) {
         packs: packs.get(),
         feeMode: $('input[name=st-fee]:checked').value,
         subalbums: clean,
+        showHours: $('#st-hours').checked,
         updatedAt: serverTimestamp(),
       });
       toast('Set guardado');

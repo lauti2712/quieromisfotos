@@ -55,7 +55,10 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
       const d = new Date(ms);
       return `${multiDay ? `${d.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric' })} ` : ''}${String(d.getHours()).padStart(2, '0')}:00 a ${String((d.getHours() + 1) % 24).padStart(2, '0')}:00`;
     };
-    $('#g-hour', box).innerHTML = hours.length > 1
+    // Cada fotógrafo decide en su álbum si muestra el filtro (con varios fotógrafos, se muestra si todos lo tienen activo).
+    const hoursOn = (state.uid ? [state.uid] : withPhotos.map(p => p.uid)).every(uid => sets.get(uid)?.showHours !== false);
+    if (!hoursOn && state.hour) state.hour = 0;
+    $('#g-hour', box).innerHTML = hoursOn && hours.length > 1
       ? [`<span class="muted small" style="align-self:center">🕒 Horario:</span><button class="chip ${!state.hour ? 'on' : ''}" data-hour="0">Todo</button>`,
         ...hours.map(h => `<button class="chip ${state.hour === h ? 'on' : ''}" data-hour="${h}">${hourLabel(h)} <span class="muted small">${hourCount.get(h) || ''}</span></button>`)].join('')
       : '';
