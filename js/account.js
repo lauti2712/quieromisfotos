@@ -1,6 +1,6 @@
 // Cuenta del comprador en el sitio público: ingresar (Google / email), Mis compras, salir.
 import {
-  db, auth, collection, doc, getDoc, getDocs, query, where, orderBy, limit,
+  db, auth, collection, doc, getDoc, getDocs, setDoc, query, where, orderBy, limit, serverTimestamp, Timestamp,
   onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword,
   createUserWithEmailAndPassword, sendPasswordResetEmail, signOut, updateProfile,
 } from './fb.js';
@@ -21,11 +21,24 @@ onAuthStateChanged(auth, async user => {
     } catch { /* sin perfil */ }
   }
   drawHeader();
+  if (user) recordCustomer(user);
   if (user) waiters.splice(0).forEach(fn => fn(user));
   window.dispatchEvent(new CustomEvent('account:change', { detail: { user } }));
 });
 
 export const currentUser = () => current;
+
+// Registro de clientes (customers/{uid}): alta y último ingreso, una vez por sesión del navegador.
+function recordCustomer(user) {
+  const k = `qmf.cust.${user.uid}`;
+  try { if (sessionStorage.getItem(k)) return; sessionStorage.setItem(k, '1'); } catch { /* modo privado */ }
+  const created = Date.parse(user.metadata?.creationTime || '') || Date.now();
+  setDoc(doc(db, 'customers', user.uid), {
+    name: user.displayName || '', email: user.email || '',
+    provider: user.providerData?.[0]?.providerId || 'password',
+    createdAt: Timestamp.fromMillis(created), lastLoginAt: serverTimestamp(),
+  }, { merge: true }).catch(e => console.warn('customer', e));
+}
 
 function drawHeader() {
   const el = document.getElementById('acct');
