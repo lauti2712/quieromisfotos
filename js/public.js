@@ -33,6 +33,8 @@ const PAGE = 24;
 
 maybeShowIntro();
 initRefresh();
+// El directorio de fotógrafos se muestra en el menú solo si el superadmin lo activa (Plataforma).
+loadSettings().then(st => document.querySelectorAll('[data-dir-link]').forEach(a => { a.hidden = !st.showDirectory; })).catch(() => {});
 window.addEventListener('hashchange', route);
 // Al ingresar/salir se re-dibujan las vistas que dependen de la cuenta.
 window.addEventListener('account:change', () => { const p = parseHash().parts[0]; if (p === 'cuenta' || p === 'carrito' || p === 'pedido') route(); });

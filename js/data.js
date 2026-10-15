@@ -12,6 +12,8 @@ export const DEFAULT_SETTINGS = {
   albumLimitGB: 0,
   // Recomprimir los originales al subir (JPEG 92%, misma resolución). Lo decide el superadmin.
   optimizeOriginals: true,
+  // Mostrar "Fotógrafos" (directorio) en el menú del sitio.
+  showDirectory: false,
   storagePlans: [],
   proPrice: 4500,
   webPrice: 9000,

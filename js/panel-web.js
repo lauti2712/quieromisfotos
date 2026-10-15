@@ -14,6 +14,12 @@ const TEMPLATES = [
 
 // Planes que se ofrecen (el viejo "Portfolio Pro" ya no). Condiciones de cada uno: planSpec (editable en Plataforma).
 const planInfo = st => {
+  // Planes nuevos apagados: se muestran las condiciones que rigen hoy (una comisión y un portfolio para todos los pagos).
+  if (!st.plansV2) return [
+    { id: 'free', items: ['Vendé tus fotos en eventos', `Portfolio de ${st.freePortfolioLimit ?? 12} fotos`, `Comisión ${st.feePercent ?? 3}% por venta`] },
+    { id: 'web', items: ['Todo lo de Gratis', `Portfolio de ${st.proPortfolioLimit ?? 80} fotos`, 'Tu web: tunombre.quieromisfotos.com.ar', 'Fotos de tu web sin marca de agua', 'Destacado en el directorio'] },
+    { id: 'webdomain', items: ['Todo lo de Profesional', 'Tu propio dominio (ej: tunombre.com.ar)'] },
+  ];
   const sp = id => planSpec(id, st);
   const space = st.albumLimitGB > 0 ? `${st.albumLimitGB} GB por álbum (ampliable)` : 'Más espacio por álbum';
   return [
@@ -47,8 +53,9 @@ export async function viewWeb(view, { uid, profile, settings }) {
   const pending = reqSnap?.exists() ? reqSnap.data() : null;
   const sub = subSnap?.exists() ? subSnap.data() : null;
   const subActive = sub?.status === 'authorized';
-  const first = id => (id === 'webdomain' && planSpec(id, settings).first > planSpec(id, settings).price ? planSpec(id, settings).first : 0);
-  const price = id => (id === 'free' ? 'Gratis' : fmtMoney(planSpec(id, settings).price) + '/mes');
+  // Sin planes nuevos: precios guardados en Plataforma, sin "primer mes" (se cobra el mensual).
+  const first = id => (settings.plansV2 && id === 'webdomain' && planSpec(id, settings).first > planSpec(id, settings).price ? planSpec(id, settings).first : 0);
+  const price = id => (id === 'free' ? 'Gratis' : fmtMoney(settings.plansV2 ? planSpec(id, settings).price : (settings[PLANS[id].priceKey] ?? planSpec(id, settings).price)) + '/mes');
 
   view.innerHTML = `
     <h1>Planes y mi web</h1>

@@ -1801,6 +1801,11 @@ async function viewAdminConfig() {
     </div>
     <form id="acf">
       <div class="card stack">
+        <h2 style="margin:0">Sitio público</h2>
+        <label class="check"><input type="checkbox" id="a-dir" ${st.showDirectory ? 'checked' : ''}> Mostrar <strong>Fotógrafos</strong> (el directorio) en el menú y en el pie</label>
+        <p class="muted small" style="margin:0">Conviene activarlo cuando haya varios fotógrafos. Apagado, el directorio sigue existiendo pero no aparece en el menú.</p>
+      </div>
+      <div class="card stack">
         <div class="grid2">
           <label class="field">Comisión de la plataforma (%)<input type="number" id="a-fee" min="0" max="50" step="0.1" value="${st.feePercent}" required>
             <span class="hint">Esquema anterior. Con los planes nuevos, la comisión es la de cada plan (abajo).</span></label>
@@ -1867,7 +1872,7 @@ async function viewAdminConfig() {
     if (clean.some(p => !p.label || !(p.days > 0) || !(p.price > 0))) return toast('Cada plan necesita nombre, días y precio.', 'error');
     try {
       await setDoc(doc(db, 'settings', 'platform'), {
-        feePercent: Number($('#a-fee').value), plansV2: $('#a-v2').checked, ...readPlanCfg(),
+        feePercent: Number($('#a-fee').value), plansV2: $('#a-v2').checked, showDirectory: $('#a-dir').checked, ...readPlanCfg(),
         retentionDays: Math.round(Number($('#a-ret').value)),
         extensionPlans: clean,
         mpFeePlans: $$('#a-mp [data-mp]').map(i => ({ id: i.dataset.mp, label: i.dataset.label, percent: Math.round(Number(i.value) * 100) / 100 })),
