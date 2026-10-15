@@ -84,7 +84,7 @@ def page(title, desc, canonical, body, image=None, jsonld=None, redirect=None):
 <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/{css}">
 {f'<script type="application/ld+json">{json.dumps(jsonld, ensure_ascii=False)}</script>' if jsonld else ''}
-{f'<script>if(/[?&]s=1/.test(location.search)){{var f=new URLSearchParams(location.search).get("f");location.replace("{redirect}"+(f?"?f="+encodeURIComponent(f):""))}}</script>' if redirect else ''}
+{f'<script>if(/[?&]s=1/.test(location.search)){{var q=new URLSearchParams(location.search);q.delete("s");q=q.toString();location.replace("{redirect}"+(q?"?"+q:""))}}</script>' if redirect else ''}
 </head>
 <body class="public">
 <header class="topbar"><div class="inner">
@@ -126,7 +126,7 @@ def thumbs_html(items, href, alt):
 # ---------------------------------------------------------------- limpiar y generar
 for d in ('e', 'f', 'eventos', 'fotografos'):
     shutil.rmtree(ROOT / d, ignore_errors=True)
-urls = [(f'{SITE}/', None), (f'{SITE}/eventos/', None), (f'{SITE}/fotografos/', None)]
+urls = [(f'{SITE}/', None), (f'{SITE}/eventos/', None), (f'{SITE}/fotografos/', None), (f'{SITE}/terminos/', None), (f'{SITE}/privacidad/', None)]
 
 
 def write(rel, content):

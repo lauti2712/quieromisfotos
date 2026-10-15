@@ -1,9 +1,15 @@
 // Uso de R2: recorre los dos buckets, suma bytes por álbum (set) y por fotógrafo, corrige los contadores
 // de cada set y guarda un resumen en adminStats/storage (solo lo lee el superadmin).
 // Corre todos los días (cron) y a pedido desde el panel: POST /admin/storage/scan.
+//
+// Retención: los originales de un álbum se borran GRACE_DAYS después de que deja de venderse
+// (vencimiento + extensiones pagas). Solo borra si RETENTION_DELETE="1"; si no, lo informa como simulación.
 import { verifyIdToken } from './firebase.js';
 import { adminGet, adminGetMany, adminSet, adminUpdateMany } from './admin.js';
 import { json, httpError } from './http.js';
+import { setAvailableUntil } from './orders.js';
+
+const GRACE_DAYS = 7;
 
 export async function scanStorage(env) {
   const sets = {};      // "eid/uid" -> { pub, priv, n }
@@ -19,9 +25,9 @@ export async function scanStorage(env) {
         totals[kind] += o.size; totals.objects++;
         const k = o.key.split('/');
         if (k[0] === 'e' && k.length === 4) {
-          const s = (sets[`${k[1]}/${k[2]}`] ||= { pub: 0, priv: 0, n: 0 });
+          const s = (sets[`${k[1]}/${k[2]}`] ||= { pub: 0, priv: 0, n: 0, keys: [] });
           s[kind] += o.size;
-          if (kind === 'priv') s.n++;
+          if (kind === 'priv') { s.n++; s.keys.push(o.key); }
         } else if (k[0] === 'e') covers += o.size;
         else if (k[0] === 'u') profiles[k[1]] = (profiles[k[1]] || 0) + o.size;
         else other += o.size;
@@ -38,13 +44,32 @@ export async function scanStorage(env) {
   }
   const now = new Date();
   const updates = [];
+
+  // ---- retención
+  const deleting = env.RETENTION_DELETE === '1';
+  const retention = { mode: deleting ? 'on' : 'simulacion', deleted: [], due: [], upcoming: [] };
+  for (const [i, id] of ids.entries()) {
+    const set = docs[i], s = sets[id];
+    const until = set && setAvailableUntil(set);
+    if (!until || !s.keys.length) continue;
+    const deleteAt = until + GRACE_DAYS * 86400_000;
+    const row = { eid: id.split('/')[0], uid: id.split('/')[1], photos: s.n, bytes: s.priv, until: new Date(until), deleteAt: new Date(deleteAt) };
+    if (deleteAt > now.getTime()) { retention.upcoming.push(row); continue; }
+    if (!deleting) { retention.due.push(row); continue; }
+    for (let j = 0; j < s.keys.length; j += 1000) await env.PRIVATE.delete(s.keys.slice(j, j + 1000));
+    s.deleted = true;
+    retention.deleted.push(row);
+    totals.priv -= s.priv; totals.objects -= s.n;
+    s.priv = 0; s.n = 0;
+  }
+  retention.upcoming.sort((a, b) => a.deleteAt - b.deleteAt).splice(40);
   let orphan = 0;
   const byUser = {};
   ids.forEach((id, i) => {
     const s = sets[id];
     const uid = id.split('/')[1];
     if (!docs[i]) { orphan += s.pub + s.priv; return; }
-    updates.push({ path: `events/${id.replace('/', '/sets/')}`, data: { bytesOriginal: s.priv, bytesPublic: s.pub, storageAt: now } });
+    updates.push({ path: `events/${id.replace('/', '/sets/')}`, data: { bytesOriginal: s.priv, bytesPublic: s.pub, storageAt: now, ...(s.deleted ? { originalsDeleted: true, originalsDeletedAt: now } : {}) } });
     const u = (byUser[uid] ||= { albums: 0, photos: 0, profile: 0, albumsBytes: 0 });
     u.albums++; u.photos += s.n; u.albumsBytes += s.pub + s.priv;
   });
@@ -62,6 +87,7 @@ export async function scanStorage(env) {
   const summary = {
     scannedAt: now, total, publicBytes: totals.pub, privateBytes: totals.priv, objects: totals.objects,
     coversBytes: covers, orphanBytes: orphan, otherBytes: other, byUser, topSets, history,
+    retention: { ...retention, lastDeleted: retention.deleted.length ? retention.deleted : (prev?.retention?.lastDeleted || []) },
   };
   await adminSet(env, 'adminStats/storage', summary);
   return summary;

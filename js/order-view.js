@@ -57,10 +57,12 @@ function draw(app, o) {
       </div>
       ${o.status === 'approved' ? `
         ${expired ? '<div class="notice danger">El plazo de descarga venció.</div>' : `
-          <div class="row" style="justify-content:space-between">
-            <span class="muted small">Descargas disponibles hasta el ${esc(fmtTs(o.downloadExpiresAt))}.</span>
-            <button class="btn primary" id="dl-all">⬇️ Descargar todas (${o.items.length})</button>
-          </div>`}` : ''}
+          <button class="btn primary big-cta" id="dl-all">⬇️ Descargar todas las fotos (${o.items.length})</button>
+          <div class="notice stack" style="margin:0">
+            <span>📌 <strong>Tus fotos quedan guardadas hasta el ${esc(fmtTs(o.downloadExpiresAt))}.</strong> Podés volver a descargarlas cuando quieras desde <a href="#/cuenta">Mis compras</a> (arriba, en el ícono de tu cuenta).</span>
+            <span class="small">📱 En el celular se guardan en <em>Descargas</em> / <em>Archivos</em>. Para pasarlas a la galería: abrí la foto y tocá <em>Compartir → Guardar imagen</em>.</span>
+          </div>`}
+        <div class="row"><a class="btn sm" href="#/evento/${esc(o.eventId)}">📷 Ver más fotos del evento</a></div>` : ''}
       ${o.status === 'rejected' || o.status === 'pending' ? `<div class="row end"><button class="btn ${o.status === 'rejected' ? 'primary' : ''}" id="retry">${o.status === 'rejected' ? 'Intentar de nuevo' : 'Volver a Mercado Pago'}</button></div>` : ''}
       <div class="order-grid">
         ${o.items.map((it, i) => `

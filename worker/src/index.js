@@ -20,6 +20,9 @@
 //   GET    /dl/{token}                                                        descarga del original
 //   GET    /w/{slug}  ·  {slug}.quieromisfotos.com.ar  ·  dominio propio           web personal del fotógrafo (planes Web)
 //   POST   /admin/storage/scan         Bearer (superadmin)                    recalcula el uso de R2 (también corre a diario)
+//   POST   /extensions/checkout        Bearer (fotógrafo) {eventId, planId}    extensión paga del plazo -> { initPoint }
+//   POST   /extensions/{id}/sync       Bearer (fotógrafo)                     consulta el pago a MP
+//   POST   /plans/subscribe · /plans/sync · /plans/cancel   Bearer (fotógrafo)   suscripción mensual a un plan (MP)
 //   POST   /tags                       Bearer (fotógrafo aprobado) {type, name}  alta de actividad/club/lugar sin duplicados
 //
 // Claves en R2:
@@ -28,6 +31,7 @@
 //   qmf-private: e/{eid}/{uid}/{pid}        (original, nunca público)
 
 import { verifyIdToken, getDocAsUser } from './firebase.js';
+import { adminGetMany } from './admin.js';
 import { signToken, verifyToken } from './tokens.js';
 import { json, httpError, apiUrl } from './http.js';
 import { connectUrl, callback, disconnect } from './mp.js';
@@ -35,6 +39,8 @@ import { checkout, webhook, syncOrder, retryCheckout, downloadLinks, download } 
 import { createTag } from './tags.js';
 import { renderSite } from './site.js';
 import { scanRequest, scanStorage } from './storage.js';
+import { extensionCheckout, extensionSync } from './extensions.js';
+import { subscribe, syncRequest, cancelSubscription, syncAllSubscriptions } from './subscriptions.js';
 
 const MAX = { preview: 6e6, thumb: 1e6, original: 80e6, avatar: 3e6, logo: 2e6, cover: 6e6, portfolio: 6e6 };
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
@@ -59,6 +65,7 @@ export default {
   // Cron diario: recalcula el uso de R2.
   async scheduled(event, env, ctx) {
     ctx.waitUntil(scanStorage(env));
+    ctx.waitUntil(syncAllSubscriptions(env));
   },
 };
 
@@ -73,7 +80,7 @@ async function route(req, env, ctx) {
     const host = url.hostname.toLowerCase();
     const sub = host.match(/^([a-z0-9-]+)\.quieromisfotos\.com\.ar$/)?.[1];
     const ours = /(^|\.)(quieromisfotos\.com\.ar|solucionescotidianas\.com\.ar|workers\.dev)$/.test(host) || host === 'localhost';
-    const isSite = (sub && !['api', 'fotos', 'www'].includes(sub)) || !ours;
+    const isSite = (sub && !['api', 'fotos', 'www', 'prueba'].includes(sub)) || !ours;
     if (isSite && url.pathname === '/robots.txt') {
       return new Response(`User-agent: *\nAllow: /\n\nSitemap: https://${host}/sitemap.xml\n`, { headers: { 'Content-Type': 'text/plain' } });
     }
@@ -98,6 +105,11 @@ async function route(req, env, ctx) {
   if (m === 'POST' && url.pathname === '/checkout') return checkout(req, env);
   if (m === 'POST' && url.pathname === '/tags') return createTag(req, env);
   if (m === 'POST' && url.pathname === '/admin/storage/scan') return scanRequest(req, env);
+  if (m === 'POST' && url.pathname === '/extensions/checkout') return extensionCheckout(req, env);
+  if (m === 'POST' && url.pathname === '/plans/subscribe') return subscribe(req, env);
+  if (m === 'POST' && url.pathname === '/plans/sync') return syncRequest(req, env);
+  if (m === 'POST' && url.pathname === '/plans/cancel') return cancelSubscription(req, env);
+  if (m === 'POST' && parts[0] === 'extensions' && parts[2] === 'sync' && parts.length === 3 && ID_RE.test(parts[1])) return extensionSync(req, env, parts[1]);
   if (m === 'POST' && parts[0] === 'orders' && parts.length === 3 && ID_RE.test(parts[1])) {
     if (parts[2] === 'sync') return syncOrder(req, env, parts[1]);
     if (parts[2] === 'checkout') return retryCheckout(req, env, parts[1]);
@@ -162,6 +174,16 @@ async function uploadPhotoPart(req, env, kind, eid, pid) {
   checkSize(req, kind);
 
   const base = `e/${eid}/${s.uid}/${pid}`;
+  // Límite de espacio por álbum (settings.albumLimitGB + espacio comprado): se controla al empezar cada foto.
+  if (kind === 'preview') {
+    const [set, st] = await adminGetMany(env, [`events/${eid}/sets/${s.uid}`, 'settings/platform']);
+    const limit = (Number(st?.albumLimitGB) || 0) * 1e9;
+    if (limit > 0 && set) {
+      const used = (set.bytesOriginal || 0) + (set.bytesPublic || 0);
+      const max = limit + (set.extraBytes || 0);
+      if (used >= max) throw httpError(402, `El álbum llegó a su límite de ${Math.round(max / 1e8) / 10} GB. Comprá más espacio para seguir subiendo.`);
+    }
+  }
   if (kind === 'original') {
     const type = req.headers.get('Content-Type') || 'application/octet-stream';
     await env.PRIVATE.put(base, req.body, { httpMetadata: { contentType: type }, customMetadata: { uid: s.uid } });

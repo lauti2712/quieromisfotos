@@ -5,6 +5,9 @@ import { requireUser } from './firebase.js';
 import { sellerToken, mpFetch, siteUrl } from './mp.js';
 import { signToken, verifyToken } from './tokens.js';
 import { json, httpError, apiUrl } from './http.js';
+import { extensionWebhook } from './extensions.js';
+import { notifyUser } from './push.js';
+import { subscriptionWebhook } from './subscriptions.js';
 
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
 const MAX_ITEMS = 300;
@@ -55,7 +58,9 @@ export async function checkout(req, env) {
   await adminSet(env, `orders/${orderId}`, order, { mustNotExist: true });
 
   const api = apiUrl(env, req);
-  const back = `${siteUrl(env)}#/pedido/${orderId}`;
+  // Si se compró desde el sitio de prueba, MP vuelve ahí.
+  const fromStaging = req.headers.get('Origin') === 'https://prueba.quieromisfotos.com.ar';
+  const back = `${fromStaging ? 'https://prueba.quieromisfotos.com.ar/' : siteUrl(env)}#/pedido/${orderId}`;
   const items = [{ id: orderId, title: `Fotos — ${ev.name}`.slice(0, 250), description: `${ids.length} foto(s) digitales`, quantity: 1, unit_price: t.subtotal, currency_id: 'ARS', category_id: 'art' }];
   if (t.serviceFee) items.push({ id: 'servicio', title: 'Costo de servicio', quantity: 1, unit_price: t.serviceFee, currency_id: 'ARS' });
   const pref = await mpFetch(await sellerToken(env, photographerUid), '/checkout/preferences', {
@@ -117,6 +122,13 @@ async function applyPayment(env, orderId, order, payment) {
   const setPath = `events/${order.eventId}/sets/${order.photographerUid}`;
   if (upd.status === 'approved' && order.status !== 'approved') {
     await adminIncrement(env, setPath, { soldPhotos: order.count || 0, soldOrders: 1 }).catch(e => console.error('soldPhotos', e));
+    // Aviso al fotógrafo en sus dispositivos.
+    const n = order.count || 0;
+    await notifyUser(env, order.photographerUid, {
+      title: `💰 ¡Vendiste ${n} foto${n === 1 ? '' : 's'}!`,
+      body: `${order.eventName || 'Evento'} · $${Math.round(order.total || 0).toLocaleString('es-AR')}`,
+      link: `${(env.PANEL_URL || 'https://quieromisfotos.com.ar/panel.html')}#/ventas`,
+    }).catch(e => console.error('push', e));
   } else if (upd.status === 'refunded' && order.status === 'approved') {
     await adminIncrement(env, setPath, { soldPhotos: -(order.count || 0), soldOrders: -1 }).catch(e => console.error('soldPhotos', e));
   }
@@ -130,6 +142,13 @@ export async function webhook(req, env) {
   const type = body.type || body.topic || url.searchParams.get('type') || url.searchParams.get('topic');
   const paymentId = body.data?.id || url.searchParams.get('data.id') || (type === 'payment' ? url.searchParams.get('id') : null);
   const orderId = url.searchParams.get('o');
+  if (type === 'payment' && url.searchParams.get('x')) return extensionWebhook(env, url.searchParams.get('x'), paymentId);
+  // Suscripciones (configurado en la app de MP → Webhooks → "Planes y suscripciones").
+  if (type === 'subscription_preapproval') return subscriptionWebhook(env, body.data?.id || url.searchParams.get('data.id'));
+  if (type === 'subscription_authorized_payment') {
+    const ap = await mpFetch(env.MP_ACCESS_TOKEN, `/authorized_payments/${encodeURIComponent(body.data?.id || url.searchParams.get('data.id'))}`).catch(() => null);
+    return subscriptionWebhook(env, ap?.preapproval_id);
+  }
   if (type !== 'payment' || !paymentId || !ID_RE.test(orderId || '')) return json({ ok: true, ignored: true });
   const order = await adminGet(env, `orders/${orderId}`);
   if (!order) return json({ ok: true, ignored: true });

@@ -1,0 +1,10 @@
+# Sitio de PRUEBA (prueba.quieromisfotos.com.ar): archivos estáticos del frontend, misma API y mismos datos que el oficial.
+# Publicar: tools/deploy-prueba.sh   (el oficial sigue siendo GitHub Pages desde main)
+name = "qmf-prueba"
+compatibility_date = "2026-09-01"
+workers_dev = false
+routes = [{ pattern = "prueba.quieromisfotos.com.ar/*", zone_name = "quieromisfotos.com.ar" }]
+
+[assets]
+directory = "../.prueba-dist"
+not_found_handling = "404-page"

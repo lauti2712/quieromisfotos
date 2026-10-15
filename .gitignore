@@ -6,3 +6,5 @@ node_modules/
 tests/emu-users.json
 tests/node_modules/
 *-debug.log
+.prueba-dist/
+.tmp-test/

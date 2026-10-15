@@ -28,10 +28,23 @@ function scaled(src, sw, sh, maxSide) {
   return c;
 }
 
-export async function processFile(file, wm, logo = null) {
+// Originales optimizados: se recomprimen a máxima resolución con calidad alta (no se nota a simple vista,
+// ocupan ~40-50%). Solo JPEG grandes y solo si realmente achica.
+export const OPTIMIZE_QUALITY = 0.92;
+const OPTIMIZE_MIN_BYTES = 3e6;
+
+export async function processFile(file, wm, logo = null, { optimize = false } = {}) {
   const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
   const width = bmp.width, height = bmp.height;
   try {
+    let original = null;
+    if (optimize && file.size > OPTIMIZE_MIN_BYTES && /jpe?g/i.test(file.type)) {
+      const full = canvas(width, height);
+      full.getContext('2d').drawImage(bmp, 0, 0);
+      const b = await toBlob(full, OPTIMIZE_QUALITY);
+      if (full.width) { full.width = 1; full.height = 1; } // liberar memoria
+      if (b && b.size < file.size * 0.85) original = b;
+    }
     // Base sin marca a 1600px; de ahí sale la miniatura (mejor calidad que escalar directo desde el original).
     const base = scaled(bmp, width, height, PREVIEW_SIDE);
     const thumbC = scaled(base, base.width, base.height, THUMB_SIDE);
@@ -41,7 +54,7 @@ export async function processFile(file, wm, logo = null) {
     }
     const [preview, thumb] = await Promise.all([toBlob(base, 0.8), toBlob(thumbC, 0.7)]);
     const takenAt = await exifDate(file).catch(() => null);
-    return { preview, thumb, width, height, takenAt: takenAt || file.lastModified || Date.now() };
+    return { preview, thumb, original, width, height, takenAt: takenAt || file.lastModified || Date.now() };
   } finally {
     bmp.close?.();
   }

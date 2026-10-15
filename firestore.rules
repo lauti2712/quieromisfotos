@@ -119,9 +119,9 @@ service cloud.firestore {
         allow read: if true;
         allow create: if isApproved() && uid() == pid
           && uid() in eventAfter(eid).photographerUids
-          && !request.resource.data.keys().hasAny(['expiresAt', 'extendedUntil', 'originalsDeleted']);
+          && !request.resource.data.keys().hasAny(['expiresAt', 'extendedUntil', 'originalsDeleted', 'extraBytes', 'soldPhotos', 'soldOrders']);
         allow update: if isSuper() || (isApproved() && uid() == pid
-          && !changed().hasAny(['extendedUntil', 'originalsDeleted', 'soldPhotos', 'soldOrders', 'storageAt'])
+          && !changed().hasAny(['extendedUntil', 'originalsDeleted', 'soldPhotos', 'soldOrders', 'storageAt', 'originalsDeletedAt', 'extraBytes'])
           && (!changed().hasAny(['expiresAt']) || initialExpiry()));
         allow delete: if isSuper() || (signedIn() && uid() == pid && resource.data.photoCount == 0);
       }
@@ -194,6 +194,12 @@ service cloud.firestore {
       allow read: if isSuper() || (signedIn() && (resource.data.photographerUid == uid() || resource.data.buyerUid == uid()));
       allow write: if false;
     }
+    // Suscripción del fotógrafo a un plan (la escribe el Worker con Mercado Pago)
+    match /subscriptions/{uid} {
+      allow read: if isSuper() || (signedIn() && uid() == uid);
+      allow write: if false;
+    }
+
     match /extensions/{id} {
       allow read: if isSuper() || (signedIn() && resource.data.photographerUid == uid());
       allow write: if false;

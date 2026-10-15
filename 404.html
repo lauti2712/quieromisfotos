@@ -10,7 +10,8 @@
   (function () {
     var p = location.pathname, q = new URLSearchParams(location.search), f = q.get('f');
     var m = p.match(/^\/e\/([A-Za-z0-9_-]+)\/?$/), n = p.match(/^\/f\/([a-z0-9-]+)\/?$/);
-    if (m) location.replace('/#/evento/' + m[1] + (f ? '?f=' + encodeURIComponent(f) : ''));
+    q.delete('s');
+    if (m) location.replace('/#/evento/' + m[1] + (q.toString() ? '?' + q.toString() : ''));
     else if (n) location.replace('/#/f/' + n[1]);
     else location.replace('/');
   })();

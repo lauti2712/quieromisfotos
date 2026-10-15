@@ -1,15 +1,20 @@
 // Galería pública de un evento: filtros por fotógrafo y sub-álbum, scroll infinito y visor.
-import { db, collection, getDocs, query, where, orderBy, limit, startAfter } from './fb.js';
+import { db, collection, getDocs, query, where, orderBy, limit, startAfter, Timestamp, getCountFromServer, doc, getDoc } from './fb.js';
 import { $, $$, esc, fmtMoney, toast, errMsg } from './util.js';
 import { cart } from './cart.js';
 import { openViewer } from './viewer.js';
+import { setForSale, setUntil } from './data.js';
+import { favs } from './favs.js';
+import { shareLink, eventUrl } from './share.js';
 
 const PAGE = 60;
 
-export function mountGallery(box, { ev, photographers, sets, initialUid = '' }) {
+export function mountGallery(box, { ev, photographers, sets, initialUid = '', initialPhoto = '' }) {
   const byUid = new Map(photographers.map(p => [p.uid, p]));
   const withPhotos = photographers.filter(p => (sets.get(p.uid)?.photoCount || 0) > 0);
-  const state = { uid: '', sub: '', photos: [], cursor: null, done: false, loading: false };
+  const state = { uid: '', sub: '', hour: 0, fav: false, photos: [], cursor: null, done: false, loading: false };
+  let hours = []; // inicio (ms) de cada hora que tiene fotos
+  let hourCount = new Map();
 
   // Link de álbum de un fotógrafo (#/evento/{id}?f={uid}): arranca filtrado por él.
   if (initialUid && withPhotos.some(p => p.uid === initialUid)) state.uid = initialUid;
@@ -19,9 +24,16 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '' }) 
     return;
   }
 
+  // Álbumes vencidos: se pueden ver, pero ya no se venden.
+  const forSale = uid => setForSale(sets.get(uid));
+  const expired = withPhotos.filter(p => !forSale(p.uid) && setUntil(sets.get(p.uid)));
   box.innerHTML = `
+    ${expired.length ? `<div class="notice warn">${expired.length === withPhotos.length ? 'Las fotos de este evento' : `Las fotos de ${expired.map(p => esc(p.displayName)).join(', ')}`} ya no están a la venta (venció el plazo de disponibilidad).</div>` : ''}
+    <div class="g-price" id="g-price"></div>
     <div class="filter-row" id="g-ph"></div>
     <div class="filter-row" id="g-sub"></div>
+    <div class="filter-row" id="g-hour"></div>
+    <div class="filter-row" id="g-fav"></div>
     <div class="gallery" id="g-grid"></div>
     <div id="g-sentinel" style="height:1px"></div>
     <div class="row" style="justify-content:center;margin-top:14px" id="g-more"></div>`;
@@ -37,6 +49,32 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '' }) 
       ? [`<button class="chip ${!state.sub ? 'on' : ''}" data-sub="">Todas</button>`,
         ...subs.map(s => `<button class="chip ${state.sub === s.id ? 'on' : ''}" data-sub="${s.id}">${esc(s.name)}</button>`)].join('')
       : '';
+    // Horario: chips por hora entre la primera y la última foto (usa la hora en que se sacó cada foto).
+    const multiDay = hours.length && new Date(hours[0]).toDateString() !== new Date(hours.at(-1)).toDateString();
+    const hourLabel = ms => {
+      const d = new Date(ms);
+      return `${multiDay ? `${d.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric' })} ` : ''}${String(d.getHours()).padStart(2, '0')}:00 a ${String((d.getHours() + 1) % 24).padStart(2, '0')}:00`;
+    };
+    $('#g-hour', box).innerHTML = hours.length > 1
+      ? [`<span class="muted small" style="align-self:center">🕒 Horario:</span><button class="chip ${!state.hour ? 'on' : ''}" data-hour="0">Todo</button>`,
+        ...hours.map(h => `<button class="chip ${state.hour === h ? 'on' : ''}" data-hour="${h}">${hourLabel(h)} <span class="muted small">${hourCount.get(h) || ''}</span></button>`)].join('')
+      : '';
+    $$('[data-hour]', box).forEach(b => b.onclick = () => { state.hour = Number(b.dataset.hour); state.fav = false; reset(); });
+
+    const nFav = favs.forEvent(ev.id).length;
+    $('#g-fav', box).innerHTML = nFav || state.fav
+      ? `<button class="chip ${state.fav ? 'on' : ''}" data-fav>♥ Mis favoritas (${nFav})</button>${state.fav ? '<span class="muted small" style="align-self:center">Guardadas en este dispositivo</span>' : ''}`
+      : '';
+    $('[data-fav]', box)?.addEventListener('click', () => { state.fav = !state.fav; reset(); });
+
+    // Precio y packs de cada fotógrafo, arriba de las fotos.
+    const shown = (state.uid ? withPhotos.filter(p => p.uid === state.uid) : withPhotos).filter(p => forSale(p.uid));
+    $('#g-price', box).innerHTML = shown.map(p => {
+      const st = sets.get(p.uid) || {};
+      const packs = (st.packs || []).filter(k => k.qty > 1 && k.price > 0).sort((a, b) => a.qty - b.qty);
+      return `<div class="g-price-row">💲 ${withPhotos.length > 1 ? `<strong>${esc(p.displayName)}</strong> · ` : ''}<strong>${fmtMoney(st.price)}</strong> por foto
+        ${packs.map(k => `<span class="pill ok">${k.qty} fotos x ${fmtMoney(k.price)}</span>`).join(' ')}</div>`;
+    }).join('') + (shown.length ? '<div class="muted small">Si llevás varias, se aplica solo la combinación más barata.</div>' : '');
     $$('[data-uid]', box).forEach(b => b.onclick = () => { state.uid = b.dataset.uid; state.sub = ''; reset(); });
     $$('[data-sub]', box).forEach(b => b.onclick = () => {
       state.sub = b.dataset.sub;
@@ -54,11 +92,19 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '' }) 
 
   async function loadMore() {
     if (state.loading || state.done) return;
+    if (state.fav) {
+      const list = favs.forEvent(ev.id).filter(p => byUid.has(p.photographerUid) && (!state.uid || p.photographerUid === state.uid)).sort((a, b) => a.takenAt - b.takenAt);
+      state.photos = list; state.done = true;
+      $('#g-grid', box).innerHTML = list.length ? list.map((p, i) => itemHtml(p, i)).join('') : '<div class="empty" style="grid-column:1/-1">Todavía no marcaste favoritas. Tocá ♡ en las fotos que te gusten.</div>';
+      $('#g-more', box).innerHTML = '';
+      return;
+    }
     state.loading = true;
     $('#g-more', box).innerHTML = '<div class="spinner" style="margin:6px auto"></div>';
     const cons = [where('eventId', '==', ev.id), where('hidden', '==', false)];
     if (state.uid) cons.push(where('photographerUid', '==', state.uid));
     if (state.uid && state.sub) cons.push(where('subalbumId', '==', state.sub));
+    if (state.hour) cons.push(where('takenAt', '>=', Timestamp.fromMillis(state.hour)), where('takenAt', '<', Timestamp.fromMillis(state.hour + 3600000)));
     cons.push(orderBy('takenAt'), limit(PAGE));
     if (state.cursor) cons.push(startAfter(state.cursor));
     try {
@@ -68,11 +114,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '' }) 
       const fresh = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => byUid.has(p.photographerUid));
       const start = state.photos.length;
       state.photos.push(...fresh);
-      $('#g-grid', box).insertAdjacentHTML('beforeend', fresh.map((p, i) =>
-        `<div class="g-item ${cart.has(p.id) ? 'in-cart' : ''}" data-i="${start + i}" data-id="${p.id}" role="button" tabindex="0" aria-label="Ver foto">
-          <img src="${esc(p.thumbUrl)}" alt="" loading="lazy" decoding="async">
-          <button class="g-add" data-add="${start + i}" aria-label="Agregar al carrito">${cart.has(p.id) ? '✓' : '+'}</button>
-        </div>`).join(''));
+      $('#g-grid', box).insertAdjacentHTML('beforeend', fresh.map((p, i) => itemHtml(p, start + i)).join(''));
       if (!state.photos.length) $('#g-grid', box).innerHTML = '<div class="empty" style="grid-column:1/-1">No hay fotos con este filtro.</div>';
       $('#g-more', box).innerHTML = state.done ? '' : '<button class="btn">Ver más fotos</button>';
       $('#g-more button', box)?.addEventListener('click', loadMore);
@@ -84,7 +126,27 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '' }) 
     }
   }
 
+  function itemHtml(p, i) {
+    return `<div class="g-item ${cart.has(p.id) ? 'in-cart' : ''}" data-i="${i}" data-id="${p.id}" role="button" tabindex="0" aria-label="Ver foto">
+      <img src="${esc(p.thumbUrl)}" alt="" loading="lazy" decoding="async">
+      <button class="g-fav ${favs.has(p.id) ? 'on' : ''}" data-favi="${i}" aria-label="Favorita">${favs.has(p.id) ? '♥' : '♡'}</button>
+      ${forSale(p.photographerUid) ? `<button class="g-add" data-add="${i}" aria-label="Agregar al carrito">${cart.has(p.id) ? '✓' : '+'}</button>` : ''}
+    </div>`;
+  }
+  function toggleFav(p) {
+    if (!p) return;
+    const on = favs.toggle({ ...p, eventId: ev.id });
+    toast(on ? '♥ Guardada en tus favoritas' : 'Quitada de favoritas');
+  }
+  window.addEventListener('favs:change', () => {
+    if (!document.body.contains(box)) return;
+    $$('.g-fav', box).forEach(b => { const on = favs.has(b.closest('.g-item').dataset.id); b.classList.toggle('on', on); b.textContent = on ? '♥' : '♡'; });
+    drawFilters();
+  });
+
   $('#g-grid', box).addEventListener('click', e => {
+    const fv = e.target.closest('[data-favi]');
+    if (fv) { toggleFav(state.photos[+fv.dataset.favi]); return; }
     const add = e.target.closest('[data-add]');
     if (add) { toggleCart(state.photos[+add.dataset.add]); return; }
     const b = e.target.closest('.g-item');
@@ -105,7 +167,8 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '' }) 
     $$('.g-item', box).forEach(el => {
       const inCart = cart.has(el.dataset.id);
       el.classList.toggle('in-cart', inCart);
-      el.querySelector('.g-add').textContent = inCart ? '✓' : '+';
+      const btn = el.querySelector('.g-add');
+      if (btn) btn.textContent = inCart ? '✓' : '+';
     });
   }
   window.addEventListener('cart:change', () => document.body.contains(box) && syncCartMarks());
@@ -116,6 +179,26 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '' }) 
   }, { rootMargin: '600px' });
   io.observe($('#g-sentinel', box));
 
+  // Rango horario del evento: primera y última foto visibles (2 lecturas). Máximo 48 chips.
+  (async () => {
+    const base = [where('eventId', '==', ev.id), where('hidden', '==', false)];
+    const [a, b] = await Promise.all([
+      getDocs(query(collection(db, 'photos'), ...base, orderBy('takenAt'), limit(1))),
+      getDocs(query(collection(db, 'photos'), ...base, orderBy('takenAt', 'desc'), limit(1))),
+    ]);
+    const first = a.docs[0]?.data().takenAt?.toMillis(), last = b.docs[0]?.data().takenAt?.toMillis();
+    if (!first || !last) return;
+    const start = new Date(first); start.setMinutes(0, 0, 0);
+    const all = [];
+    for (let h = start.getTime(); h <= last && all.length < 48; h += 3600000) all.push(h);
+    // Solo las horas que tienen fotos (conteo: 1 lectura cada 1000 fotos).
+    const counts = await Promise.all(all.map(h => getCountFromServer(query(collection(db, 'photos'), ...base,
+      where('takenAt', '>=', Timestamp.fromMillis(h)), where('takenAt', '<', Timestamp.fromMillis(h + 3600000)))).then(r => r.data().count).catch(() => 1)));
+    hours = all.filter((h, i) => counts[i] > 0);
+    hourCount = new Map(all.map((h, i) => [h, counts[i]]));
+    if (document.body.contains(box)) drawFilters();
+  })().catch(() => {});
+
   // ------------------------------------------------ visor
   function openGalleryViewer(index) {
     openViewer({
@@ -124,19 +207,44 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '' }) 
       count: () => state.photos.length,
       total: () => `${state.photos.length}${state.done ? '' : '+'}`,
       onIndex: i => { if (i >= state.photos.length - 5) loadMore(); },
-      footer: (i, el, rerender) => {
-        const p = state.photos[i];
-        const ph = byUid.get(p.photographerUid);
-        const set = sets.get(p.photographerUid) || {};
-        const packs = (set.packs || []).map(k => `${k.qty} x ${fmtMoney(k.price)}`).join(' · ');
-        const inCart = cart.has(p.id);
-        el.innerHTML = `
-          <span class="small">📷 ${esc(ph?.displayName || '')}${set.price ? ` · <strong>${fmtMoney(set.price)}</strong>` : ''}${packs ? `<br><span style="opacity:.75">Packs: ${packs}</span>` : ''}</span>
-          <span class="row"><a class="btn sm" href="#/carrito">Ver carrito</a>
-            <button class="btn ${inCart ? '' : 'primary'}" id="lb-add" ${set.price ? '' : 'disabled'}>${inCart ? '✓ En el carrito' : '🛒 Agregar al carrito'}</button></span>`;
-        $('#lb-add', el).onclick = () => { toggleCart(p); rerender(); };
-      },
+      footer: (i, el, rerender) => viewerFooter(state.photos[i], el, rerender),
     });
+  }
+
+  // Foto suelta (link compartido de una foto).
+  function openSingle(p) {
+    openViewer({ index: 0, src: () => p.previewUrl, count: () => 1, total: () => '1', footer: (i, el, rerender) => viewerFooter(p, el, rerender) });
+  }
+
+  function viewerFooter(p, el, rerender) {
+    const ph = byUid.get(p.photographerUid);
+    const set = sets.get(p.photographerUid) || {};
+    const packs = (set.packs || []).map(k => `${k.qty} x ${fmtMoney(k.price)}`).join(' · ');
+    const inCart = cart.has(p.id);
+    const fav = favs.has(p.id);
+    el.innerHTML = `
+      <span class="small">📷 ${esc(ph?.displayName || '')}${set.price ? ` · <strong>${fmtMoney(set.price)}</strong>` : ''}${packs ? `<br><span style="opacity:.75">Packs: ${packs}</span>` : ''}</span>
+      <span class="row">
+        <button class="btn sm" id="lb-fav" title="Favorita">${fav ? '♥' : '♡'}</button>
+        <button class="btn sm" id="lb-share" title="Compartir esta foto">🔗</button>
+        <a class="btn sm" href="#/carrito">Ver carrito</a>
+        ${forSale(p.photographerUid)
+          ? `<button class="btn ${inCart ? '' : 'primary'}" id="lb-add">${inCart ? '✓ En el carrito' : '🛒 Agregar al carrito'}</button>`
+          : '<button class="btn" disabled>Ya no está a la venta</button>'}</span>`;
+    $('#lb-add', el)?.addEventListener('click', () => { toggleCart(p); rerender(); });
+    $('#lb-fav', el).onclick = () => { toggleFav(p); rerender(); };
+    $('#lb-share', el).onclick = () => shareLink({
+      title: `Foto de ${ev.name}`, text: `📸 Mirá esta foto de ${ev.name}:`,
+      url: `${eventUrl(ev.id)}${eventUrl(ev.id).includes('?') ? '&' : '?'}foto=${encodeURIComponent(p.id)}`,
+    });
+  }
+
+  // Link a una foto puntual (?foto=): se abre sola arriba de la galería.
+  if (initialPhoto) {
+    getDoc(doc(db, 'photos', initialPhoto)).then(s => {
+      const d = s.data();
+      if (s.exists() && d.eventId === ev.id && !d.hidden) openSingle({ id: s.id, ...d });
+    }).catch(() => {});
   }
 
   drawFilters();

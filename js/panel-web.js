@@ -1,6 +1,8 @@
 // Panel: planes (Gratis / Pro / Web / Web + Dominio) y configuración de la web personal del fotógrafo.
 import { db, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, serverTimestamp } from './fb.js';
-import { $, $$, esc, fmtMoney, fmtTs, toast, errMsg } from './util.js';
+import { $, $$, esc, fmtMoney, fmtTs, toast, errMsg, parseHash } from './util.js';
+import { apiPost } from './api.js';
+import { auth } from './fb.js';
 import { PLANS, planOf, hasWeb, siteUrlOf } from './data.js';
 import { shareLink } from './share.js';
 
@@ -18,9 +20,26 @@ const PLAN_INFO = [
 ];
 
 export async function viewWeb(view, { uid, profile, settings }) {
+  // Vuelta de Mercado Pago después de suscribirse.
+  if (parseHash().query.get('sub')) {
+    history.replaceState(null, '', '#/web');
+    try {
+      const r = await apiPost('/plans/sync');
+      if (r.status === 'authorized') {
+        toast('🎉 ¡Suscripción activa! Ya tenés tu plan.');
+        const fresh = await getDoc(doc(db, 'users', uid));
+        Object.assign(profile, fresh.data());
+      } else if (r.status === 'pending') toast('Tu suscripción todavía se está procesando. Se activa sola cuando Mercado Pago la confirme.');
+    } catch (e) { toast(errMsg(e), 'error'); }
+  }
   const plan = planOf(profile);
-  const reqSnap = await getDoc(doc(db, 'planRequests', uid)).catch(() => null);
+  const [reqSnap, subSnap] = await Promise.all([
+    getDoc(doc(db, 'planRequests', uid)).catch(() => null),
+    getDoc(doc(db, 'subscriptions', uid)).catch(() => null),
+  ]);
   const pending = reqSnap?.exists() ? reqSnap.data() : null;
+  const sub = subSnap?.exists() ? subSnap.data() : null;
+  const subActive = sub?.status === 'authorized';
   const price = id => (PLANS[id].priceKey ? fmtMoney(settings[PLANS[id].priceKey]) + '/mes' : 'Gratis');
 
   view.innerHTML = `
@@ -32,21 +51,44 @@ export async function viewWeb(view, { uid, profile, settings }) {
           <div class="row" style="justify-content:space-between"><strong>${PLANS[p.id].label}</strong>${p.id === plan ? '<span class="pill ok">Tu plan</span>' : ''}</div>
           <div class="plan-price">${price(p.id)}</div>
           <ul>${p.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>
-          ${p.id !== 'free' && p.id !== plan ? `<button class="btn ${p.id === 'web' ? 'primary' : ''} sm" data-req="${p.id}">${pending?.plan === p.id ? '✓ Pedido enviado' : 'Lo quiero'}</button>` : ''}
+          ${p.id !== 'free' && p.id !== plan ? `<button class="btn ${p.id === 'web' ? 'primary' : ''} sm" data-sub="${p.id}">${plan === 'free' ? 'Suscribirme' : 'Cambiar a este plan'}</button>` : ''}
         </div>`).join('')}
     </div>
-    ${plan !== 'free' ? `<p class="muted small">Tu plan está activo hasta el ${esc(fmtTs(profile.proUntil))}.</p>` : ''}
-    ${pending && pending.plan !== plan ? `<div class="notice">Pediste el plan <strong>${esc(PLANS[pending.plan]?.label)}</strong>. Te vamos a contactar para activarlo. <button class="btn sm ghost" id="req-cancel">Cancelar pedido</button></div>` : ''}
+    ${plan !== 'free' ? `<p class="muted small">Tu plan está activo hasta el ${esc(fmtTs(profile.proUntil))}${subActive ? ' y se renueva solo cada mes con Mercado Pago' : ''}.
+      ${subActive ? '<button class="btn sm ghost" id="sub-cancel">Cancelar suscripción</button>' : ''}</p>` : ''}
+    ${sub?.status === 'pending' ? `<div class="notice">Tu suscripción al plan <strong>${esc(PLANS[sub.plan]?.label)}</strong> está esperando la confirmación de Mercado Pago.</div>` : ''}
+    ${pending && pending.plan !== plan && !sub ? `<div class="notice">Pediste el plan <strong>${esc(PLANS[pending.plan]?.label)}</strong>. Te vamos a contactar para activarlo. <button class="btn sm ghost" id="req-cancel">Cancelar pedido</button></div>` : ''}
     <div id="web-config"></div>`;
 
-  $$('[data-req]').forEach(b => b.onclick = async () => {
-    const want = b.dataset.req;
-    try {
-      await setDoc(doc(db, 'planRequests', uid), { plan: want, displayName: profile.displayName || '', createdAt: serverTimestamp() });
-      toast('¡Listo! Te vamos a contactar para activar tu plan.');
-      viewWeb(view, { uid, profile, settings });
-    } catch (e) { toast(errMsg(e), 'error'); }
+  $$('[data-sub]').forEach(b => b.onclick = () => subscribeDialog(b.dataset.sub));
+  $('#sub-cancel')?.addEventListener('click', async () => {
+    if (!confirm(`¿Cancelar la suscripción? Tu plan sigue activo hasta el ${fmtTs(profile.proUntil)} y después vuelve a Gratis.`)) return;
+    try { await apiPost('/plans/cancel'); toast('Suscripción cancelada'); viewWeb(view, { uid, profile, settings }); } catch (e) { toast(errMsg(e), 'error'); }
   });
+
+  function subscribeDialog(want) {
+    const dlg = document.createElement('dialog');
+    dlg.innerHTML = `
+      <div class="dlg-head"><h2>Plan ${esc(PLANS[want].label)}</h2><button class="btn ghost sm" data-close>✕</button></div>
+      <div class="dlg-body stack">
+        <p style="margin:0"><strong>${price(want)}</strong> · se debita automáticamente cada mes. Lo cancelás cuando quieras desde acá.</p>
+        <label class="field">Email de tu cuenta de Mercado Pago<input type="email" id="sub-email" value="${esc(auth.currentUser?.email || '')}" required>
+          <span class="hint">Tiene que ser el mismo email con el que entrás a Mercado Pago para pagar.</span></label>
+        ${plan !== 'free' ? '<p class="muted small" style="margin:0">Tu plan actual se cancela cuando se active el nuevo.</p>' : ''}
+      </div>
+      <div class="dlg-foot"><button class="btn primary" id="sub-go">Suscribirme con Mercado Pago</button></div>`;
+    document.body.appendChild(dlg);
+    dlg.addEventListener('close', () => dlg.remove());
+    dlg.querySelector('[data-close]').onclick = () => dlg.close();
+    dlg.showModal();
+    dlg.querySelector('#sub-go').onclick = async e => {
+      const btn = e.target; btn.disabled = true; btn.textContent = 'Abriendo Mercado Pago…';
+      try {
+        const { initPoint } = await apiPost('/plans/subscribe', { plan: want, payerEmail: dlg.querySelector('#sub-email').value });
+        location.href = initPoint;
+      } catch (err) { toast(errMsg(err), 'error'); btn.disabled = false; btn.textContent = 'Suscribirme con Mercado Pago'; }
+    };
+  }
   $('#req-cancel')?.addEventListener('click', async () => {
     try { await deleteDoc(doc(db, 'planRequests', uid)); viewWeb(view, { uid, profile, settings }); } catch (e) { toast(errMsg(e), 'error'); }
   });

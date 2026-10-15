@@ -9,7 +9,10 @@ ver = lambda p: hashlib.sha1(p.read_bytes()).hexdigest()[:8]
 
 imports = {f'./js/{p.name}': f'./js/{p.name}?v={ver(p)}' for p in sorted((ROOT / 'js').glob('*.js'))}
 css_v = ver(ROOT / 'css' / 'app.css')
-block = ('<!-- stamp:start -->\n  <script type="importmap">' + json.dumps({'imports': imports}, separators=(',', ':')) +
+# Versión de la app: cambia con cualquier módulo o el CSS. Los navegadores abiertos la comparan con version.json.
+app_v = hashlib.sha1((json.dumps(imports, sort_keys=True) + css_v).encode()).hexdigest()[:10]
+(ROOT / 'version.json').write_text(json.dumps({'v': app_v}) + '\n')
+block = ('<!-- stamp:start -->\n  <meta name="app-version" content="' + app_v + '">\n  <script type="importmap">' + json.dumps({'imports': imports}, separators=(',', ':')) +
          '</script>\n  <!-- stamp:end -->')
 
 for name in ('index.html', 'panel.html'):

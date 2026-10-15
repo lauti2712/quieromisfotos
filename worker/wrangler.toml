@@ -18,7 +18,7 @@ API_URL = "https://api.quieromisfotos.com.ar"
 SITE_URL = "https://quieromisfotos.com.ar/"
 PANEL_URL = "https://quieromisfotos.com.ar/panel.html"
 FIREBASE_PROJECT_ID = "quieromisfotos-71629"
-ALLOWED_ORIGINS = "https://quieromisfotos.com.ar,https://solucionescotidianas.com.ar,https://www.quieromisfotos.com.ar,http://localhost:5175"
+ALLOWED_ORIGINS = "https://quieromisfotos.com.ar,https://solucionescotidianas.com.ar,https://www.quieromisfotos.com.ar,https://prueba.quieromisfotos.com.ar,http://localhost:5175"
 # Dominio público del bucket qmf-public (custom domain de R2). Si está vacío, el Worker sirve /public/*.
 PUBLIC_BASE_URL = "https://qmf-fotos.solucionescotidianas.com.ar"
 # Mercado Pago (aplicación "Quiero Mis Fotos", modo marketplace)
@@ -28,6 +28,8 @@ MP_REDIRECT_URI = "https://qmf-api.solucionescotidianas.com.ar/mp/callback"
 MP_TEST_MODE = ""
 # "1" = no pedir a MP que retenga la comisión (solo para pruebas con vendedor de prueba). Vacío = producción.
 MP_TEST_NO_FEE = ""
+# Retención: "1" = borra los originales vencidos (vencimiento + 7 días de gracia). Vacío = solo simula e informa.
+RETENTION_DELETE = ""
 
 [[r2_buckets]]
 binding = "PUBLIC"
