@@ -73,7 +73,7 @@ async function route(req, env, ctx) {
     const host = url.hostname.toLowerCase();
     const sub = host.match(/^([a-z0-9-]+)\.quieromisfotos\.com\.ar$/)?.[1];
     const ours = /(^|\.)(quieromisfotos\.com\.ar|solucionescotidianas\.com\.ar|workers\.dev)$/.test(host) || host === 'localhost';
-    const isSite = (sub && !['api', 'fotos', 'www'].includes(sub)) || !ours;
+    const isSite = (sub && !['api', 'fotos', 'www', 'prueba'].includes(sub)) || !ours;
     if (isSite && url.pathname === '/robots.txt') {
       return new Response(`User-agent: *\nAllow: /\n\nSitemap: https://${host}/sitemap.xml\n`, { headers: { 'Content-Type': 'text/plain' } });
     }

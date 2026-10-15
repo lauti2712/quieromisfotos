@@ -27,3 +27,9 @@ if (EMULATOR) {
 }
 
 export const SUPERADMIN_EMAIL = 'lautarom87@gmail.com';
+
+// Sitio de prueba (prueba.quieromisfotos.com.ar): mismo backend y datos reales, cambios todavía no publicados.
+export const STAGING = /^prueba\./.test(location.hostname);
+if (STAGING) {
+  document.body.insertAdjacentHTML('afterbegin', '<div class="staging-bar">🧪 SITIO DE PRUEBA · estos cambios todavía no están en el sitio oficial · los datos y los pagos SÍ son reales</div>');
+}

@@ -396,3 +396,6 @@ footer.site .foot-links a { color: var(--muted); }
 .wa-tip b { display: block; color: #1a9d55; margin-top: 2px; }
 @media (hover: hover) { .wa-fab:hover .wa-tip { opacity: 1; } }
 body:has(.lightbox, .intro, dialog[open]) .wa-fab { display: none; }
+
+/* ---------- sitio de prueba ---------- */
+.staging-bar { background: repeating-linear-gradient(45deg, #ffd43b, #ffd43b 12px, #ffcc00 12px, #ffcc00 24px); color: #1a1a1a; font-weight: 700; font-size: .8rem; text-align: center; padding: 6px 12px; position: relative; z-index: 30; }

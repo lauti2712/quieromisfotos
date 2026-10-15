@@ -55,7 +55,9 @@ export async function checkout(req, env) {
   await adminSet(env, `orders/${orderId}`, order, { mustNotExist: true });
 
   const api = apiUrl(env, req);
-  const back = `${siteUrl(env)}#/pedido/${orderId}`;
+  // Si se compró desde el sitio de prueba, MP vuelve ahí.
+  const fromStaging = req.headers.get('Origin') === 'https://prueba.quieromisfotos.com.ar';
+  const back = `${fromStaging ? 'https://prueba.quieromisfotos.com.ar/' : siteUrl(env)}#/pedido/${orderId}`;
   const items = [{ id: orderId, title: `Fotos — ${ev.name}`.slice(0, 250), description: `${ids.length} foto(s) digitales`, quantity: 1, unit_price: t.subtotal, currency_id: 'ARS', category_id: 'art' }];
   if (t.serviceFee) items.push({ id: 'servicio', title: 'Costo de servicio', quantity: 1, unit_price: t.serviceFee, currency_id: 'ARS' });
   const pref = await mpFetch(await sellerToken(env, photographerUid), '/checkout/preferences', {

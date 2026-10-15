@@ -17,13 +17,16 @@ import { viewPortfolio } from './panel-portfolio.js';
 import { drawWatermark, drawSampleScene, DEFAULT_WATERMARK, wantsLogo } from './watermark.js';
 import { uploadAsset, apiPost } from './api.js';
 import { resizeToJpeg } from './image-proc.js';
-import { mountPhotos } from './panel-photos.js';
+import { mountPhotos, uploadsInProgress } from './panel-photos.js';
+import { initRefresh } from './refresh.js';
 import { shareLink, eventUrl } from './share.js';
 
 const root = $('#root');
 const S = { user: null, profile: null, isSuper: false, settings: { ...DEFAULT_SETTINGS }, tax: null };
 
 const isApproved = () => S.profile?.status === 'approved';
+
+initRefresh({ busy: uploadsInProgress });
 
 // ================================================================ auth
 onAuthStateChanged(auth, async user => {
@@ -1368,6 +1371,10 @@ async function viewAdminConfig() {
   let plans = (st.extensionPlans || []).map(p => ({ ...p }));
   $('#view').innerHTML = `
     <h1>Configuración de la plataforma</h1>
+    <div class="card row" style="justify-content:space-between">
+      <div><strong>Refrescar todos los dispositivos</strong><br><span class="muted small">Recarga el sitio y el panel en todos los navegadores abiertos (oficial y prueba). Los que están subiendo fotos ven un aviso y no se cortan.</span></div>
+      <button class="btn" id="a-reload">🔄 Refrescar todos</button>
+    </div>
     <form id="acf">
       <div class="card stack">
         <div class="grid2">
@@ -1415,6 +1422,11 @@ async function viewAdminConfig() {
     $$('#a-plans [data-rm]').forEach(b => b.onclick = () => { plans.splice(+b.dataset.rm, 1); draw(); });
   };
   draw();
+  $('#a-reload').onclick = async () => {
+    if (!confirm('¿Recargar el sitio en todos los dispositivos abiertos?')) return;
+    try { await setDoc(doc(db, 'settings', 'app'), { reloadAt: serverTimestamp() }, { merge: true }); toast('Listo: se están recargando'); }
+    catch (err) { toast(errMsg(err), 'error'); }
+  };
   $('#a-plan-add').onclick = () => { plans.push({ id: newId(), label: '', days: 30, price: 0 }); draw(); };
   $('#acf').onsubmit = async e => {
     e.preventDefault();

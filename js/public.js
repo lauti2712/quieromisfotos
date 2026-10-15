@@ -12,6 +12,7 @@ import { renderCart } from './cart-view.js';
 import { renderAccount } from './account.js';
 import { renderOrder } from './order-view.js';
 import { maybeShowIntro } from './intro.js';
+import { initRefresh } from './refresh.js';
 import { shareLink, eventUrl } from './share.js';
 import { cart } from './cart.js';
 
@@ -28,6 +29,7 @@ const app = $('#app');
 const PAGE = 24;
 
 maybeShowIntro();
+initRefresh();
 window.addEventListener('hashchange', route);
 // Al ingresar/salir se re-dibujan las vistas que dependen de la cuenta.
 window.addEventListener('account:change', () => { const p = parseHash().parts[0]; if (p === 'cuenta' || p === 'carrito' || p === 'pedido') route(); });
