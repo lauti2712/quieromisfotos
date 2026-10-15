@@ -48,9 +48,9 @@ export async function renderPhotographerLanding(app) {
       first: st.webDomainFirstPrice > st.webDomainPrice ? st.webDomainFirstPrice : 0,
       items: ['Todo lo de Profesional', 'Tu propio dominio (tunombre.com.ar)'] },
   ] : [
-    { name: 'Gratis', price: 0, cta: 'Empezar gratis', items: ['Vendé tus fotos en eventos', 'Álbumes ilimitados', 'Marca de agua, galería y cobro incluidos',
+    { name: 'Gratis', price: 0, cta: 'Empezar gratis', items: ['Vendé tus fotos en eventos', '1 álbum activo a la vez', 'Marca de agua, galería y cobro incluidos',
       `Portfolio de ${st.freePortfolioLimit ?? 12} fotos`, `Comisión ${fee}% por venta`] },
-    { name: 'Web', price: st.webPrice, hot: true, cta: 'Quiero este plan', items: ['Todo lo de Gratis', `Portfolio de ${st.proPortfolioLimit ?? 80} fotos`,
+    { name: 'Web', price: st.webPrice, hot: true, cta: 'Quiero este plan', items: ['Álbumes ilimitados', `Portfolio de ${st.proPortfolioLimit ?? 80} fotos`,
       'Tu web: tunombre.quieromisfotos.com.ar', 'Fotos de tu web sin marca de agua', 'Destacado en el directorio', `Comisión ${fee}% por venta`] },
   ];
   const planCard = (p, i) => `
