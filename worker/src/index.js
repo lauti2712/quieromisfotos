@@ -22,6 +22,7 @@
 //   POST   /admin/storage/scan         Bearer (superadmin)                    recalcula el uso de R2 (también corre a diario)
 //   POST   /extensions/checkout        Bearer (fotógrafo) {eventId, planId}    extensión paga del plazo -> { initPoint }
 //   POST   /extensions/{id}/sync       Bearer (fotógrafo)                     consulta el pago a MP
+//   POST   /plans/subscribe · /plans/sync · /plans/cancel   Bearer (fotógrafo)   suscripción mensual a un plan (MP)
 //   POST   /tags                       Bearer (fotógrafo aprobado) {type, name}  alta de actividad/club/lugar sin duplicados
 //
 // Claves en R2:
@@ -39,6 +40,7 @@ import { createTag } from './tags.js';
 import { renderSite } from './site.js';
 import { scanRequest, scanStorage } from './storage.js';
 import { extensionCheckout, extensionSync } from './extensions.js';
+import { subscribe, syncRequest, cancelSubscription, syncAllSubscriptions } from './subscriptions.js';
 
 const MAX = { preview: 6e6, thumb: 1e6, original: 80e6, avatar: 3e6, logo: 2e6, cover: 6e6, portfolio: 6e6 };
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
@@ -63,6 +65,7 @@ export default {
   // Cron diario: recalcula el uso de R2.
   async scheduled(event, env, ctx) {
     ctx.waitUntil(scanStorage(env));
+    ctx.waitUntil(syncAllSubscriptions(env));
   },
 };
 
@@ -103,6 +106,9 @@ async function route(req, env, ctx) {
   if (m === 'POST' && url.pathname === '/tags') return createTag(req, env);
   if (m === 'POST' && url.pathname === '/admin/storage/scan') return scanRequest(req, env);
   if (m === 'POST' && url.pathname === '/extensions/checkout') return extensionCheckout(req, env);
+  if (m === 'POST' && url.pathname === '/plans/subscribe') return subscribe(req, env);
+  if (m === 'POST' && url.pathname === '/plans/sync') return syncRequest(req, env);
+  if (m === 'POST' && url.pathname === '/plans/cancel') return cancelSubscription(req, env);
   if (m === 'POST' && parts[0] === 'extensions' && parts[2] === 'sync' && parts.length === 3 && ID_RE.test(parts[1])) return extensionSync(req, env, parts[1]);
   if (m === 'POST' && parts[0] === 'orders' && parts.length === 3 && ID_RE.test(parts[1])) {
     if (parts[2] === 'sync') return syncOrder(req, env, parts[1]);

@@ -200,6 +200,7 @@ async function seedPlatform() {
 function navItems() {
   if (S.isSuper) return [
     { group: 'Administración' },
+    { href: '#/admin/metricas', label: '📊 Métricas' },
     { href: '#/admin/fotografos', label: '👥 Fotógrafos' },
     { href: '#/admin/eventos', label: '🏟️ Eventos' },
     { href: '#/admin/etiquetas', label: '🏷️ Etiquetas' },
@@ -255,6 +256,7 @@ function route() {
     if (b === 'etiquetas') return run(viewAdminTags);
     if (b === 'config') return run(viewAdminConfig);
     if (b === 'almacenamiento') return run(viewAdminStorage);
+    if (b === 'metricas') return run(viewAdminMetrics);
     return run(viewAdminPhotographers);
   }
   if (a === 'perfil') return run(viewProfile);
@@ -1364,6 +1366,72 @@ async function viewAdminEvents() {
   $('#new').onclick = () => eventDialog(null);
   $$('[data-f]').forEach(b => b.onclick = () => { adminEvFilter = b.dataset.f; viewAdminEvents(); });
   $$('[data-share]').forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation(); shareEvent(evs.find(x => x.id === b.dataset.share)); });
+}
+
+// ================================================================ superadmin: métricas
+let metricsRange = 30;
+async function viewAdminMetrics() {
+  const [os, xs, us] = await Promise.all([
+    getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(2000))),
+    getDocs(query(collection(db, 'extensions'), where('status', '==', 'approved'))).catch(() => null),
+    getDocs(query(collection(db, 'users'), where('role', '==', 'photographer'))),
+  ]);
+  const ts = o => (o.paidAt || o.createdAt)?.toMillis?.() || 0;
+  const all = os.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => o.status === 'approved');
+  const exts = (xs?.docs || []).map(d => d.data());
+  const users = us.docs.map(d => ({ uid: d.id, ...d.data() }));
+  const from = metricsRange ? Date.now() - metricsRange * 86400000 : 0;
+  const orders = all.filter(o => ts(o) >= from);
+  const extIn = exts.filter(x => (x.paidAt?.toMillis?.() || 0) >= from);
+  const sum = (l, f) => l.reduce((a, x) => a + (f(x) || 0), 0);
+  const commission = sum(orders, o => o.platformFee);
+  const extRevenue = sum(extIn, x => x.price);
+  // Planes vigentes: ingreso mensual recurrente estimado.
+  const active = users.filter(u => planOf(u) !== 'free');
+  const mrr = sum(active, u => S.settings[PLANS[planOf(u)].priceKey] || 0);
+  const buyers = new Set(orders.map(o => o.buyerUid)).size;
+  const approvedPh = users.filter(u => u.status === 'approved');
+  const selling = new Set(orders.map(o => o.photographerUid));
+  // Por mes (últimos 12).
+  const months = Array.from({ length: 12 }, (_, i) => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); d.setMonth(d.getMonth() - 11 + i); return d; });
+  const byMonth = months.map((d, i) => {
+    const end = months[i + 1]?.getTime() || Infinity;
+    const l = all.filter(o => ts(o) >= d.getTime() && ts(o) < end);
+    const e = exts.filter(x => { const t = x.paidAt?.toMillis?.() || 0; return t >= d.getTime() && t < end; });
+    return { label: d.toLocaleDateString('es-AR', { month: 'short' }), v: sum(l, o => o.platformFee) + sum(e, x => x.price), gmv: sum(l, o => o.total) };
+  });
+  const maxM = Math.max(1, ...byMonth.map(m => m.v));
+  const group = (key, name) => {
+    const m = new Map();
+    for (const o of orders) {
+      const g = m.get(o[key]) || { name: o[name] || o[key], n: 0, photos: 0, gmv: 0, fee: 0 };
+      g.n++; g.photos += o.count || 0; g.gmv += o.total || 0; g.fee += o.platformFee || 0;
+      m.set(o[key], g);
+    }
+    return [...m.values()].sort((a, b) => b.gmv - a.gmv).slice(0, 15);
+  };
+  const table = (rows, first) => rows.length ? `<div class="table-wrap"><table class="list"><tr><th>${first}</th><th>Ventas</th><th>Fotos</th><th>Vendido</th><th>Tu comisión</th></tr>
+    ${rows.map(r => `<tr><td>${esc(r.name)}</td><td>${r.n}</td><td>${r.photos}</td><td>${fmtMoney(r.gmv)}</td><td>${fmtMoney(r.fee)}</td></tr>`).join('')}</table></div>` : '<p class="muted">Sin ventas en el período.</p>';
+
+  $('#view').innerHTML = `
+    <div class="row" style="justify-content:space-between;margin-bottom:14px">
+      <h1 style="margin:0">Métricas</h1>
+      <div class="tabs" style="margin:0">${[[7, '7 días'], [30, '30 días'], [90, '90 días'], [0, 'Todo']].map(([k, l]) => `<button class="chip ${metricsRange === k ? 'on' : ''}" data-r="${k}">${l}</button>`).join('')}</div>
+    </div>
+    <div class="stats">
+      <div class="stat"><span class="muted small">Tus ingresos</span><strong>${fmtMoney(commission + extRevenue)}</strong><span class="muted small">comisiones ${fmtMoney(commission)} · extensiones ${fmtMoney(extRevenue)}</span></div>
+      <div class="stat"><span class="muted small">Vendido por los fotógrafos</span><strong>${fmtMoney(sum(orders, o => o.total))}</strong><span class="muted small">${orders.length} ventas · ${sum(orders, o => o.count)} fotos</span></div>
+      <div class="stat"><span class="muted small">Compradores</span><strong>${buyers}</strong><span class="muted small">ticket promedio ${fmtMoney(orders.length ? sum(orders, o => o.total) / orders.length : 0)}</span></div>
+      <div class="stat"><span class="muted small">Fotógrafos</span><strong>${approvedPh.length}</strong><span class="muted small">${selling.size} con ventas en el período · ${users.filter(u => u.status === 'pending').length} pendientes</span></div>
+      <div class="stat"><span class="muted small">Planes activos</span><strong>${active.length}</strong><span class="muted small">≈ ${fmtMoney(mrr)}/mes</span></div>
+    </div>
+    <div class="card"><h2>Tus ingresos por mes</h2>
+      <div class="spark tall">${byMonth.map(m => `<span style="height:${Math.max(2, (m.v / maxM) * 100)}%" title="${m.label}: ${fmtMoney(m.v)} (vendido ${fmtMoney(m.gmv)})"></span>`).join('')}</div>
+      <div class="spark-labels">${byMonth.map(m => `<span>${m.label}</span>`).join('')}</div>
+      <p class="muted small">Comisiones + extensiones. Los planes (Pro/Web) se suman cuando se cobren por Mercado Pago.</p></div>
+    <div class="card"><h2>Por fotógrafo</h2>${table(group('photographerUid', 'photographerName'), 'Fotógrafo')}</div>
+    <div class="card"><h2>Por evento</h2>${table(group('eventId', 'eventName'), 'Evento')}</div>`;
+  $$('[data-r]').forEach(b => b.onclick = () => { metricsRange = Number(b.dataset.r); viewAdminMetrics(); });
 }
 
 // ================================================================ superadmin: almacenamiento (R2)

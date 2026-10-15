@@ -93,7 +93,7 @@ function groupHtml(g, settings) {
         ${g.ev.demo
           ? `<button class="btn primary" disabled>Pagar ${fmtMoney(t.total)}</button>`
           : currentUser()
-          ? `<span class="muted small">Pagás con Mercado Pago: tarjeta, débito o dinero en cuenta.</span><button class="btn primary" data-pay="${g.key}">Pagar ${fmtMoney(t.total)}</button>`
+          ? `<span class="muted small">Pagás con Mercado Pago: tarjeta, débito o dinero en cuenta. Al pagar aceptás los <a href="terminos/" target="_blank">términos</a>.</span><button class="btn primary" data-pay="${g.key}">Pagar ${fmtMoney(t.total)}</button>`
           : `<span class="muted small">Ingresá para comprar: tus fotos quedan siempre en Mis compras.</span><button class="btn primary" data-login>Ingresar para pagar</button>`}
       </div>
     </section>`;

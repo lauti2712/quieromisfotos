@@ -126,7 +126,7 @@ def thumbs_html(items, href, alt):
 # ---------------------------------------------------------------- limpiar y generar
 for d in ('e', 'f', 'eventos', 'fotografos'):
     shutil.rmtree(ROOT / d, ignore_errors=True)
-urls = [(f'{SITE}/', None), (f'{SITE}/eventos/', None), (f'{SITE}/fotografos/', None)]
+urls = [(f'{SITE}/', None), (f'{SITE}/eventos/', None), (f'{SITE}/fotografos/', None), (f'{SITE}/terminos/', None), (f'{SITE}/privacidad/', None)]
 
 
 def write(rel, content):

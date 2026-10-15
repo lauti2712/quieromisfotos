@@ -7,6 +7,7 @@ import { signToken, verifyToken } from './tokens.js';
 import { json, httpError, apiUrl } from './http.js';
 import { extensionWebhook } from './extensions.js';
 import { notifyUser } from './push.js';
+import { subscriptionWebhook } from './subscriptions.js';
 
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
 const MAX_ITEMS = 300;
@@ -142,6 +143,12 @@ export async function webhook(req, env) {
   const paymentId = body.data?.id || url.searchParams.get('data.id') || (type === 'payment' ? url.searchParams.get('id') : null);
   const orderId = url.searchParams.get('o');
   if (type === 'payment' && url.searchParams.get('x')) return extensionWebhook(env, url.searchParams.get('x'), paymentId);
+  // Suscripciones (configurado en la app de MP → Webhooks → "Planes y suscripciones").
+  if (type === 'subscription_preapproval') return subscriptionWebhook(env, body.data?.id || url.searchParams.get('data.id'));
+  if (type === 'subscription_authorized_payment') {
+    const ap = await mpFetch(env.MP_ACCESS_TOKEN, `/authorized_payments/${encodeURIComponent(body.data?.id || url.searchParams.get('data.id'))}`).catch(() => null);
+    return subscriptionWebhook(env, ap?.preapproval_id);
+  }
   if (type !== 'payment' || !paymentId || !ID_RE.test(orderId || '')) return json({ ok: true, ignored: true });
   const order = await adminGet(env, `orders/${orderId}`);
   if (!order) return json({ ok: true, ignored: true });
