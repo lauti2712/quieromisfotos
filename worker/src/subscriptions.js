@@ -6,7 +6,8 @@ import { requireUser } from './firebase.js';
 import { mpFetch, panelUrl } from './mp.js';
 import { json, httpError } from './http.js';
 
-const PLANS = { pro: { label: 'Portfolio Pro', priceKey: 'proPrice' }, web: { label: 'Web', priceKey: 'webPrice' }, webdomain: { label: 'Web + Dominio', priceKey: 'webDomainPrice' } };
+// 'pro' (Portfolio Pro) solo por compatibilidad: el panel ya no lo ofrece.
+const PLANS = { pro: { label: 'Portfolio Pro', priceKey: 'proPrice' }, web: { label: 'Profesional', priceKey: 'webPrice' }, webdomain: { label: 'Profesional + Dominio', priceKey: 'webDomainPrice' } };
 const DAY = 86400_000;
 const GRACE = 3 * DAY; // margen por si el débito del mes se demora
 

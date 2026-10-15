@@ -7,6 +7,7 @@ import { signToken, verifyToken } from './tokens.js';
 import { json, httpError, apiUrl } from './http.js';
 import { extensionWebhook } from './extensions.js';
 import { notifyUser } from './push.js';
+import { feePercentFor } from './plans.js';
 import { subscriptionWebhook } from './subscriptions.js';
 
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
@@ -46,7 +47,7 @@ export async function checkout(req, env) {
   const bad = photos.findIndex(p => !p || p.eventId !== eventId || p.photographerUid !== photographerUid || p.hidden || p.originalDeleted);
   if (bad >= 0) throw httpError(409, 'Alguna foto del carrito ya no está disponible. Quitala y probá de nuevo.');
 
-  const t = computeTotals({ count: ids.length, price: set.price, packs: set.packs, feeMode: set.feeMode, feePercent: settings?.feePercent ?? 3 });
+  const t = computeTotals({ count: ids.length, price: set.price, packs: set.packs, feeMode: set.feeMode, feePercent: feePercentFor(ph, settings) });
   const orderId = newId();
   const order = {
     buyerUid: claims.sub, buyerEmail: claims.email, buyerName: claims.name || '',

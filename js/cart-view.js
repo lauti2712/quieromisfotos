@@ -3,7 +3,7 @@ import { db, doc, getDoc } from './fb.js';
 import { $, $$, esc, fmtMoney, fmtDate, toast, errMsg } from './util.js';
 import { cart } from './cart.js';
 import { computeTotals, bestPrice } from './pricing.js';
-import { loadSettings, setForSale } from './data.js';
+import { loadSettings, setForSale, feePercentFor } from './data.js';
 import { currentUser, openLogin } from './account.js';
 import { apiPost } from './api.js';
 
@@ -75,7 +75,7 @@ function groupHtml(g, settings) {
     return `<section class="card stack">${head}<div class="notice warn">Estas fotos ya no están disponibles para compra.</div></section>`;
   }
 
-  const t = computeTotals({ count: n, price: g.set.price, packs: g.set.packs, feeMode: g.set.feeMode, feePercent: settings.feePercent });
+  const t = computeTotals({ count: n, price: g.set.price, packs: g.set.packs, feeMode: g.set.feeMode, feePercent: feePercentFor(g.ph, settings) });
   const tip = nextPackTip(n, g.set);
   return `
     <section class="card stack">

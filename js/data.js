@@ -2,7 +2,10 @@
 import { db, doc, getDoc } from './fb.js';
 
 export const DEFAULT_SETTINGS = {
-  feePercent: 3,
+  feePercent: 3,       // comisión de los planes pagos
+  freeFeePercent: 5,   // comisión del plan Gratis
+  freeAlbumLimitGB: 3, // tope de espacio por álbum en el plan Gratis (sin packs)
+  freeActiveAlbums: 1, // álbumes activos a la vez en el plan Gratis
   retentionDays: 14,
   extensionPlans: [],
   // Límite de espacio por álbum en GB (0 = sin límite) y packs de espacio adicional que compra el fotógrafo.
@@ -38,11 +41,13 @@ export const GEAR_PLURAL = { 'Cámara': 'Cámaras', 'Lente': 'Lentes', 'Drone': 
 export const SERVICES = ['Deportes', 'Eventos sociales', 'Retratos / books', 'Institucional', 'Producto', 'Video'];
 
 // Planes pagos. `proUntil` es la fecha hasta la que está pago el plan (cualquiera de los pagos).
+// Desde oct-2026: Gratis (1 álbum activo, tope de GB, comisión mayor) · Profesional (id 'web') · Profesional + Dominio.
+// 'pro' (Portfolio Pro) queda solo por compatibilidad con planes dados antes: no se ofrece.
 export const PLANS = {
   free: { label: 'Gratis' },
-  pro: { label: 'Portfolio Pro', priceKey: 'proPrice' },
-  web: { label: 'Web', priceKey: 'webPrice', web: true },
-  webdomain: { label: 'Web + Dominio', priceKey: 'webDomainPrice', web: true, domain: true },
+  pro: { label: 'Portfolio Pro (anterior)', priceKey: 'proPrice', legacy: true },
+  web: { label: 'Profesional', priceKey: 'webPrice', web: true },
+  webdomain: { label: 'Profesional + Dominio', priceKey: 'webDomainPrice', web: true, domain: true },
 };
 
 // Plan vigente (si venció, vuelve a gratis).
@@ -118,4 +123,15 @@ export const setDeleteAt = set => (setUntil(set) ? setUntil(set) + GRACE_DAYS * 
 export const setForSale = set => !!set && set.price > 0 && !set.originalsDeleted && (!setUntil(set) || setUntil(set) > Date.now());
 
 // Límite de espacio del álbum en bytes (0 = sin límite): el general + lo que compró el fotógrafo.
-export const albumLimit = (set, settings) => (Number(settings?.albumLimitGB) > 0 ? settings.albumLimitGB * 1e9 + (set?.extraBytes || 0) : 0);
+// Plan Gratis: tope fijo (freeAlbumLimitGB), sin packs. Planes pagos: albumLimitGB + lo comprado (0 = sin límite).
+// Las reglas nuevas del plan Gratis rigen solo con settings.plansV2 (interruptor en Plataforma).
+export const freeLimited = (user, settings) => !!settings?.plansV2 && planOf(user) === 'free';
+export const albumLimit = (set, settings, user) => (freeLimited(user, settings)
+  ? (Number(settings?.freeAlbumLimitGB) || 3) * 1e9
+  : Number(settings?.albumLimitGB) > 0 ? settings.albumLimitGB * 1e9 + (set?.extraBytes || 0) : 0);
+
+// Comisión de la plataforma según el plan del fotógrafo.
+export const feePercentFor = (user, settings) => (freeLimited(user, settings) ? (settings?.freeFeePercent ?? 5) : (settings?.feePercent ?? 3));
+
+// Álbum activo: tiene fotos y todavía guarda los originales (en venta o en los días de gracia).
+export const setActive = set => !!set && (set.photoCount || 0) > 0 && !set.originalsDeleted && (!setDeleteAt(set) || setDeleteAt(set) > Date.now());

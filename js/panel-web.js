@@ -12,11 +12,12 @@ const TEMPLATES = [
   { id: 'minimal', name: 'Minimal', desc: 'Sin portada: tus fotos son las protagonistas.', bg: '#ffffff', fg: '#14161b' },
 ];
 
-const PLAN_INFO = [
-  { id: 'free', items: ['Perfil en Quiero Mis Fotos', 'Portfolio de 12 fotos', 'Venta de fotos en eventos'] },
-  { id: 'pro', items: ['Todo lo de Gratis', 'Portfolio de 200 fotos', 'Destacado en el directorio'] },
-  { id: 'web', items: ['Todo lo de Pro', 'Tu web: tunombre.quieromisfotos.com.ar', '3 plantillas, galerías y servicios', 'Fotos de tu web sin marca de agua'] },
-  { id: 'webdomain', items: ['Todo lo de Web', 'Tu propio dominio (ej: tunombre.com.ar)'] },
+// Planes que se ofrecen (el viejo "Portfolio Pro" ya no).
+const planInfo = st => [
+  { id: 'free', items: ['Vendé tus fotos en eventos', '1 álbum activo a la vez', `Hasta ${st.freeAlbumLimitGB ?? 3} GB por álbum`, `Portfolio de ${st.freePortfolioLimit ?? 12} fotos`, `Comisión ${st.freeFeePercent ?? 5}% por venta`] },
+  { id: 'web', items: ['Álbumes ilimitados', st.albumLimitGB > 0 ? `${st.albumLimitGB} GB por álbum (ampliable)` : 'Más espacio por álbum', `Portfolio de ${st.proPortfolioLimit ?? 200} fotos`,
+    'Tu web: tunombre.quieromisfotos.com.ar', 'Fotos de tu web sin marca de agua', 'Destacado en el directorio', `Comisión ${st.feePercent ?? 3}% por venta`] },
+  { id: 'webdomain', items: ['Todo lo de Profesional', 'Tu propio dominio (ej: tunombre.com.ar)'] },
 ];
 
 export async function viewWeb(view, { uid, profile, settings }) {
@@ -43,15 +44,16 @@ export async function viewWeb(view, { uid, profile, settings }) {
   const price = id => (PLANS[id].priceKey ? fmtMoney(settings[PLANS[id].priceKey]) + '/mes' : 'Gratis');
 
   view.innerHTML = `
-    <h1>Mi web</h1>
-    <p class="muted">Tu propia web de fotógrafo, con tus fotos, tus servicios y tu contacto. Se arma sola con lo que cargás en tu perfil y tu portfolio.</p>
+    <h1>Planes y mi web</h1>
+    <p class="muted">Con el plan Profesional vendés sin límite de álbumes, pagás menos comisión y tenés tu propia web con tus fotos, servicios y contacto.</p>
+    ${plan === 'pro' ? '<div class="notice">Tenés el plan <strong>Portfolio Pro</strong> anterior. Podés pasarte a Profesional cuando quieras.</div>' : ''}
     <div class="plans">
-      ${PLAN_INFO.map(p => `
+      ${planInfo(settings).map(p => `
         <div class="plan-card ${p.id === plan ? 'current' : ''}">
           <div class="row" style="justify-content:space-between"><strong>${PLANS[p.id].label}</strong>${p.id === plan ? '<span class="pill ok">Tu plan</span>' : ''}</div>
           <div class="plan-price">${price(p.id)}</div>
           <ul>${p.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>
-          ${p.id !== 'free' && p.id !== plan ? `<button class="btn ${p.id === 'web' ? 'primary' : ''} sm" data-sub="${p.id}">${plan === 'free' ? 'Suscribirme' : 'Cambiar a este plan'}</button>` : ''}
+          ${p.id !== 'free' && p.id !== plan ? `<button class="btn ${p.id === 'web' ? 'primary' : ''} sm" data-sub="${p.id}">${plan === 'free' || plan === 'pro' ? 'Suscribirme' : 'Cambiar a este plan'}</button>` : ''}
         </div>`).join('')}
     </div>
     ${plan !== 'free' ? `<p class="muted small">Tu plan está activo hasta el ${esc(fmtTs(profile.proUntil))}${subActive ? ' y se renueva solo cada mes con Mercado Pago' : ''}.

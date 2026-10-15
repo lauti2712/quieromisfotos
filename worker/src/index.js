@@ -31,7 +31,8 @@
 //   qmf-private: e/{eid}/{uid}/{pid}        (original, nunca público)
 
 import { verifyIdToken, getDocAsUser } from './firebase.js';
-import { adminGetMany } from './admin.js';
+import { adminGet, adminGetMany, adminQuery } from './admin.js';
+import { freeLimited, albumLimitBytes, setActive } from './plans.js';
 import { signToken, verifyToken } from './tokens.js';
 import { json, httpError, apiUrl } from './http.js';
 import { connectUrl, callback, disconnect } from './mp.js';
@@ -151,6 +152,14 @@ async function uploadSession(req, env) {
     if (!ev) throw httpError(404, 'Evento no encontrado');
     const member = (ev.photographerUids || []).includes(uid);
     if (member) role = 'member';
+    // Plan Gratis: un solo álbum activo a la vez (con fotos y originales guardados).
+    if (member && !isSuper && freeLimited(user, await adminGet(env, 'settings/platform'))) {
+      const evs = await adminQuery(env, 'events', { filters: [['photographerUids', 'array-contains', uid]], limit: 300 });
+      const others = evs.filter(e => e.id !== eid);
+      const sets = others.length ? await adminGetMany(env, others.map(e => `events/${e.id}/sets/${uid}`)) : [];
+      const busy = others.find((e, i) => setActive(sets[i]));
+      if (busy) throw httpError(403, `Con el plan Gratis podés tener 1 álbum activo a la vez y ya tenés "${busy.name}". Pasate al plan Profesional o esperá a que venza.`);
+    }
     else if (isSuper || ev.createdBy === uid) role = 'editor';
     else throw httpError(403, 'No participás en este evento');
   }
@@ -184,12 +193,14 @@ async function uploadPhotoPart(req, env, kind, eid, pid, ctx) {
   const base = `e/${eid}/${s.uid}/${pid}`;
   // Límite de espacio por álbum (settings.albumLimitGB + espacio comprado): se controla al empezar cada foto.
   if (kind === 'preview') {
-    const [set, st] = await adminGetMany(env, [`events/${eid}/sets/${s.uid}`, 'settings/platform']);
-    const limit = (Number(st?.albumLimitGB) || 0) * 1e9;
-    if (limit > 0 && set) {
+    const [set, st, user] = await adminGetMany(env, [`events/${eid}/sets/${s.uid}`, 'settings/platform', `users/${s.uid}`]);
+    const max = albumLimitBytes(set, st, user);
+    if (max > 0 && set) {
       const used = (set.bytesOriginal || 0) + (set.bytesPublic || 0);
-      const max = limit + (set.extraBytes || 0);
-      if (used >= max) throw httpError(402, `El álbum llegó a su límite de ${Math.round(max / 1e8) / 10} GB. Comprá más espacio para seguir subiendo.`);
+      const gb = Math.round(max / 1e8) / 10;
+      if (used >= max) throw httpError(402, freeLimited(user, st)
+        ? `Tu álbum llegó al tope de ${gb} GB del plan Gratis. Pasate al plan Profesional para seguir subiendo.`
+        : `El álbum llegó a su límite de ${gb} GB. Comprá más espacio para seguir subiendo.`);
     }
     // Avisar a los seguidores del evento y del fotógrafo cuando el álbum ya tiene fotos.
     if (set && !set.followersNotifiedAt && (set.photoCount || 0) >= NOTIFY_AT_PHOTOS) {

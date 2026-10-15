@@ -5,6 +5,7 @@ import { adminGet, adminGetMany, adminSet, adminUpdate, adminIncrement } from '.
 import { requireUser } from './firebase.js';
 import { mpFetch, panelUrl } from './mp.js';
 import { setAvailableUntil } from './orders.js';
+import { freeLimited } from './plans.js';
 import { json, httpError, apiUrl } from './http.js';
 
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
@@ -21,6 +22,7 @@ export async function extensionCheckout(req, env) {
   if (!ev || !set) throw httpError(404, 'No tenés fotos en este evento');
   if (set.originalsDeleted) throw httpError(409, 'Los originales de este álbum ya se eliminaron');
   if (kind === 'time' && !setAvailableUntil(set)) throw httpError(409, 'El plazo arranca cuando subís la primera foto');
+  if (kind === 'space' && freeLimited(await adminGet(env, `users/${uid}`), settings)) throw httpError(403, 'En el plan Gratis el álbum tiene un tope fijo. Pasate al plan Profesional para tener más espacio.');
   const plan = (settings?.[kind === 'space' ? 'storagePlans' : 'extensionPlans'] || []).find(p => p.id === planId);
   if (!plan || !(plan.price > 0) || !(kind === 'space' ? plan.gb > 0 : plan.days > 0)) throw httpError(400, 'Plan inválido');
   if (!env.MP_ACCESS_TOKEN) throw httpError(503, 'Pagos de la plataforma no configurados');
