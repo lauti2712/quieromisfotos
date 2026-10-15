@@ -65,6 +65,10 @@ export async function renderPhotographerLanding(app) {
 
   app.innerHTML = `
   <div class="lp">
+    <nav class="lp-quick reveal">
+      <a class="btn sm" href="#planes" data-goto="planes">💲 Ver planes</a>
+      <a class="btn sm" href="#/f/fotografo-ejemplo">👀 Ver un portfolio de ejemplo</a>
+    </nav>
     <section class="lp-hero">
       <div class="lp-hero-txt reveal">
         <span class="lp-kicker">Para fotógrafos</span>
@@ -188,6 +192,7 @@ export async function renderPhotographerLanding(app) {
   $$('.lp-calc input, .lp-calc select', app).forEach(el => el.addEventListener('input', calc));
   calc();
   $$('[data-scroll]', app).forEach(a => a.onclick = e => { e.preventDefault(); document.getElementById('como-funciona')?.scrollIntoView({ behavior: 'smooth' }); });
+  $$('[data-goto]', app).forEach(a => a.onclick = e => { e.preventDefault(); document.getElementById(a.dataset.goto)?.scrollIntoView({ behavior: 'smooth' }); });
   // Aparición al hacer scroll.
   const io = new IntersectionObserver(es => es.forEach(en => { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } }), { threshold: 0.15 });
   $$('.reveal', app).forEach(el => io.observe(el));
