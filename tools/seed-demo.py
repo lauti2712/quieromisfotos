@@ -82,7 +82,7 @@ def plain(fields):
 # ---------------------------------------------------------------- borrar
 if delete:
     for i in range(12): rm(f'photos/demo-{i:02d}')
-    for i in range(12): rm(f'portfolio/{UID}_{i}')
+    for i in range(14): rm(f'portfolio/{UID}_{i}')
     rm(f'events/{EID}/sets/{UID}'); rm(f'events/{EID}'); rm(f'slugs/{SLUG}'); rm(f'users/{UID}')
     print('Ejemplo borrado.')
     sys.exit()
@@ -149,7 +149,8 @@ put(f'users/{UID}', {
 PF = [('Tackle en la semifinal', 'Deportes', 1200, 800), ('Los novios', 'Casamientos', 1600, 1200), ('Atardecer sobre la ciudad', 'Drone', 1600, 899),
       ('Cumple de Sofi', 'Cumpleaños', 1600, 1067), ('Retrato corporativo', 'Retratos', 1600, 1067), ('Labiales para catálogo', 'Producto', 1600, 900),
       ('Jugada en el área', 'Deportes', 1200, 798), ('Casamiento al aire libre', 'Casamientos', 1600, 1067), ('La costa desde el aire', 'Drone', 1600, 1200),
-      ('Soplando la vela', 'Cumpleaños', 1600, 1067), ('Book profesional', 'Retratos', 1600, 900), ('Perfumes', 'Producto', 1600, 1067)]
+      ('Soplando la vela', 'Cumpleaños', 1600, 1067), ('Book profesional', 'Retratos', 1600, 900), ('Perfumes', 'Producto', 1600, 1067),
+      ('Final de hockey', 'Deportes', 1200, 799), ('Largada de la 10K', 'Deportes', 1200, 800)]
 for i, (cap, album, w, h) in enumerate(PF):
     put(f'portfolio/{UID}_{i}', {'photographerUid': UID, 'slot': i, 'url': f'{IMG}/pf-{i}_p.jpg{V}', 'thumbUrl': f'{IMG}/pf-{i}_t.jpg{V}',
                                  'cleanUrl': f'{IMG}/pf-{i}_c.jpg{V}', 'width': w, 'height': h, 'caption': cap, 'album': album,
