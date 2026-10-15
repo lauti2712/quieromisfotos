@@ -6,7 +6,7 @@ import { httpError } from './http.js';
 
 let cached = null; // { token, exp }
 
-async function accessToken(env) {
+export async function accessToken(env) {
   if (env.FIREBASE_EMULATOR) return 'owner';
   if (cached && cached.exp > Date.now() + 60_000) return cached.token;
   const sa = JSON.parse(env.FIREBASE_SA);
@@ -14,7 +14,7 @@ async function accessToken(env) {
   const now = Math.floor(Date.now() / 1000);
   const header = b64url(enc.encode(JSON.stringify({ alg: 'RS256', typ: 'JWT', kid: sa.private_key_id })));
   const claims = b64url(enc.encode(JSON.stringify({
-    iss: sa.client_email, scope: 'https://www.googleapis.com/auth/datastore',
+    iss: sa.client_email, scope: 'https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/firebase.messaging',
     aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600,
   })));
   const der = Uint8Array.from(atob(sa.private_key.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')), c => c.charCodeAt(0));

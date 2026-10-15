@@ -6,6 +6,7 @@ import { sellerToken, mpFetch, siteUrl } from './mp.js';
 import { signToken, verifyToken } from './tokens.js';
 import { json, httpError, apiUrl } from './http.js';
 import { extensionWebhook } from './extensions.js';
+import { notifyUser } from './push.js';
 
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
 const MAX_ITEMS = 300;
@@ -120,6 +121,13 @@ async function applyPayment(env, orderId, order, payment) {
   const setPath = `events/${order.eventId}/sets/${order.photographerUid}`;
   if (upd.status === 'approved' && order.status !== 'approved') {
     await adminIncrement(env, setPath, { soldPhotos: order.count || 0, soldOrders: 1 }).catch(e => console.error('soldPhotos', e));
+    // Aviso al fotógrafo en sus dispositivos.
+    const n = order.count || 0;
+    await notifyUser(env, order.photographerUid, {
+      title: `💰 ¡Vendiste ${n} foto${n === 1 ? '' : 's'}!`,
+      body: `${order.eventName || 'Evento'} · $${Math.round(order.total || 0).toLocaleString('es-AR')}`,
+      link: `${(env.PANEL_URL || 'https://quieromisfotos.com.ar/panel.html')}#/ventas`,
+    }).catch(e => console.error('push', e));
   } else if (upd.status === 'refunded' && order.status === 'approved') {
     await adminIncrement(env, setPath, { soldPhotos: -(order.count || 0), soldOrders: -1 }).catch(e => console.error('soldPhotos', e));
   }

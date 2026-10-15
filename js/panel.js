@@ -19,6 +19,7 @@ import { uploadAsset, apiPost } from './api.js';
 import { resizeToJpeg } from './image-proc.js';
 import { mountPhotos, uploadsInProgress } from './panel-photos.js';
 import { initRefresh } from './refresh.js';
+import { pushAvailable, pushOn, pushBlocked, enablePush, disablePush, isIos, isStandalone, listenForeground } from './push.js';
 import { shareLink, eventUrl } from './share.js';
 
 const root = $('#root');
@@ -27,6 +28,7 @@ const S = { user: null, profile: null, isSuper: false, settings: { ...DEFAULT_SE
 const isApproved = () => S.profile?.status === 'approved';
 
 initRefresh({ busy: uploadsInProgress });
+listenForeground();
 
 // ================================================================ auth
 onAuthStateChanged(auth, async user => {
@@ -233,6 +235,8 @@ function renderShell() {
 }
 
 function route() {
+  // Al cambiar de pantalla se cierran los diálogos abiertos.
+  document.querySelectorAll('dialog[open]').forEach(d => d.close());
   const { parts } = parseHash();
   let key = parts.join('/');
   if (!key) key = S.isSuper ? 'admin/fotografos' : 'inicio';
@@ -266,43 +270,122 @@ function route() {
 }
 
 // ================================================================ fotógrafo: inicio
+// Guía de primeros pasos + avisos de vencimiento + tablero de ventas + avisos push.
 async function viewHome() {
   const p = S.profile;
-  const checks = [
-    { ok: !!(p.displayName && p.zone && p.bio), label: 'Completar perfil (nombre, zona y bio)', href: '#/perfil' },
-    { ok: !!p.avatarUrl, label: 'Subir tu foto de perfil', href: '#/perfil' },
-    { ok: !!p.socials?.whatsapp, label: 'Cargar tu WhatsApp para recibir pedidos de presupuesto', href: '#/perfil' },
-    { ok: (p.defaults?.price || 0) > 0, label: 'Definir precio por foto', href: '#/config' },
-    { ok: !!p.mpConnected, label: 'Vincular Mercado Pago (obligatorio para vender)', href: '#/mp' },
+  const approved = isApproved();
+  let evs = [], sets = [], orders = [];
+  if (approved) {
+    const [es, os] = await Promise.all([
+      getDocs(query(collection(db, 'events'), where('photographerUids', 'array-contains', S.user.uid), orderBy('date', 'desc'), limit(100))),
+      getDocs(query(collection(db, 'orders'), where('photographerUid', '==', S.user.uid), orderBy('createdAt', 'desc'), limit(500))).catch(() => null),
+    ]);
+    evs = es.docs.map(d => ({ id: d.id, ...d.data() }));
+    sets = await Promise.all(evs.map(ev => getDoc(doc(db, 'events', ev.id, 'sets', S.user.uid)).then(x => x.data() || null).catch(() => null)));
+    orders = (os?.docs || []).map(d => ({ id: d.id, ...d.data() })).filter(o => o.status === 'approved');
+  }
+  const totalPhotos = sets.reduce((a, x) => a + (x?.photoCount || 0), 0);
+  const steps = [
+    { ok: !!(p.displayName && p.zone && p.bio && p.avatarUrl), label: 'Completá tu perfil', hint: 'Foto, zona y una bio corta: es lo primero que ven los clientes.', href: '#/perfil' },
+    { ok: !!p.socials?.whatsapp, label: 'Cargá tu WhatsApp', hint: 'Para que te pidan presupuestos desde tu perfil.', href: '#/perfil' },
+    { ok: (p.defaults?.price || 0) > 0, label: 'Definí tu precio y tu marca de agua', hint: 'Precio por foto, packs y tu logo (opcional).', href: '#/config' },
+    { ok: !!p.mpConnected, label: 'Vinculá Mercado Pago', hint: 'Obligatorio para vender: la plata te llega directo a tu cuenta.', href: '#/mp' },
+    { ok: approved, label: 'Aprobación de tu cuenta', hint: 'La revisamos a mano. Mientras tanto podés completar todo lo demás.', href: '' },
+    { ok: evs.length > 0, label: 'Creá tu primer evento o sumate a uno', hint: 'Un evento por partido, torneo o carrera.', href: approved ? '#/eventos' : '' },
+    { ok: totalPhotos > 0, label: 'Subí tus fotos', hint: `La marca de agua se aplica sola. Se venden durante ${S.settings.retentionDays} días.`, href: approved ? (evs[0] ? `#/evento/${evs[0].id}` : '#/eventos') : '' },
+    { ok: pushOn(), label: 'Activá los avisos de venta', hint: 'Te llega una notificación cada vez que vendés.', href: '#push' },
   ];
+  const done = steps.filter(x => x.ok).length;
+
   $('#view').innerHTML = `
     <h1>Hola, ${esc(p.displayName)}</h1>
     <div id="home-alerts"></div>
     ${p.status === 'pending' ? `<div class="notice warn"><strong>Tu cuenta está pendiente de aprobación.</strong><br>Mientras tanto podés completar tu perfil, subir tu foto y tu portfolio, y configurar precios y marca de agua.</div>` : ''}
-    <div class="card">
-      <h2>Para empezar a vender</h2>
-      ${checks.map(c => `<div class="item-row"><span>${c.ok ? '✅' : '⬜'}</span><span class="grow">${c.label}</span><a class="btn sm" href="${c.href}">${c.ok ? 'Ver' : 'Completar'}</a></div>`).join('')}
-    </div>
-    ${isApproved() ? `<div class="card"><h2>Eventos</h2><p class="muted">Creá un evento nuevo o sumate a uno existente para subir tus fotos.</p><a class="btn primary" href="#/eventos">Ir a mis eventos</a></div>` : ''}
+    ${done < steps.length ? `<div class="card stack">
+      <div class="row" style="justify-content:space-between"><h2 style="margin:0">🚀 Primeros pasos</h2><span class="muted small">${done} de ${steps.length}</span></div>
+      <div class="meter"><span style="width:${Math.round((done / steps.length) * 100)}%"></span></div>
+      ${steps.map((x, i) => `<div class="item-row step ${x.ok ? 'ok' : ''}">
+        <span class="step-n">${x.ok ? '✓' : i + 1}</span>
+        <span class="grow"><strong>${x.label}</strong>${x.ok ? '' : `<br><span class="muted small">${x.hint}</span>`}</span>
+        ${x.ok || !x.href ? '' : x.href === '#push' ? '<button class="btn sm primary" data-push-on>Activar</button>' : `<a class="btn sm ${steps.findIndex(y => !y.ok) === i ? 'primary' : ''}" href="${x.href}">Hacerlo</a>`}
+      </div>`).join('')}
+    </div>` : ''}
+    <div id="home-dash"></div>
+    <div id="home-push"></div>
     <div class="card"><h2>Tu perfil público</h2><p class="muted">Así te ven los compradores.</p><a class="btn" target="_blank" href="index.html#/f/${esc(p.slug)}">Ver mi perfil</a></div>`;
-  if (isApproved()) homeAlerts().catch(e => console.warn('alertas', e));
-}
 
-// Avisos de álbumes que vencen en 3 días o menos, o que ya no se venden y están por borrarse.
-async function homeAlerts() {
-  const snap = await getDocs(query(collection(db, 'events'), where('photographerUids', 'array-contains', S.user.uid), orderBy('date', 'desc'), limit(60)));
-  const evs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  const sets = await Promise.all(evs.map(ev => getDoc(doc(db, 'events', ev.id, 'sets', S.user.uid)).then(s => s.data() || null).catch(() => null)));
-  const rows = evs.map((ev, i) => ({ ev, r: retentionState(sets[i]) }))
-    .filter(({ r }) => (r.k === 'active' && r.days <= 3) || r.k === 'grace');
-  const box = $('#home-alerts');
-  if (!rows.length || !box) return;
-  box.innerHTML = `<div class="notice ${rows.some(x => x.r.k === 'grace') ? 'danger' : 'warn'} stack">
+  // ---- álbumes por vencer
+  const rows = evs.map((ev, i) => ({ ev, r: retentionState(sets[i]) })).filter(({ r }) => (r.k === 'active' && r.days <= 3) || r.k === 'grace');
+  if (rows.length) $('#home-alerts').innerHTML = `<div class="notice ${rows.some(x => x.r.k === 'grace') ? 'danger' : 'warn'} stack">
     <strong>⏳ Álbumes por vencer</strong>
     ${rows.map(({ ev, r }) => `<div class="row" style="justify-content:space-between">
       <span>${esc(ev.name)} — ${r.k === 'active' ? `se vende ${r.days === 1 ? 'hasta mañana' : `${r.days} días más`}` : `<strong>ya no se vende; los originales se borran el ${fmtMs(r.deleteAt)}</strong>`}</span>
       <a class="btn sm" href="#/evento/${ev.id}">Extender</a></div>`).join('')}
   </div>`;
+
+  // ---- tablero
+  if (approved && (orders.length || totalPhotos)) {
+    const mp = mpPlanOf(p, S.settings);
+    const net = o => (o.total || 0) - (o.platformFee || 0) - Math.round(((o.total || 0) * mp.percent) / 100);
+    const ts = o => (o.paidAt || o.createdAt)?.toMillis?.() || 0;
+    const now = Date.now(), day = 86400000;
+    const since = ms => orders.filter(o => ts(o) >= ms);
+    const startMonth = new Date(); startMonth.setDate(1); startMonth.setHours(0, 0, 0, 0);
+    const sum = (list, f) => list.reduce((a, o) => a + f(o), 0);
+    const block = (title, list) => `<div class="stat"><span class="muted small">${title}</span><strong>${fmtMoney(sum(list, net))}</strong>
+      <span class="muted small">${list.length} venta${list.length === 1 ? '' : 's'} · ${sum(list, o => o.count || 0)} fotos</span></div>`;
+    // Plata que MP todavía no liberó, según el plazo de acreditación elegido.
+    const releaseDays = Number(mp.id) || 0;
+    const pending = releaseDays ? orders.filter(o => ts(o) + releaseDays * day > now) : [];
+    // Últimas 8 semanas.
+    const weeks = Array.from({ length: 8 }, (_, i) => {
+      const end = now - (7 - i) * 7 * day, start = end - 7 * day;
+      return { label: new Date(start + day).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }), v: sum(orders.filter(o => ts(o) > start && ts(o) <= end), net) };
+    });
+    const maxW = Math.max(1, ...weeks.map(w => w.v));
+    // Álbumes con más fotos vendidas.
+    const top = evs.map((ev, i) => ({ ev, set: sets[i] || {} })).filter(x => x.set.photoCount)
+      .map(x => ({ ...x, sold: x.set.soldPhotos || 0, net: sum(orders.filter(o => o.eventId === x.ev.id), net) }))
+      .sort((a, b) => b.sold - a.sold || b.net - a.net).slice(0, 6);
+    $('#home-dash').innerHTML = `
+      <div class="stats">${block('Últimos 7 días', since(now - 7 * day))}${block('Este mes', since(startMonth.getTime()))}${block('Total', orders)}</div>
+      <p class="muted small" style="margin-top:0">Montos netos estimados (después de la comisión de la plataforma y de Mercado Pago, ${mp.percent}%).
+        ${pending.length ? `<br>💳 <strong>A acreditar en Mercado Pago: ${fmtMoney(sum(pending, net))}</strong> (cobrás ${mp.label.toLowerCase()}).` : ''}</p>
+      ${orders.length ? `<div class="card"><h2>Ventas por semana</h2>
+        <div class="spark tall">${weeks.map(w => `<span style="height:${Math.max(2, (w.v / maxW) * 100)}%" title="Semana del ${w.label}: ${fmtMoney(w.v)}"></span>`).join('')}</div>
+        <div class="spark-labels">${weeks.map(w => `<span>${w.label}</span>`).join('')}</div></div>` : ''}
+      ${top.length ? `<div class="card"><h2>Tus álbumes</h2><div class="table-wrap"><table class="list">
+        <tr><th>Evento</th><th>Fotos</th><th>Vendidas</th><th>Conversión</th><th>Neto</th></tr>
+        ${top.map(x => `<tr><td><a href="#/evento/${x.ev.id}">${esc(x.ev.name)}</a></td><td>${x.set.photoCount}</td><td>${x.sold}</td>
+          <td>${x.set.photoCount ? `${((x.sold / x.set.photoCount) * 100).toFixed(1)}%` : '—'}</td><td>${fmtMoney(x.net)}</td></tr>`).join('')}
+      </table></div><p class="muted small">Conversión: qué porcentaje de las fotos subidas se vendió. <a href="#/ventas">Ver todas las ventas →</a></p></div>` : ''}`;
+  }
+
+  // ---- avisos push
+  renderPushCard();
+  $$('[data-push-on]').forEach(b => b.onclick = () => turnPushOn(b));
+}
+
+async function renderPushCard() {
+  const box = $('#home-push');
+  if (!box) return;
+  if (!(await pushAvailable())) {
+    if (isIos() && !isStandalone()) box.innerHTML = `<div class="card"><h2>🔔 Avisos de venta</h2><p class="muted" style="margin:0">En iPhone, para recibir un aviso cada vez que vendés, primero instalá el panel: tocá <strong>Compartir</strong> → <strong>Agregar a inicio</strong>, abrilo desde ese ícono y activalos acá.</p></div>`;
+    return;
+  }
+  box.innerHTML = `<div class="card row" style="justify-content:space-between">
+    <div><h2 style="margin:0 0 4px">🔔 Avisos de venta</h2><span class="muted small">${pushOn() ? 'Activados en este dispositivo: te avisamos cada vez que vendés.' : pushBlocked() ? 'Bloqueaste las notificaciones de este sitio: habilitalas desde la configuración del navegador.' : 'Recibí una notificación en este dispositivo cada vez que vendés.'}</span></div>
+    ${pushOn() ? '<button class="btn sm" id="push-off">Desactivar</button>' : pushBlocked() ? '' : '<button class="btn primary sm" data-push-on>Activar</button>'}
+  </div>`;
+  $('#push-off')?.addEventListener('click', async () => { await disablePush(S.user.uid).catch(() => {}); toast('Avisos desactivados'); renderPushCard(); });
+  $$('[data-push-on]', box).forEach(b => b.onclick = () => turnPushOn(b));
+}
+
+async function turnPushOn(btn) {
+  if (!(await pushAvailable())) return toast(isIos() ? 'En iPhone primero agregá el panel a tu pantalla de inicio (Compartir → Agregar a inicio).' : 'Este navegador no permite notificaciones.', 'error');
+  btn.disabled = true;
+  try { await enablePush(S.user.uid); toast('🔔 ¡Listo! Te vamos a avisar cuando vendas'); viewHome(); }
+  catch (e) { toast(errMsg(e), 'error'); btn.disabled = false; }
 }
 
 // ================================================================ perfil
