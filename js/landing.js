@@ -1,6 +1,6 @@
 // Página "Soy fotógrafo": explica cómo funciona la plataforma para fotógrafos, con animaciones.
 import { $, $$, esc, fmtMoney } from './util.js';
-import { loadSettings, DEFAULT_SETTINGS } from './data.js';
+import { loadSettings, DEFAULT_SETTINGS, planSpec } from './data.js';
 import { sellerNet } from './pricing.js';
 
 // Fotos de la animación (Pexels, licencia libre): una disciplina por ciclo.
@@ -34,19 +34,23 @@ export async function renderPhotographerLanding(app) {
   const st = await loadSettings();
   const v2 = !!st.plansV2;
   const free = v2 ? st.freeFeePercent ?? 5 : st.feePercent ?? 3;
-  const fee = st.feePercent ?? 3, freeFee = st.freeFeePercent ?? 5;
+  const fee = st.feePercent ?? 3;
   const mpPlans = st.mpFeePlans?.length ? st.mpFeePlans : DEFAULT_SETTINGS.mpFeePlans;
 
   // Planes: sin v2, Gratis + Web; con v2, Gratis + Profesional + Profesional + Dominio.
+  const sp = id => planSpec(id, st);
+  const space = st.albumLimitGB > 0 ? `${st.albumLimitGB} GB por álbum (ampliable)` : 'Más espacio por álbum';
   const plans = v2 ? [
-    { name: 'Gratis', price: 0, cta: 'Empezar gratis', items: ['1 álbum activo a la vez', `Hasta ${st.freeAlbumLimitGB ?? 3} GB por álbum`,
-      `Perfil y portfolio de ${st.freePortfolioLimit ?? 12} fotos`, `Comisión ${freeFee}% por venta`] },
-    { name: 'Profesional', price: st.webPrice, hot: true, cta: 'Quiero este plan', items: ['Álbumes ilimitados',
-      st.albumLimitGB > 0 ? `${st.albumLimitGB} GB por álbum (ampliable)` : 'Más espacio por álbum', `Portfolio de ${st.proPortfolioLimit ?? 80} fotos`,
-      'Tu web: tunombre.quieromisfotos.com.ar', 'Fotos de tu web sin marca de agua', 'Destacado en el directorio', `Comisión ${fee}% por venta`] },
-    { name: 'Profesional + Dominio', price: st.webDomainPrice, cta: 'Quiero este plan',
-      first: st.webDomainFirstPrice > st.webDomainPrice ? st.webDomainFirstPrice : 0,
-      items: ['Todo lo de Profesional', 'Tu propio dominio (tunombre.com.ar)'] },
+    { id: 'free', name: 'Gratis', price: 0, cta: 'Empezar gratis', items: ['1 álbum activo a la vez', `Hasta ${st.freeAlbumLimitGB ?? 3} GB por álbum`,
+      `Perfil y portfolio de ${sp('free').portfolio} fotos`, `Comisión ${sp('free').fee}% por venta`] },
+    { id: 'lite', name: 'Profesional Lite', price: sp('lite').price, cta: 'Quiero este plan', items: ['Álbumes ilimitados', space,
+      `Portfolio de ${sp('lite').portfolio} fotos`, ...(sp('lite').featured ? ['Destacado en el directorio'] : []), `Comisión ${sp('lite').fee}% por venta`] },
+    { id: 'web', name: 'Profesional', price: sp('web').price, hot: true, cta: 'Quiero este plan', items: ['Todo lo de Lite', `Portfolio de ${sp('web').portfolio} fotos`,
+      'Tu web: tunombre.quieromisfotos.com.ar', 'Fotos de tu web sin marca de agua', ...(sp('web').featured ? ['Destacado en el directorio'] : []), `Comisión ${sp('web').fee}% por venta`] },
+    { id: 'webdomain', name: 'Profesional + Dominio', price: sp('webdomain').price, cta: 'Quiero este plan',
+      first: sp('webdomain').first > sp('webdomain').price ? sp('webdomain').first : 0,
+      items: ['Todo lo de Profesional', 'Tu propio dominio (tunombre.com.ar)', `Portfolio de ${sp('webdomain').portfolio} fotos`,
+        ...(sp('webdomain').featured ? ['Destacado en el directorio'] : []), `Comisión ${sp('webdomain').fee}% por venta`] },
   ] : [
     { name: 'Gratis', price: 0, cta: 'Empezar gratis', items: ['Vendé tus fotos en eventos', '1 álbum activo a la vez', 'Marca de agua, galería y cobro incluidos',
       `Portfolio de ${st.freePortfolioLimit ?? 12} fotos`, `Comisión ${fee}% por venta`] },
@@ -121,7 +125,7 @@ export async function renderPhotographerLanding(app) {
 
     <section id="planes" class="lp-sec">
       <h2 class="reveal">Planes</h2>
-      <div class="lp-plans ${plans.length === 2 ? 'two' : ''}">${plans.map(planCard).join('')}
+      <div class="lp-plans ${plans.length === 2 ? 'two' : plans.length === 4 ? 'four' : ''}">${plans.map(planCard).join('')}
       </div>
       <p class="muted small lp-note reveal">En todos los planes elegís quién paga la comisión: la absorbés vos o se le suma al comprador como costo de servicio. Los planes pagos se cobran por Mercado Pago y los cancelás cuando quieras.</p>
     </section>
@@ -136,8 +140,8 @@ export async function renderPhotographerLanding(app) {
             <select id="lc-mode"><option value="buyer">El comprador (costo de servicio)</option><option value="absorb">La absorbo yo</option></select></label>
           <label class="field">¿Cuándo cobrás en Mercado Pago?
             <select id="lc-mp">${mpPlans.map(p => `<option value="${esc(String(p.percent))}">${esc(p.label)} · ${esc(String(p.percent).replace('.', ','))}%</option>`).join('')}</select></label>
-          ${v2 && freeFee !== fee ? `<label class="field">Plan
-            <select id="lc-plan"><option value="${esc(String(freeFee))}">Gratis · ${esc(String(freeFee))}%</option><option value="${esc(String(fee))}">Profesional · ${esc(String(fee))}%</option></select></label>` : ''}
+          ${v2 ? `<label class="field">Plan
+            <select id="lc-plan">${plans.map(p => `<option value="${esc(String(sp(p.id).fee))}">${esc(p.name)} · ${esc(String(sp(p.id).fee).replace('.', ','))}%</option>`).join('')}</select></label>` : ''}
         </div>
         <div class="lp-calc-out">
           <div class="lp-calc-row"><span>El comprador paga</span><strong id="lc-total"></strong></div>
@@ -181,7 +185,7 @@ export async function renderPhotographerLanding(app) {
   const calc = () => {
     const price = Math.max(0, Math.round(Number($('#lc-price', app).value) || 0));
     const count = Math.max(0, Math.floor(Number($('#lc-count', app).value) || 0));
-    const pct = $('#lc-plan', app) ? Number($('#lc-plan', app).value) : (v2 ? freeFee : fee);
+    const pct = $('#lc-plan', app) ? Number($('#lc-plan', app).value) : fee;
     const r = sellerNet(price * count, { feeMode: $('#lc-mode', app).value, feePercent: pct, mpPercent: Number($('#lc-mp', app).value) });
     $('#lc-total', app).textContent = fmtMoney(r.total);
     $('#lc-fee-l', app).textContent = `Comisión Quiero Mis Fotos (${String(pct).replace('.', ',')}%)`;

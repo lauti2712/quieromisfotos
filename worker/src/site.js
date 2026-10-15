@@ -2,6 +2,7 @@
 // cacheado 5 minutos. Se sirve en {slug}.quieromisfotos.com.ar, en el dominio propio del fotógrafo o en /w/{slug}.
 import { adminGet, adminQuery } from './admin.js';
 import { siteUrl } from './mp.js';
+import { portfolioLimitFor } from './plans.js';
 
 const PAID_WEB = ['web', 'webdomain'];
 const TEMPLATES = ['clasica', 'oscura', 'minimal'];
@@ -60,7 +61,7 @@ export async function renderSite(req, env, ctx, { slug, host }) {
     adminGet(env, 'settings/tags'),
   ]);
   const settings = (await adminGet(env, 'settings/platform')) || {};
-  const limit = settings.proPortfolioLimit || 200;
+  const limit = portfolioLimitFor(user, settings);
   const site = user.site || {};
   const clean = !!site.clean;
   const photos = items.filter(p => p.slot < limit && p.url)

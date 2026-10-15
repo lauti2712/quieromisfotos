@@ -8,7 +8,9 @@ import { json, httpError } from './http.js';
 
 // 'pro' (Portfolio Pro) solo por compatibilidad: el panel ya no lo ofrece.
 // firstKey: precio del primer mes (ej. Profesional + Dominio cobra más el primero para cubrir el dominio).
-const PLANS = { pro: { label: 'Portfolio Pro', priceKey: 'proPrice' }, web: { label: 'Profesional', priceKey: 'webPrice' }, webdomain: { label: 'Profesional + Dominio', priceKey: 'webDomainPrice', firstKey: 'webDomainFirstPrice' } };
+const PLANS = { pro: { label: 'Portfolio Pro', priceKey: 'proPrice' }, lite: { label: 'Profesional Lite', priceKey: 'litePrice' }, web: { label: 'Profesional', priceKey: 'webPrice' }, webdomain: { label: 'Profesional + Dominio', priceKey: 'webDomainPrice', firstKey: 'webDomainFirstPrice' } };
+// Precios por defecto (iguales a planSpec de js/data.js) si todavía no se guardaron en Plataforma.
+const DEFAULT_PRICE = { lite: 5000, web: 9000, webdomain: 12000 };
 const DAY = 86400_000;
 const GRACE = 3 * DAY; // margen por si el débito del mes se demora
 
@@ -21,7 +23,7 @@ export async function subscribe(req, env) {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw httpError(400, 'Ingresá el email de tu cuenta de Mercado Pago');
   const [user, settings] = await Promise.all([adminGet(env, `users/${claims.sub}`), adminGet(env, 'settings/platform')]);
   if (!user || user.role !== 'photographer') throw httpError(403, 'Solo fotógrafos');
-  const amount = Number(settings?.[PLANS[plan].priceKey]) || 0;
+  const amount = Number(settings?.[PLANS[plan].priceKey]) || DEFAULT_PRICE[plan] || 0;
   if (!(amount > 0)) throw httpError(409, 'Precio del plan no configurado');
   // MP no admite un primer mes distinto: la suscripción arranca con el precio del primer mes y, cuando se cobra,
   // syncSubscription la baja al precio mensual.

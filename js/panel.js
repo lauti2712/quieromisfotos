@@ -10,7 +10,7 @@ import {
   $, $$, esc, slugify, SLUG_RE, searchTokens, fmtMoney, fmtDate, fmtTs, todayIso, parseHash,
   toast, errMsg, avatarHtml, coverHtml, SOCIALS, newId, normalize, fmtBytes, setBytes,
 } from './util.js';
-import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, ACTIVITY_TYPE, USER_TAG_TYPES, tagPills, SERVICES, isPro, mpPlanOf, GEAR_TYPES, PLANS, planOf, siteUrlOf, setUntil, setDeleteAt, GRACE_DAYS, albumLimit, feePercentFor, freeLimited, setActive } from './data.js';
+import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, ACTIVITY_TYPE, USER_TAG_TYPES, tagPills, SERVICES, isPro, mpPlanOf, GEAR_TYPES, PLANS, planOf, siteUrlOf, setUntil, setDeleteAt, GRACE_DAYS, albumLimit, feePercentFor, freeLimited, setActive, planSpec } from './data.js';
 import { viewWeb } from './panel-web.js';
 import { sellerNet } from './pricing.js';
 import { viewPortfolio } from './panel-portfolio.js';
@@ -1480,7 +1480,7 @@ async function viewAdminMetrics() {
   const extRevenue = sum(extIn, x => x.price);
   // Planes vigentes: ingreso mensual recurrente estimado.
   const active = users.filter(u => planOf(u) !== 'free');
-  const mrr = sum(active, u => S.settings[PLANS[planOf(u)].priceKey] || 0);
+  const mrr = sum(active, u => planSpec(planOf(u), S.settings).price || 0);
   const buyers = new Set(orders.map(o => o.buyerUid)).size;
   const approvedPh = users.filter(u => u.status === 'approved');
   const selling = new Set(orders.map(o => o.photographerUid));
@@ -1771,6 +1771,24 @@ async function viewAdminTags() {
 }
 
 // ================================================================ superadmin: plataforma
+// Tabla de condiciones por plan (Plataforma) -> campos de settings/platform.
+const PLAN_KEYS = {
+  free: { fee: 'freeFeePercent', portfolio: 'freePortfolioLimit' },
+  lite: { price: 'litePrice', fee: 'liteFeePercent', portfolio: 'litePortfolioLimit', featured: 'liteFeatured' },
+  web: { price: 'webPrice', fee: 'webFeePercent', portfolio: 'webPortfolioLimit', featured: 'webFeatured' },
+  webdomain: { price: 'webDomainPrice', first: 'webDomainFirstPrice', fee: 'webDomainFeePercent', portfolio: 'webDomainPortfolioLimit', featured: 'webDomainFeatured' },
+};
+function readPlanCfg() {
+  const out = {};
+  $$('.plan-cfg tr[data-plan]').forEach(tr => {
+    const keys = PLAN_KEYS[tr.dataset.plan];
+    tr.querySelectorAll('[data-k]').forEach(inp => {
+      const k = keys[inp.dataset.k];
+      if (k) out[k] = inp.type === 'checkbox' ? inp.checked : inp.dataset.k === 'fee' ? Number(inp.value) || 0 : Math.round(Number(inp.value) || 0);
+    });
+  });
+  return out;
+}
 async function viewAdminConfig() {
   S.settings = await loadSettings();
   const st = S.settings;
@@ -1784,9 +1802,8 @@ async function viewAdminConfig() {
     <form id="acf">
       <div class="card stack">
         <div class="grid2">
-          <label class="field">Comisión — planes pagos (%)<input type="number" id="a-fee" min="0" max="50" step="0.1" value="${st.feePercent}" required></label>
-          <label class="field">Comisión — plan Gratis (%)<input type="number" id="a-fee-free" min="0" max="50" step="0.1" value="${st.freeFeePercent ?? 5}" required>
-            <span class="hint">Rige con los planes nuevos activados.</span></label>
+          <label class="field">Comisión de la plataforma (%)<input type="number" id="a-fee" min="0" max="50" step="0.1" value="${st.feePercent}" required>
+            <span class="hint">Esquema anterior. Con los planes nuevos, la comisión es la de cada plan (abajo).</span></label>
           <label class="field">Días de retención de originales<input type="number" id="a-ret" min="1" max="365" step="1" value="${st.retentionDays}" required>
             <span class="hint">Desde que el fotógrafo sube las fotos de un evento.</span></label>
         </div>
@@ -1802,14 +1819,20 @@ async function viewAdminConfig() {
       <div class="card stack">
         <h2>Planes</h2>
         <label class="check"><input type="checkbox" id="a-v2" ${st.plansV2 ? 'checked' : ''}> <strong>Planes nuevos activados</strong></label>
-        <p class="muted small" style="margin:0">Gratis: 1 álbum activo a la vez, tope de ${st.freeAlbumLimitGB ?? 3} GB por álbum (se cambia en Almacenamiento) y comisión del plan Gratis. Profesional y Profesional + Dominio: álbumes ilimitados, web y comisión de planes pagos. Mientras esté apagado, todos los fotógrafos usan las reglas anteriores.</p>
-        <div class="grid2">
-          <label class="field">Profesional (ARS/mes)<input type="number" id="a-web-price" min="0" step="1" value="${st.webPrice}" required></label>
-          <label class="field">Profesional + Dominio (ARS/mes)<input type="number" id="a-webdom-price" min="0" step="1" value="${st.webDomainPrice}" required></label>
-          <label class="field">Profesional + Dominio — primer mes (ARS)<input type="number" id="a-webdom-first" min="0" step="1" value="${st.webDomainFirstPrice ?? 18000}" required>
-            <span class="hint">Cubre el registro del dominio. Después se cobra el precio mensual.</span></label>
-          <label class="field">Fotos de portfolio — Gratis<input type="number" id="a-free-lim" min="0" max="500" step="1" value="${st.freePortfolioLimit}" required></label>
-          <label class="field">Fotos de portfolio — Profesional<input type="number" id="a-pro-lim" min="1" max="2000" step="1" value="${st.proPortfolioLimit}" required><span class="hint">Para Profesional y Profesional + Dominio.</span></label>
+        <p class="muted small" style="margin:0">Gratis: 1 álbum activo a la vez y tope de ${st.freeAlbumLimitGB ?? 3} GB por álbum (se cambia en Almacenamiento). Los planes pagos tienen álbumes ilimitados y packs de espacio. Mientras esté apagado, todos los fotógrafos usan las reglas anteriores (una sola comisión y un solo límite de portfolio para los planes pagos).</p>
+        <div class="table-wrap"><table class="list plan-cfg">
+          <tr><th>Plan</th><th>Precio/mes</th><th>Comisión %</th><th>Fotos portfolio</th><th>Destacado</th></tr>
+          ${[['free', 'Gratis'], ['lite', 'Profesional Lite'], ['web', 'Profesional'], ['webdomain', 'Profesional + Dominio']].map(([id, label]) => {
+            const p = planSpec(id, st);
+            return `<tr data-plan="${id}"><td><strong>${label}</strong>${id === 'web' || id === 'webdomain' ? '<br><span class="muted small">con web propia</span>' : ''}</td>
+              <td>${id === 'free' ? '—' : `<input type="number" data-k="price" min="0" step="1" value="${p.price}">`}
+                ${id === 'webdomain' ? `<span class="hint">Primer mes</span><input type="number" data-k="first" min="0" step="1" value="${p.first}">` : ''}</td>
+              <td><input type="number" data-k="fee" min="0" max="50" step="0.1" value="${p.fee}"></td>
+              <td><input type="number" data-k="portfolio" min="0" max="2000" step="1" value="${p.portfolio}"></td>
+              <td>${id === 'free' ? '—' : `<input type="checkbox" data-k="featured" ${p.featured ? 'checked' : ''}>`}</td></tr>`;
+          }).join('')}
+        </table></div>
+        <label class="field" style="max-width:320px">Fotos de portfolio — planes pagos (esquema anterior)<input type="number" id="a-pro-lim" min="1" max="2000" step="1" value="${st.proPortfolioLimit}" required></label>
         </div>
       </div>
       <div class="card stack">
@@ -1844,14 +1867,10 @@ async function viewAdminConfig() {
     if (clean.some(p => !p.label || !(p.days > 0) || !(p.price > 0))) return toast('Cada plan necesita nombre, días y precio.', 'error');
     try {
       await setDoc(doc(db, 'settings', 'platform'), {
-        feePercent: Number($('#a-fee').value), freeFeePercent: Number($('#a-fee-free').value), plansV2: $('#a-v2').checked,
+        feePercent: Number($('#a-fee').value), plansV2: $('#a-v2').checked, ...readPlanCfg(),
         retentionDays: Math.round(Number($('#a-ret').value)),
         extensionPlans: clean,
-        webPrice: Math.round(Number($('#a-web-price').value) || 0),
-        webDomainPrice: Math.round(Number($('#a-webdom-price').value) || 0),
-        webDomainFirstPrice: Math.round(Number($('#a-webdom-first').value) || 0),
         mpFeePlans: $$('#a-mp [data-mp]').map(i => ({ id: i.dataset.mp, label: i.dataset.label, percent: Math.round(Number(i.value) * 100) / 100 })),
-        freePortfolioLimit: Math.round(Number($('#a-free-lim').value) || 0),
         proPortfolioLimit: Math.round(Number($('#a-pro-lim').value) || 1),
         updatedAt: serverTimestamp(),
       }, { merge: true });

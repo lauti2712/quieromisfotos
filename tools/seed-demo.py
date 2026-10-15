@@ -109,11 +109,7 @@ if deporte:
         'updatedAt': NOW,
     })
 
-# settings/platform: completar campos nuevos sin pisar los existentes
-plat = plain((get('settings/platform') or {}).get('fields'))
-put('settings/platform', {'feePercent': plat.get('feePercent', 3), 'retentionDays': plat.get('retentionDays', 14),
-                          'extensionPlans': plat.get('extensionPlans', []), 'proPrice': plat.get('proPrice', 3000),
-                          'freePortfolioLimit': plat.get('freePortfolioLimit', 12), 'proPortfolioLimit': plat.get('proPortfolioLimit', 200)})
+# settings/platform NO se toca acá: lo maneja el superadmin desde Plataforma (un PATCH completo borraba campos).
 
 # ---------------------------------------------------------------- fotógrafo
 put(f'slugs/{SLUG}', {'uid': UID})

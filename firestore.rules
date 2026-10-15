@@ -151,8 +151,15 @@ service cloud.firestore {
       let u = get(userPath(uid())).data;
       let sp = /databases/$(database)/documents/settings/platform;
       let st = exists(sp) ? get(sp).data : {};
-      let pro = u.get('plan', 'free') in ['pro', 'web', 'webdomain'] && u.get('proUntil', null) != null && u.proUntil > request.time;
-      return pro ? st.get('proPortfolioLimit', 80) : st.get('freePortfolioLimit', 12);
+      let plan = u.get('plan', 'free');
+      let paid = plan in ['pro', 'lite', 'web', 'webdomain'] && u.get('proUntil', null) != null && u.proUntil > request.time;
+      // Planes nuevos (plansV2): límite por plan. Antes: uno para todos los pagos.
+      return !paid ? st.get('freePortfolioLimit', 12)
+        : !st.get('plansV2', false) ? st.get('proPortfolioLimit', 80)
+        : plan == 'lite' ? st.get('litePortfolioLimit', 20)
+        : plan == 'web' ? st.get('webPortfolioLimit', 40)
+        : plan == 'webdomain' ? st.get('webDomainPortfolioLimit', 80)
+        : st.get('proPortfolioLimit', 80);
     }
     match /portfolio/{id} {
       allow read: if true;

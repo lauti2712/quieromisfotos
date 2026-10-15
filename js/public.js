@@ -5,7 +5,7 @@ import {
 import {
   $, $$, esc, fmtDate, parseHash, queryWords, avatarHtml, coverHtml, SOCIALS, toast, errMsg, waLink, normalize, todayIso,
 } from './util.js';
-import { loadTaxonomy, tagPills, loadSettings, isPro, portfolioLimit, GEAR_TYPES, GEAR_PLURAL, hasWeb, siteUrlOf } from './data.js';
+import { loadTaxonomy, tagPills, loadSettings, isFeatured, portfolioLimit, GEAR_TYPES, GEAR_PLURAL, hasWeb, siteUrlOf } from './data.js';
 import { openViewer } from './viewer.js';
 import { mountGallery } from './gallery.js';
 import { renderCart } from './cart-view.js';
@@ -257,10 +257,12 @@ async function loadPortfolio(user, settings) {
 async function renderDirectory() {
   document.title = 'Fotógrafos · Quiero Mis Fotos';
   app.innerHTML = '<div class="spinner"></div>';
-  const [tax, snap] = await Promise.all([
+  const [tax, snap, settings] = await Promise.all([
     loadTaxonomy(),
     getDocs(query(collection(db, 'users'), where('status', '==', 'approved'), limit(500))).catch(() => null),
+    loadSettings(),
   ]);
+  const featured = u => isFeatured(u, settings);
   const all = (snap?.docs || []).map(d => ({ uid: d.id, ...d.data() })).filter(u => u.role === 'photographer');
   const sportType = tax.types.find(t => t.id === 'deporte') || tax.types.find(t => ['deporte', 'actividad'].includes(normalize(t.name)));
   const sports = sportType ? tax.tags.filter(g => g.typeId === sportType.id) : [];
@@ -282,13 +284,13 @@ async function renderDirectory() {
       (!f.sport || (u.specialties || []).includes(f.sport)) &&
       (!f.service || (u.services || []).includes(f.service)) &&
       words.every(w => normalize(`${u.displayName} ${u.zone} ${u.workZones || ''}`).includes(w)))
-      .sort((a, b) => (isPro(b) - isPro(a)) || a.displayName.localeCompare(b.displayName, 'es'));
+      .sort((a, b) => (featured(b) - featured(a)) || a.displayName.localeCompare(b.displayName, 'es'));
     $('#d-list').innerHTML = list.length ? list.map(u => {
       const sp = (u.specialties || []).map(id => tax.tagById.get(id)).filter(Boolean).slice(0, 4);
       return `
-        <div class="dir-card ${isPro(u) ? 'pro' : ''}">
+        <div class="dir-card ${featured(u) ? 'pro' : ''}">
           <a class="row" href="#/f/${esc(u.slug)}" style="text-decoration:none;flex-wrap:nowrap">${avatarHtml(u)}
-            <span style="min-width:0"><strong>${esc(u.displayName)}</strong>${isPro(u) ? ' <span class="pill accent">⭐ Destacado</span>' : ''}${u.demo ? ' <span class="pill warn">Ejemplo</span>' : ''}<br>
+            <span style="min-width:0"><strong>${esc(u.displayName)}</strong>${featured(u) ? ' <span class="pill accent">⭐ Destacado</span>' : ''}${u.demo ? ' <span class="pill warn">Ejemplo</span>' : ''}<br>
             <span class="muted small">${esc(u.zone || '')}</span></span></a>
           ${sp.length || u.services?.length ? `<div class="pills">${sp.map(t => `<span class="pill accent">${esc(t.name)}</span>`).join('')}${(u.services || []).slice(0, 3).map(v => `<span class="pill">${esc(v)}</span>`).join('')}</div>` : ''}
           <div class="row" style="margin-top:auto">
@@ -336,7 +338,7 @@ async function renderProfile(slug) {
     <div class="profile-head">
       ${avatarHtml(user, 'lg')}
       <div style="flex:1;min-width:220px">
-        <h1 style="margin-bottom:4px">${esc(user.displayName)} ${isPro(user) ? '<span class="pill accent" style="vertical-align:middle">⭐ Pro</span>' : ''}</h1>
+        <h1 style="margin-bottom:4px">${esc(user.displayName)} ${isFeatured(user, settings) ? '<span class="pill accent" style="vertical-align:middle">⭐ Destacado</span>' : ''}</h1>
         ${user.zone ? `<div class="muted">📍 ${esc(user.zone)}${user.workZones ? ` · Trabaja en ${esc(user.workZones)}` : ''}</div>` : ''}
         ${user.bio ? `<p style="margin-top:8px;white-space:pre-line">${esc(user.bio)}</p>` : ''}
         ${sports.length || user.services?.length ? `<div class="pills" style="margin-bottom:10px">

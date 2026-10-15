@@ -3,7 +3,7 @@ import { db, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, que
 import { $, $$, esc, fmtMoney, fmtTs, toast, errMsg, parseHash } from './util.js';
 import { apiPost } from './api.js';
 import { auth } from './fb.js';
-import { PLANS, planOf, hasWeb, siteUrlOf } from './data.js';
+import { PLANS, planOf, hasWeb, siteUrlOf, planSpec } from './data.js';
 import { shareLink } from './share.js';
 
 const TEMPLATES = [
@@ -12,13 +12,19 @@ const TEMPLATES = [
   { id: 'minimal', name: 'Minimal', desc: 'Sin portada: tus fotos son las protagonistas.', bg: '#ffffff', fg: '#14161b' },
 ];
 
-// Planes que se ofrecen (el viejo "Portfolio Pro" ya no).
-const planInfo = st => [
-  { id: 'free', items: ['Vendé tus fotos en eventos', '1 álbum activo a la vez', `Hasta ${st.freeAlbumLimitGB ?? 3} GB por álbum`, `Portfolio de ${st.freePortfolioLimit ?? 12} fotos`, `Comisión ${st.freeFeePercent ?? 5}% por venta`] },
-  { id: 'web', items: ['Álbumes ilimitados', st.albumLimitGB > 0 ? `${st.albumLimitGB} GB por álbum (ampliable)` : 'Más espacio por álbum', `Portfolio de ${st.proPortfolioLimit ?? 80} fotos`,
-    'Tu web: tunombre.quieromisfotos.com.ar', 'Fotos de tu web sin marca de agua', 'Destacado en el directorio', `Comisión ${st.feePercent ?? 3}% por venta`] },
-  { id: 'webdomain', items: ['Todo lo de Profesional', 'Tu propio dominio (ej: tunombre.com.ar)'] },
-];
+// Planes que se ofrecen (el viejo "Portfolio Pro" ya no). Condiciones de cada uno: planSpec (editable en Plataforma).
+const planInfo = st => {
+  const sp = id => planSpec(id, st);
+  const space = st.albumLimitGB > 0 ? `${st.albumLimitGB} GB por álbum (ampliable)` : 'Más espacio por álbum';
+  return [
+    { id: 'free', items: ['Vendé tus fotos en eventos', '1 álbum activo a la vez', `Hasta ${st.freeAlbumLimitGB ?? 3} GB por álbum`, `Portfolio de ${sp('free').portfolio} fotos`, `Comisión ${sp('free').fee}% por venta`] },
+    { id: 'lite', items: ['Álbumes ilimitados', space, `Portfolio de ${sp('lite').portfolio} fotos`, ...(sp('lite').featured ? ['Destacado en el directorio'] : []), `Comisión ${sp('lite').fee}% por venta`] },
+    { id: 'web', items: ['Todo lo de Lite', `Portfolio de ${sp('web').portfolio} fotos`, 'Tu web: tunombre.quieromisfotos.com.ar', 'Fotos de tu web sin marca de agua',
+      ...(sp('web').featured ? ['Destacado en el directorio'] : []), `Comisión ${sp('web').fee}% por venta`] },
+    { id: 'webdomain', items: ['Todo lo de Profesional', 'Tu propio dominio (ej: tunombre.com.ar)', `Portfolio de ${sp('webdomain').portfolio} fotos`,
+      ...(sp('webdomain').featured ? ['Destacado en el directorio'] : []), `Comisión ${sp('webdomain').fee}% por venta`] },
+  ];
+};
 
 export async function viewWeb(view, { uid, profile, settings }) {
   // Vuelta de Mercado Pago después de suscribirse.
@@ -41,8 +47,8 @@ export async function viewWeb(view, { uid, profile, settings }) {
   const pending = reqSnap?.exists() ? reqSnap.data() : null;
   const sub = subSnap?.exists() ? subSnap.data() : null;
   const subActive = sub?.status === 'authorized';
-  const first = id => (id === 'webdomain' && settings.webDomainFirstPrice > settings.webDomainPrice ? settings.webDomainFirstPrice : 0);
-  const price = id => (PLANS[id].priceKey ? fmtMoney(settings[PLANS[id].priceKey]) + '/mes' : 'Gratis');
+  const first = id => (id === 'webdomain' && planSpec(id, settings).first > planSpec(id, settings).price ? planSpec(id, settings).first : 0);
+  const price = id => (id === 'free' ? 'Gratis' : fmtMoney(planSpec(id, settings).price) + '/mes');
 
   view.innerHTML = `
     <h1>Planes y mi web</h1>

@@ -527,6 +527,8 @@ body:has(.lightbox, .intro, dialog[open]) .wa-fab { display: none; }
 .lp-price small { font-size: .9rem; color: var(--muted); font-weight: 500; }
 .lp-plan ul { margin: 0; padding-left: 18px; line-height: 1.8; }
 .lp-plans.two { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 760px; margin: 0 auto; }
+.lp-plans.four { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 1100px) { .lp-plans.four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .lp-plans { align-items: stretch; }
 .lp-plan { display: flex; flex-direction: column; }
 .lp-plan ul { flex: 1; }
@@ -549,7 +551,7 @@ body:has(.lightbox, .intro, dialog[open]) .wa-fab { display: none; }
   .lp-hero { grid-template-columns: 1fr; gap: 26px; }
   .lp-stage { max-width: 460px; width: 100%; margin: 0 auto; }
   .lp-steps, .lp-feats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .lp-plans, .lp-plans.two, .lp-split, .lp-calc { grid-template-columns: 1fr; }
+  .lp-plans, .lp-plans.two, .lp-plans.four, .lp-split, .lp-calc { grid-template-columns: 1fr; }
 }
 @media (max-width: 520px) { .lp-steps, .lp-feats { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) {
@@ -558,3 +560,6 @@ body:has(.lightbox, .intro, dialog[open]) .wa-fab { display: none; }
   .lp-wm, .lp-chip, .lp-toast { opacity: 1; }
   .lp-up { display: none; }
 }
+
+.plan-cfg input[type=number] { width: 110px; }
+.plan-cfg td { vertical-align: top; }

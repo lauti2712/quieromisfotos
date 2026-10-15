@@ -4,7 +4,7 @@ import { $, $$, esc, fmtMoney, fmtTs, toast, errMsg } from './util.js';
 import { processFile } from './image-proc.js';
 import { uploadAsset, deleteAsset, loadLogoBitmap } from './api.js';
 import { DEFAULT_WATERMARK, wantsLogo } from './watermark.js';
-import { isPro, portfolioLimit, planOf, PLANS } from './data.js';
+import { isPro, portfolioLimit, planOf, PLANS, planSpec } from './data.js';
 
 export async function viewPortfolio(view, { uid, profile, settings }) {
   const pro = isPro(profile);
@@ -41,7 +41,9 @@ export async function viewPortfolio(view, { uid, profile, settings }) {
         ${pro ? '' : `<a class="pill accent" href="#/web" style="text-decoration:none">Pro: ${fmtMoney(settings.proPrice)}/mes</a>`}
       </div>
       <div class="progress"><span style="width:${Math.min(100, (used / max) * 100)}%"></span></div>
-      ${pro ? '' : `<p class="muted small" style="margin:0">Con <strong>Pro</strong> subís hasta ${settings.proPortfolioLimit} fotos y aparecés destacado en el directorio. Con el plan <strong>Web</strong> además tenés tu propia web. <a href="#/web">Ver planes</a></p>`}`;
+      ${pro ? '' : settings.plansV2
+        ? `<p class="muted small" style="margin:0">Con <strong>Profesional Lite</strong> subís hasta ${planSpec('lite', settings).portfolio} fotos; con <strong>Profesional</strong>, ${planSpec('web', settings).portfolio} y además tenés tu propia web. <a href="#/web">Ver planes</a></p>`
+        : `<p class="muted small" style="margin:0">Con <strong>Pro</strong> subís hasta ${settings.proPortfolioLimit} fotos y aparecés destacado en el directorio. Con el plan <strong>Web</strong> además tenés tu propia web. <a href="#/web">Ver planes</a></p>`}`;
   }
 
   const albums = () => [...new Set(items.map(i => (i.album || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));

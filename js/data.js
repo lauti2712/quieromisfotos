@@ -47,6 +47,7 @@ export const SERVICES = ['Deportes', 'Eventos sociales', 'Retratos / books', 'In
 export const PLANS = {
   free: { label: 'Gratis' },
   pro: { label: 'Portfolio Pro (anterior)', priceKey: 'proPrice', legacy: true },
+  lite: { label: 'Profesional Lite', priceKey: 'litePrice' },
   web: { label: 'Profesional', priceKey: 'webPrice', web: true },
   webdomain: { label: 'Profesional + Dominio', priceKey: 'webDomainPrice', web: true, domain: true },
 };
@@ -74,9 +75,26 @@ export function siteUrlOf(user) {
   return WEB_SUBDOMAINS_READY ? `https://${user.slug}.quieromisfotos.com.ar` : `https://qmf-api.solucionescotidianas.com.ar/w/${user.slug}`;
 }
 
+// Condiciones de cada plan con los planes nuevos (plansV2): precio, comisión, fotos de portfolio y si sale destacado.
+// Todo editable en Plataforma; acá están los valores por defecto. Mismo criterio en worker/src/plans.js y en las reglas.
+export function planSpec(planId, st = {}) {
+  switch (planId) {
+    case 'lite': return { price: st.litePrice ?? 5000, fee: st.liteFeePercent ?? 4, portfolio: st.litePortfolioLimit ?? 20, featured: !!(st.liteFeatured ?? false) };
+    case 'web': return { price: st.webPrice ?? 9000, fee: st.webFeePercent ?? 4, portfolio: st.webPortfolioLimit ?? 40, featured: !!(st.webFeatured ?? false) };
+    case 'webdomain': return { price: st.webDomainPrice ?? 12000, first: st.webDomainFirstPrice ?? 18000, fee: st.webDomainFeePercent ?? 3,
+      portfolio: st.webDomainPortfolioLimit ?? 80, featured: !!(st.webDomainFeatured ?? true) };
+    case 'pro': return { price: st.proPrice ?? 4500, fee: st.feePercent ?? 3, portfolio: st.proPortfolioLimit ?? 80, featured: true };
+    default: return { price: 0, fee: st.freeFeePercent ?? 5, portfolio: st.freePortfolioLimit ?? 12, featured: false };
+  }
+}
+
 export function portfolioLimit(user, settings) {
+  if (settings?.plansV2) return planSpec(planOf(user), settings).portfolio;
   return isPro(user) ? settings.proPortfolioLimit : settings.freePortfolioLimit;
 }
+
+// Destacado en el directorio (con los planes nuevos depende del plan).
+export const isFeatured = (user, settings) => (settings?.plansV2 ? planSpec(planOf(user), settings).featured : isPro(user));
 
 // Tipos de etiqueta iniciales (ids fijos). "deporte" se muestra como "Actividad".
 export const INITIAL_TAG_TYPES = [{ id: 'deporte', name: 'Actividad' }, { id: 'club', name: 'Club' }, { id: 'lugar', name: 'Lugar' }];
@@ -132,7 +150,7 @@ export const albumLimit = (set, settings, user) => (freeLimited(user, settings)
   : Number(settings?.albumLimitGB) > 0 ? settings.albumLimitGB * 1e9 + (set?.extraBytes || 0) : 0);
 
 // Comisión de la plataforma según el plan del fotógrafo.
-export const feePercentFor = (user, settings) => (freeLimited(user, settings) ? (settings?.freeFeePercent ?? 5) : (settings?.feePercent ?? 3));
+export const feePercentFor = (user, settings) => (settings?.plansV2 ? planSpec(planOf(user), settings).fee : (settings?.feePercent ?? 3));
 
 // Álbum activo: tiene fotos y todavía guarda los originales (en venta o en los días de gracia).
 export const setActive = set => !!set && (set.photoCount || 0) > 0 && !set.originalsDeleted && (!setDeleteAt(set) || setDeleteAt(set) > Date.now());
