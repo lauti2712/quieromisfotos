@@ -11,7 +11,7 @@ routes = [
 
 # Recalcula el uso de R2 todos los días (06:00 UTC).
 [triggers]
-crons = ["0 6 * * *"]
+crons = ["0 6 * * *", "0 7 * * 1"]
 
 [vars]
 API_URL = "https://api.quieromisfotos.com.ar"
@@ -30,6 +30,8 @@ MP_TEST_MODE = ""
 MP_TEST_NO_FEE = ""
 # Retención: "1" = borra los originales vencidos (vencimiento + 7 días de gracia). Vacío = solo simula e informa.
 RETENTION_DELETE = "1"
+# Limpieza de archivos sueltos en R2: "1" = borra; vacío = solo informa en Almacenamiento.
+CLEANUP_DELETE = "1"
 
 [[r2_buckets]]
 binding = "PUBLIC"

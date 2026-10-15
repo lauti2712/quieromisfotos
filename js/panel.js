@@ -1519,8 +1519,9 @@ function r2Cost(bytes) {
 const fmtUsd = n => `US$ ${n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 async function viewAdminStorage() {
-  const snap = await getDoc(doc(db, 'adminStats', 'storage'));
+  const [snap, bsnap] = await Promise.all([getDoc(doc(db, 'adminStats', 'storage')), getDoc(doc(db, 'adminStats', 'backup')).catch(() => null)]);
   const st = snap.exists() ? snap.data() : null;
+  const bk = bsnap?.exists() ? bsnap.data() : null;
   const scanBtn = '<button class="btn primary" id="st-scan">🔄 Recalcular ahora</button>';
   if (!st) {
     $('#view').innerHTML = `<h1>Almacenamiento</h1><div class="card stack"><p class="muted">Todavía no se calculó el uso. Se calcula solo todos los días; podés hacerlo ahora.</p><div>${scanBtn}</div></div>`;
@@ -1583,6 +1584,18 @@ async function viewAdminStorage() {
       ${retTable('Próximos a borrarse', ret.upcoming || [], 'deleteAt')}
       ${retTable('Último borrado', ret.lastDeleted || [], 'deleteAt')}
     </div>
+    <div class="card stack"><h2 style="margin:0">Limpieza de archivos sueltos</h2>
+      <p class="muted small" style="margin:0">Todos los días se borran de R2 los archivos que ya no se usan (álbumes o eventos borrados, subidas cortadas, portadas, avatares y fotos de portfolio reemplazados), con más de 2 días de antigüedad.
+        ${st.cleanup?.mode === 'on' ? '' : '<strong>Modo simulación.</strong>'}</p>
+      ${st.cleanup?.count ? `<p style="margin:0">${st.cleanup.mode === 'on' ? 'Último borrado' : 'Se borrarían'}: <strong>${st.cleanup.count} archivos (${fmtBytes(st.cleanup.bytes)})</strong></p>
+        <ul class="small" style="margin:0">${Object.entries(st.cleanup.byReason || {}).map(([r, v]) => `<li>${esc(r)}: ${v.count} (${fmtBytes(v.bytes)})</li>`).join('')}</ul>`
+        : `<p class="muted small" style="margin:0">${st.cleanup?.error ? `Error: ${esc(st.cleanup.error)}` : '✅ No hay archivos sueltos.'}</p>`}
+    </div>
+    <div class="card row" style="justify-content:space-between">
+      <div><h2 style="margin:0 0 4px">Respaldo de la base de datos</h2>
+        <span class="muted small">${bk ? `Último: ${bk.at.toDate().toLocaleString('es-AR')} · ${fmtBytes(bk.total)} · se guardan las últimas 8 semanas` : 'Todavía no hay respaldos.'} Se hace solo todos los lunes en el almacenamiento privado.</span></div>
+      <button class="btn sm" id="bk-now">💾 Respaldar ahora</button>
+    </div>
     ${hist.length > 1 ? `<div class="card"><h2>Últimos ${hist.length} días</h2>
       <div class="spark">${hist.map(h => `<span style="height:${Math.max(2, (h.b / maxH) * 100)}%" title="${esc(h.d)}: ${fmtBytes(h.b)}"></span>`).join('')}</div></div>` : ''}
     <div class="card"><h2>Por fotógrafo</h2>
@@ -1596,6 +1609,11 @@ async function viewAdminStorage() {
       </tbody></table></div>` : '<p class="muted">Sin álbumes.</p>'}
     </div>`;
   bindScan();
+  $('#bk-now').onclick = async e => {
+    const b = e.target; b.disabled = true; b.textContent = 'Respaldando…';
+    try { const r = await apiPost('/admin/backup'); toast(`Respaldo listo (${fmtBytes(r.total)})`); viewAdminStorage(); }
+    catch (err) { toast(errMsg(err), 'error'); b.disabled = false; b.textContent = '💾 Respaldar ahora'; }
+  };
 
   // ---- límite por álbum + packs de espacio
   let sp = (S.settings.storagePlans || []).map(p => ({ ...p }));

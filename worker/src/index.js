@@ -39,12 +39,14 @@ import { checkout, webhook, syncOrder, retryCheckout, downloadLinks, download } 
 import { createTag } from './tags.js';
 import { renderSite } from './site.js';
 import { scanRequest, scanStorage } from './storage.js';
+import { runBackup, backupRequest } from './backup.js';
 import { extensionCheckout, extensionSync } from './extensions.js';
 import { subscribe, syncRequest, cancelSubscription, syncAllSubscriptions } from './subscriptions.js';
 
 const MAX = { preview: 6e6, thumb: 1e6, original: 80e6, avatar: 3e6, logo: 2e6, cover: 6e6, portfolio: 6e6 };
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
 const SESSION_TTL = 2 * 3600;
+const BACKUP_CRON = '0 7 * * 1'; // lunes 04:00 (Argentina)
 
 export default {
   async fetch(req, env, ctx) {
@@ -64,6 +66,7 @@ export default {
   },
   // Cron diario: recalcula el uso de R2.
   async scheduled(event, env, ctx) {
+    if (event.cron === BACKUP_CRON) { ctx.waitUntil(runBackup(env)); return; }
     ctx.waitUntil(scanStorage(env));
     ctx.waitUntil(syncAllSubscriptions(env));
   },
@@ -105,6 +108,7 @@ async function route(req, env, ctx) {
   if (m === 'POST' && url.pathname === '/checkout') return checkout(req, env);
   if (m === 'POST' && url.pathname === '/tags') return createTag(req, env);
   if (m === 'POST' && url.pathname === '/admin/storage/scan') return scanRequest(req, env);
+  if (m === 'POST' && url.pathname === '/admin/backup') return backupRequest(req, env);
   if (m === 'POST' && url.pathname === '/extensions/checkout') return extensionCheckout(req, env);
   if (m === 'POST' && url.pathname === '/plans/subscribe') return subscribe(req, env);
   if (m === 'POST' && url.pathname === '/plans/sync') return syncRequest(req, env);

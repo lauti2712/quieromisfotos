@@ -137,3 +137,14 @@ export async function adminUpdateMany(env, updates) {
     });
   }
 }
+
+// Exportación cruda de una colección (y sus homónimas anidadas, ej. events/*/sets) para respaldos.
+export async function adminExportRaw(env, collectionId) {
+  const res = await fetch(`${root(env)}:runQuery`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${await accessToken(env)}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ structuredQuery: { from: [{ collectionId, allDescendants: true }] } }),
+  });
+  if (!res.ok) throw httpError(502, `Firestore ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return res.arrayBuffer();
+}
