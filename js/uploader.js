@@ -5,8 +5,10 @@ import { processFile } from './image-proc.js';
 
 const ACCEPT = /^image\/(jpeg|png|webp)$/;
 const MAX_ATTEMPTS = 3;
+export const fileKey = f => `${f.name}|${f.size}`;
 
 export function createUploader({ eventId, uid, wm, logo = null, onChange, onPhoto }) {
+  // Se pueden reemplazar (setHandlers) si el fotógrafo sale y vuelve al evento mientras sube.
   const lowEnd = (navigator.deviceMemory && navigator.deviceMemory <= 4) || (navigator.hardwareConcurrency || 4) <= 4;
   const concurrency = lowEnd ? 2 : 3;
   const items = [];
@@ -121,12 +123,20 @@ export function createUploader({ eventId, uid, wm, logo = null, onChange, onPhot
   }
 
   return {
+    eventId,
+    setHandlers(h) { ({ onChange, onPhoto } = { onChange, onPhoto, ...h }); emit(); },
+    // Devuelve cuántos archivos se saltearon por estar ya en la cola.
     add(files, subalbumId = '') {
+      const inQueue = new Set(items.filter(i => i.status !== 'error').map(i => fileKey(i.file)));
+      let skipped = 0;
       for (const file of files) {
+        if (inQueue.has(fileKey(file))) { skipped++; continue; }
+        inQueue.add(fileKey(file));
         const ok = ACCEPT.test(file.type);
         items.push({ file, subalbumId, status: ok ? 'queued' : 'error', error: ok ? '' : 'Formato no soportado (usá JPG, PNG o WEBP)', loaded: 0 });
       }
       pump();
+      return skipped;
     },
     retryFailed() {
       items.filter(i => i.status === 'error' && ACCEPT.test(i.file.type)).forEach(i => { i.status = 'queued'; i.attempts = 0; });

@@ -3,7 +3,7 @@ import {
   db, collection, doc, getDocs, query, where, orderBy, limit, startAfter, writeBatch, updateDoc, increment, Timestamp,
 } from './fb.js';
 import { $, $$, esc, toast, errMsg, fmtBytes, setBytes } from './util.js';
-import { createUploader } from './uploader.js';
+import { createUploader, fileKey } from './uploader.js';
 import { uploadSession, apiDelete, loadLogoBitmap } from './api.js';
 import { DEFAULT_WATERMARK, wantsLogo } from './watermark.js';
 
@@ -75,7 +75,9 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings }) {
     if (cursor) cons.push(startAfter(cursor));
     const snap = await getDocs(query(collection(db, 'photos'), ...cons));
     cursor = snap.docs.at(-1) || cursor;
-    photos.push(...snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    // Las fotos recién subidas ya pueden estar en la lista: no repetirlas.
+    const have = new Set(photos.map(p => p.id));
+    photos.push(...snap.docs.filter(d => !have.has(d.id)).map(d => ({ id: d.id, ...d.data() })));
     $('#ph-more').classList.toggle('hidden', snap.docs.length < PAGE);
     draw();
   }
@@ -145,6 +147,7 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings }) {
         b.delete(doc(db, 'photos', id));
         b.update(doc(db, 'events', ev.id, 'sets', uid), { photoCount: increment(-1), bytesOriginal: increment(-(p?.bytes || 0)), bytesPublic: increment(-(p?.bytesPublic || 0)) });
         await b.commit();
+        if (p) uploadedKeys?.delete(`${p.fileName}|${p.bytes}`);
         bytes += p?.bytes || 0; pubBytes += p?.bytesPublic || 0; n++;
         photos = photos.filter(x => x.id !== id);
         selected.delete(id);
@@ -167,8 +170,8 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings }) {
   }
 
   if (activeUploader && !activeUploader.busy()) activeUploader.destroy();
-  const up = activeUploader = createUploader({
-    eventId: ev.id, uid, wm, logo,
+  // Si volvió al evento mientras se sigue subiendo, se reutiliza la misma cola (no se arma otra).
+  const handlers = {
     onChange: renderQueue,
     onPhoto: p => {
       set.photoCount = (set.photoCount || 0) + 1;
@@ -176,10 +179,13 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings }) {
       set.bytesPublic = (set.bytesPublic || 0) + (p.bytesPublic || 0);
       startExpiry();
       const f = $('#ph-filter')?.value;
-      if (f === '*' || f === p.subalbumId) { photos.push(p); photos.sort((a, b) => a.takenAt.toMillis() - b.takenAt.toMillis()); }
+      if ((f === '*' || f === p.subalbumId) && !photos.some(x => x.id === p.id)) { photos.push(p); photos.sort((a, b) => a.takenAt.toMillis() - b.takenAt.toMillis()); }
       scheduleDraw();
     },
-  });
+  };
+  let up;
+  if (activeUploader?.busy() && activeUploader.eventId === ev.id) { up = activeUploader; up.setHandlers(handlers); }
+  else up = activeUploader = createUploader({ eventId: ev.id, uid, wm, logo, ...handlers });
   // El vencimiento de los originales arranca con la primera subida (una sola vez).
   let expiryStarted = !!set.expiresAt;
   function startExpiry() {
@@ -213,9 +219,21 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings }) {
       </div>`).join('');
   }
 
-  const addFiles = files => {
+  // Saltea las fotos que ya están subidas en este evento (mismo nombre y tamaño) o ya en la cola.
+  let uploadedKeys = null;
+  const addFiles = async files => {
+    files = [...files];
     if (!files.length) return;
-    up.add([...files], $('#up-sub').value);
+    try {
+      if (!uploadedKeys) {
+        const snap = await getDocs(query(collection(db, 'photos'), where('eventId', '==', ev.id), where('photographerUid', '==', uid)));
+        uploadedKeys = new Set(snap.docs.map(d => `${d.data().fileName}|${d.data().bytes}`));
+      }
+    } catch (e) { console.warn('duplicados', e); }
+    const fresh = uploadedKeys ? files.filter(f => !uploadedKeys.has(fileKey(f))) : files;
+    const skipped = files.length - fresh.length + up.add(fresh, $('#up-sub').value);
+    fresh.forEach(f => uploadedKeys?.add(fileKey(f)));
+    if (skipped) toast(`${skipped} foto${skipped > 1 ? 's' : ''} ya estaba${skipped > 1 ? 'n' : ''} subida${skipped > 1 ? 's' : ''}: no se repite${skipped > 1 ? 'n' : ''}.`);
   };
   $('#up-files').onchange = e => { addFiles(e.target.files); e.target.value = ''; };
   const dz = $('#dz');
