@@ -10,7 +10,7 @@ import {
   $, $$, esc, slugify, SLUG_RE, searchTokens, fmtMoney, fmtDate, fmtTs, todayIso, parseHash,
   toast, errMsg, avatarHtml, coverHtml, SOCIALS, newId, normalize, fmtBytes, setBytes,
 } from './util.js';
-import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, ACTIVITY_TYPE, USER_TAG_TYPES, tagPills, SERVICES, isPro, mpPlanOf, GEAR_TYPES, PLANS, planOf, siteUrlOf } from './data.js';
+import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, ACTIVITY_TYPE, USER_TAG_TYPES, tagPills, SERVICES, isPro, mpPlanOf, GEAR_TYPES, PLANS, planOf, siteUrlOf, setUntil, setDeleteAt, GRACE_DAYS } from './data.js';
 import { viewWeb } from './panel-web.js';
 import { sellerNet } from './pricing.js';
 import { viewPortfolio } from './panel-portfolio.js';
@@ -266,7 +266,7 @@ function route() {
 }
 
 // ================================================================ fotógrafo: inicio
-function viewHome() {
+async function viewHome() {
   const p = S.profile;
   const checks = [
     { ok: !!(p.displayName && p.zone && p.bio), label: 'Completar perfil (nombre, zona y bio)', href: '#/perfil' },
@@ -277,6 +277,7 @@ function viewHome() {
   ];
   $('#view').innerHTML = `
     <h1>Hola, ${esc(p.displayName)}</h1>
+    <div id="home-alerts"></div>
     ${p.status === 'pending' ? `<div class="notice warn"><strong>Tu cuenta está pendiente de aprobación.</strong><br>Mientras tanto podés completar tu perfil, subir tu foto y tu portfolio, y configurar precios y marca de agua.</div>` : ''}
     <div class="card">
       <h2>Para empezar a vender</h2>
@@ -284,6 +285,24 @@ function viewHome() {
     </div>
     ${isApproved() ? `<div class="card"><h2>Eventos</h2><p class="muted">Creá un evento nuevo o sumate a uno existente para subir tus fotos.</p><a class="btn primary" href="#/eventos">Ir a mis eventos</a></div>` : ''}
     <div class="card"><h2>Tu perfil público</h2><p class="muted">Así te ven los compradores.</p><a class="btn" target="_blank" href="index.html#/f/${esc(p.slug)}">Ver mi perfil</a></div>`;
+  if (isApproved()) homeAlerts().catch(e => console.warn('alertas', e));
+}
+
+// Avisos de álbumes que vencen en 3 días o menos, o que ya no se venden y están por borrarse.
+async function homeAlerts() {
+  const snap = await getDocs(query(collection(db, 'events'), where('photographerUids', 'array-contains', S.user.uid), orderBy('date', 'desc'), limit(60)));
+  const evs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const sets = await Promise.all(evs.map(ev => getDoc(doc(db, 'events', ev.id, 'sets', S.user.uid)).then(s => s.data() || null).catch(() => null)));
+  const rows = evs.map((ev, i) => ({ ev, r: retentionState(sets[i]) }))
+    .filter(({ r }) => (r.k === 'active' && r.days <= 3) || r.k === 'grace');
+  const box = $('#home-alerts');
+  if (!rows.length || !box) return;
+  box.innerHTML = `<div class="notice ${rows.some(x => x.r.k === 'grace') ? 'danger' : 'warn'} stack">
+    <strong>⏳ Álbumes por vencer</strong>
+    ${rows.map(({ ev, r }) => `<div class="row" style="justify-content:space-between">
+      <span>${esc(ev.name)} — ${r.k === 'active' ? `se vende ${r.days === 1 ? 'hasta mañana' : `${r.days} días más`}` : `<strong>ya no se vende; los originales se borran el ${fmtMs(r.deleteAt)}</strong>`}</span>
+      <a class="btn sm" href="#/evento/${ev.id}">Extender</a></div>`).join('')}
+  </div>`;
 }
 
 // ================================================================ perfil
@@ -713,18 +732,60 @@ function panelEventCard(ev) {
     </a>`;
 }
 
+// Estado del plazo de venta de un álbum: notstarted | active | grace (no se vende, todavía se puede extender) | deleted.
+function retentionState(set) {
+  if (set?.originalsDeleted) return { k: 'deleted', at: set.originalsDeletedAt?.toMillis?.() || 0 };
+  const until = setUntil(set);
+  if (!until) return { k: 'notstarted' };
+  const days = Math.ceil((until - Date.now()) / 86400000);
+  if (days > 0) return { k: 'active', until, days };
+  const deleteAt = setDeleteAt(set);
+  return { k: 'grace', until, deleteAt, ddays: Math.max(0, Math.ceil((deleteAt - Date.now()) / 86400000)) };
+}
+const fmtMs = ms => new Date(ms).toLocaleDateString('es-AR', { day: 'numeric', month: 'long' });
+
+// Explicación del plazo + botón Extender (editor del álbum).
+function retentionHtml(set) {
+  const r = retentionState(set);
+  const btn = '<button class="btn primary sm" id="ext-btn">⏳ Extender plazo</button>';
+  if (r.k === 'deleted') return `<div class="notice">🗑️ Los originales se eliminaron${r.at ? ` el ${fmtMs(r.at)}` : ''}. Las fotos se siguen viendo con marca de agua, pero ya no se pueden vender.</div>`;
+  if (r.k === 'notstarted') return `<p class="muted small" style="margin:0">⏳ Tus fotos se venden durante ${S.settings.retentionDays} días desde que subís la primera. Después podés extender el plazo.</p>`;
+  if (r.k === 'active') return `<div class="notice ${r.days <= 3 ? 'warn' : ''} row" style="justify-content:space-between">
+      <span>⏳ Se vende hasta el <strong>${fmtMs(r.until)}</strong> (${r.days} día${r.days === 1 ? '' : 's'}). Después tenés ${GRACE_DAYS} días para extender antes de que se borren los originales.</span>${btn}</div>`;
+  return `<div class="notice danger row" style="justify-content:space-between">
+      <span>⛔ Este álbum dejó de venderse el ${fmtMs(r.until)}. <strong>Los originales se borran el ${fmtMs(r.deleteAt)}</strong>: extendé el plazo para volver a venderlo.</span>${btn}</div>`;
+}
+
+// Elegir plan de extensión y pagar con Mercado Pago (a la plataforma).
+function extensionDialog(ev, set) {
+  const plans = (S.settings.extensionPlans || []).filter(p => p.days > 0 && p.price > 0);
+  if (!plans.length) return toast('Todavía no hay planes de extensión. Escribinos por WhatsApp.', 'error');
+  const from = Math.max(setUntil(set), Date.now());
+  const dlg = openDialog('Extender plazo', `
+    <p class="muted" style="margin-top:0">Tus fotos de <strong>${esc(ev.name)}</strong> se siguen vendiendo y los originales no se borran.</p>
+    <div class="stack">${plans.map((p, i) => `
+      <label class="check card" style="margin:0;padding:12px"><input type="radio" name="ext-plan" value="${esc(p.id)}" ${i === 0 ? 'checked' : ''}>
+        <span class="grow"><strong>${esc(p.label || `+${p.days} días`)}</strong> · ${fmtMoney(p.price)}<br><span class="muted small">Se vende hasta el ${fmtMs(from + p.days * 86400000)}</span></span></label>`).join('')}
+    </div>`, '<button class="btn primary" id="ext-pay">Pagar con Mercado Pago</button>');
+  $('#ext-pay', dlg).onclick = async () => {
+    const b = $('#ext-pay', dlg); b.disabled = true; b.textContent = 'Abriendo Mercado Pago…';
+    try {
+      const planId = $('input[name="ext-plan"]:checked', dlg).value;
+      const { initPoint } = await apiPost('/extensions/checkout', { eventId: ev.id, planId });
+      location.href = initPoint;
+    } catch (e) { toast(errMsg(e), 'error'); b.disabled = false; b.textContent = 'Pagar con Mercado Pago'; }
+  };
+}
+
 // Fotos subidas, fotos vendidas y días hasta que se borren los originales.
 function setStatsHtml(set) {
-  const until = Math.max(set.expiresAt?.toMillis?.() || 0, set.extendedUntil?.toMillis?.() || 0);
-  let exp;
-  if (set.originalsDeleted) exp = '<span class="stat-chip danger" title="Los originales ya se eliminaron">⏳ Vencido</span>';
-  else if (!until) exp = `<span class="stat-chip" title="El plazo arranca cuando subís la primera foto">⏳ ${S.settings.retentionDays} días al subir</span>`;
-  else {
-    const days = Math.ceil((until - Date.now()) / 86400000);
-    exp = days <= 0
-      ? '<span class="stat-chip danger" title="Vencido">⏳ Vencido</span>'
-      : `<span class="stat-chip ${days <= 3 ? 'warn' : ''}" title="Días hasta que se eliminen los originales">⏳ ${days} día${days === 1 ? '' : 's'}</span>`;
-  }
+  const r = retentionState(set);
+  const exp = {
+    deleted: '<span class="stat-chip danger" title="Los originales ya se eliminaron">🗑️ Originales eliminados</span>',
+    notstarted: `<span class="stat-chip" title="El plazo arranca cuando subís la primera foto">⏳ ${S.settings.retentionDays} días al subir</span>`,
+    active: `<span class="stat-chip ${r.days <= 3 ? 'warn' : ''}" title="Días que le quedan a la venta">⏳ ${r.days} día${r.days === 1 ? '' : 's'}</span>`,
+    grace: `<span class="stat-chip danger" title="Ya no se vende. Extendé el plazo antes de que se borren los originales">⛔ Sin venta · se borra en ${r.ddays} día${r.ddays === 1 ? '' : 's'}</span>`,
+  }[r.k] || '';
   return `
     <div class="set-stats">
       <span class="stat-chip" title="Fotos en el álbum">📷 ${set.photoCount || 0}</span>
@@ -961,6 +1022,18 @@ async function viewEvent(id) {
     return;
   }
   renderSetEditor(ev, sets.get(me) || null, reload);
+  const mySet = sets.get(me);
+  $('#ext-btn')?.addEventListener('click', () => extensionDialog(ev, mySet));
+  // Vuelta de Mercado Pago después de pagar una extensión.
+  const extId = parseHash().query.get('ext');
+  if (extId) {
+    history.replaceState(null, '', `#/evento/${id}`);
+    apiPost(`/extensions/${encodeURIComponent(extId)}/sync`).then(r => {
+      if (r.status === 'approved') { toast('¡Listo! Extendiste el plazo del álbum'); reload(); }
+      else if (r.status === 'rejected') toast('El pago fue rechazado', 'error');
+      else toast('El pago todavía se está procesando. Se aplica solo cuando se acredite.');
+    }).catch(e => toast(errMsg(e), 'error'));
+  }
 
   const isCreator = ev.createdBy === me && ev.kind === 'own';
   const set = sets.get(me);
@@ -1003,7 +1076,6 @@ function renderSetEditor(ev, set, reload) {
     return;
   }
   let subs = (set.subalbums || []).map(s => ({ ...s })).sort((a, b) => a.order - b.order);
-  const expires = set.expiresAt ? fmtTs(set.extendedUntil && set.extendedUntil.toMillis() > set.expiresAt.toMillis() ? set.extendedUntil : set.expiresAt) : null;
 
   box.innerHTML = `
     <div class="card stack">
@@ -1011,8 +1083,9 @@ function renderSetEditor(ev, set, reload) {
       ${S.profile.mpConnected ? '' : '<div class="notice warn">Para que puedan comprar tus fotos tenés que <a href="#/mp">vincular Mercado Pago</a>.</div>'}
       <div class="row">
         <span class="pill">📷 ${set.photoCount || 0} fotos</span>
-        <span class="pill">${expires ? `Originales disponibles hasta ${esc(expires)}` : `Vence ${S.settings.retentionDays} días después de subir las fotos`}</span>
+        <span class="pill">💾 ${fmtBytes(setBytes(set))}</span>
       </div>
+      ${retentionHtml(set)}
     </div>
     <form class="card stack" id="set-form">
       <div class="row" style="justify-content:space-between"><h2 style="margin:0">Precios</h2><button type="button" class="btn sm" id="use-def">Usar mis valores por defecto</button></div>
@@ -1219,8 +1292,10 @@ async function viewAdminStorage() {
   const avg = monthH.length ? monthH.reduce((a, h) => a + h.b, 0) / monthH.length : total;
   const users = Object.entries(st.byUser || {}).map(([uid, u]) => ({ uid, ...u, bytes: (u.albumsBytes || 0) + (u.profile || 0) })).sort((a, b) => b.bytes - a.bytes);
   const top = st.topSets || [];
-  const uids = [...new Set([...users.map(u => u.uid), ...top.map(t => t.uid)])];
-  const eids = [...new Set(top.map(t => t.eid))];
+  const uids = [...new Set([...users.map(u => u.uid), ...top.map(t => t.uid), ...(st.retention ? [...(st.retention.due || []), ...(st.retention.upcoming || []), ...(st.retention.lastDeleted || [])].map(t => t.uid) : [])])];
+  const ret = st.retention || { upcoming: [], due: [], lastDeleted: [] };
+  const retRows = [...(ret.due || []), ...(ret.upcoming || []), ...(ret.lastDeleted || [])];
+  const eids = [...new Set([...top.map(t => t.eid), ...retRows.map(t => t.eid)])];
   const [uDocs, eDocs] = await Promise.all([
     Promise.all(uids.map(id => getDoc(doc(db, 'users', id)).then(s => [id, s.data() || {}]).catch(() => [id, {}]))),
     Promise.all(eids.map(id => getDoc(doc(db, 'events', id)).then(s => [id, s.data() || {}]).catch(() => [id, {}]))),
@@ -1248,6 +1323,13 @@ async function viewAdminStorage() {
         Ejemplo: 100 GB ≈ ${fmtUsd(r2Cost(100e9))}/mes · 500 GB ≈ ${fmtUsd(r2Cost(500e9))}/mes.</p>
       <p class="muted small" style="margin:0">Última medición: ${st.scannedAt ? st.scannedAt.toDate().toLocaleString('es-AR') : '—'} (se recalcula sola todos los días).</p>
     </div>
+    <div class="card stack"><h2 style="margin:0">Borrado de originales</h2>
+      <p class="muted small" style="margin:0">Los álbumes se venden ${S.settings.retentionDays} días desde la primera foto (más las extensiones pagas). Después quedan ${GRACE_DAYS} días para descargas y para extender, y se borran los originales (las muestras quedan).
+        ${ret.mode === 'on' ? '<strong>Borrado activo.</strong>' : '<strong>Modo simulación:</strong> todavía no borra nada, solo informa.'}</p>
+      ${retTable('Para borrar ahora', ret.due || [], 'deleteAt')}
+      ${retTable('Próximos a borrarse', ret.upcoming || [], 'deleteAt')}
+      ${retTable('Último borrado', ret.lastDeleted || [], 'deleteAt')}
+    </div>
     ${hist.length > 1 ? `<div class="card"><h2>Últimos ${hist.length} días</h2>
       <div class="spark">${hist.map(h => `<span style="height:${Math.max(2, (h.b / maxH) * 100)}%" title="${esc(h.d)}: ${fmtBytes(h.b)}"></span>`).join('')}</div></div>` : ''}
     <div class="card"><h2>Por fotógrafo</h2>
@@ -1261,6 +1343,13 @@ async function viewAdminStorage() {
       </tbody></table></div>` : '<p class="muted">Sin álbumes.</p>'}
     </div>`;
   bindScan();
+
+  function retTable(title, rows, key) {
+    if (!rows.length) return '';
+    return `<h3 style="margin:6px 0 0">${title}</h3><div class="table-wrap"><table class="list"><thead><tr><th>Evento</th><th>Fotógrafo</th><th>Fotos</th><th>Originales</th><th>Se vendía hasta</th><th>Borrado</th></tr></thead><tbody>
+      ${rows.map(t => `<tr><td><a href="#/evento/${esc(t.eid)}">${esc(eMap.get(t.eid)?.name || t.eid)}</a></td><td>${esc(uName(t.uid))}</td><td>${t.photos || 0}</td><td>${fmtBytes(t.bytes)}</td><td>${t.until?.toDate ? t.until.toDate().toLocaleDateString('es-AR') : '—'}</td><td>${t[key]?.toDate ? t[key].toDate().toLocaleDateString('es-AR') : '—'}</td></tr>`).join('')}
+    </tbody></table></div>`;
+  }
 
   function bindScan() {
     $('#st-scan').onclick = async () => {

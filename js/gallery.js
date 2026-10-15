@@ -3,6 +3,7 @@ import { db, collection, getDocs, query, where, orderBy, limit, startAfter } fro
 import { $, $$, esc, fmtMoney, toast, errMsg } from './util.js';
 import { cart } from './cart.js';
 import { openViewer } from './viewer.js';
+import { setForSale, setUntil } from './data.js';
 
 const PAGE = 60;
 
@@ -19,7 +20,11 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '' }) 
     return;
   }
 
+  // Álbumes vencidos: se pueden ver, pero ya no se venden.
+  const forSale = uid => setForSale(sets.get(uid));
+  const expired = withPhotos.filter(p => !forSale(p.uid) && setUntil(sets.get(p.uid)));
   box.innerHTML = `
+    ${expired.length ? `<div class="notice warn">${expired.length === withPhotos.length ? 'Las fotos de este evento' : `Las fotos de ${expired.map(p => esc(p.displayName)).join(', ')}`} ya no están a la venta (venció el plazo de disponibilidad).</div>` : ''}
     <div class="filter-row" id="g-ph"></div>
     <div class="filter-row" id="g-sub"></div>
     <div class="gallery" id="g-grid"></div>
@@ -71,7 +76,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '' }) 
       $('#g-grid', box).insertAdjacentHTML('beforeend', fresh.map((p, i) =>
         `<div class="g-item ${cart.has(p.id) ? 'in-cart' : ''}" data-i="${start + i}" data-id="${p.id}" role="button" tabindex="0" aria-label="Ver foto">
           <img src="${esc(p.thumbUrl)}" alt="" loading="lazy" decoding="async">
-          <button class="g-add" data-add="${start + i}" aria-label="Agregar al carrito">${cart.has(p.id) ? '✓' : '+'}</button>
+          ${forSale(p.photographerUid) ? `<button class="g-add" data-add="${start + i}" aria-label="Agregar al carrito">${cart.has(p.id) ? '✓' : '+'}</button>` : ''}
         </div>`).join(''));
       if (!state.photos.length) $('#g-grid', box).innerHTML = '<div class="empty" style="grid-column:1/-1">No hay fotos con este filtro.</div>';
       $('#g-more', box).innerHTML = state.done ? '' : '<button class="btn">Ver más fotos</button>';
@@ -105,7 +110,8 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '' }) 
     $$('.g-item', box).forEach(el => {
       const inCart = cart.has(el.dataset.id);
       el.classList.toggle('in-cart', inCart);
-      el.querySelector('.g-add').textContent = inCart ? '✓' : '+';
+      const btn = el.querySelector('.g-add');
+      if (btn) btn.textContent = inCart ? '✓' : '+';
     });
   }
   window.addEventListener('cart:change', () => document.body.contains(box) && syncCartMarks());
@@ -133,8 +139,10 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '' }) 
         el.innerHTML = `
           <span class="small">📷 ${esc(ph?.displayName || '')}${set.price ? ` · <strong>${fmtMoney(set.price)}</strong>` : ''}${packs ? `<br><span style="opacity:.75">Packs: ${packs}</span>` : ''}</span>
           <span class="row"><a class="btn sm" href="#/carrito">Ver carrito</a>
-            <button class="btn ${inCart ? '' : 'primary'}" id="lb-add" ${set.price ? '' : 'disabled'}>${inCart ? '✓ En el carrito' : '🛒 Agregar al carrito'}</button></span>`;
-        $('#lb-add', el).onclick = () => { toggleCart(p); rerender(); };
+            ${forSale(p.photographerUid)
+              ? `<button class="btn ${inCart ? '' : 'primary'}" id="lb-add">${inCart ? '✓ En el carrito' : '🛒 Agregar al carrito'}</button>`
+              : '<button class="btn" disabled>Ya no está a la venta</button>'}</span>`;
+        $('#lb-add', el)?.addEventListener('click', () => { toggleCart(p); rerender(); });
       },
     });
   }

@@ -102,3 +102,12 @@ export async function loadSettings() {
 export function tagPills(tagIds, taxonomy, max = 99) {
   return (tagIds || []).map(id => taxonomy.tagById.get(id)).filter(Boolean).slice(0, max);
 }
+
+// ---------- retención de originales
+// Se venden hasta expiresAt (primera subida + retentionDays) o extendedUntil si pagó una extensión.
+// Después quedan GRACE_DAYS más (para que descarguen las compras de último momento y para extender) y se borran.
+export const GRACE_DAYS = 7;
+const ms = t => t?.toMillis?.() || (t instanceof Date ? t.getTime() : 0);
+export const setUntil = set => Math.max(ms(set?.expiresAt), ms(set?.extendedUntil)) || 0;
+export const setDeleteAt = set => (setUntil(set) ? setUntil(set) + GRACE_DAYS * 86400000 : 0);
+export const setForSale = set => !!set && set.price > 0 && !set.originalsDeleted && (!setUntil(set) || setUntil(set) > Date.now());

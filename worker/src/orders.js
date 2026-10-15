@@ -5,6 +5,7 @@ import { requireUser } from './firebase.js';
 import { sellerToken, mpFetch, siteUrl } from './mp.js';
 import { signToken, verifyToken } from './tokens.js';
 import { json, httpError, apiUrl } from './http.js';
+import { extensionWebhook } from './extensions.js';
 
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
 const MAX_ITEMS = 300;
@@ -132,6 +133,7 @@ export async function webhook(req, env) {
   const type = body.type || body.topic || url.searchParams.get('type') || url.searchParams.get('topic');
   const paymentId = body.data?.id || url.searchParams.get('data.id') || (type === 'payment' ? url.searchParams.get('id') : null);
   const orderId = url.searchParams.get('o');
+  if (type === 'payment' && url.searchParams.get('x')) return extensionWebhook(env, url.searchParams.get('x'), paymentId);
   if (type !== 'payment' || !paymentId || !ID_RE.test(orderId || '')) return json({ ok: true, ignored: true });
   const order = await adminGet(env, `orders/${orderId}`);
   if (!order) return json({ ok: true, ignored: true });

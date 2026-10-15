@@ -3,7 +3,7 @@ import { db, doc, getDoc } from './fb.js';
 import { $, $$, esc, fmtMoney, fmtDate, toast, errMsg } from './util.js';
 import { cart } from './cart.js';
 import { computeTotals, bestPrice } from './pricing.js';
-import { loadSettings } from './data.js';
+import { loadSettings, setForSale } from './data.js';
 import { currentUser, openLogin } from './account.js';
 import { apiPost } from './api.js';
 
@@ -56,7 +56,7 @@ export async function renderCart(app) {
 }
 
 function groupHtml(g, settings) {
-  const available = g.ev && g.set && g.ph && g.ph.status === 'approved' && g.set.price > 0;
+  const available = g.ev && g.set && g.ph && g.ph.status === 'approved' && setForSale(g.set);
   const n = g.items.length;
   const head = `
     <div class="row" style="justify-content:space-between;align-items:flex-start">

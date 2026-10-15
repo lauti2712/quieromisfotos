@@ -28,6 +28,8 @@ MP_REDIRECT_URI = "https://qmf-api.solucionescotidianas.com.ar/mp/callback"
 MP_TEST_MODE = ""
 # "1" = no pedir a MP que retenga la comisión (solo para pruebas con vendedor de prueba). Vacío = producción.
 MP_TEST_NO_FEE = ""
+# Retención: "1" = borra los originales vencidos (vencimiento + 7 días de gracia). Vacío = solo simula e informa.
+RETENTION_DELETE = ""
 
 [[r2_buckets]]
 binding = "PUBLIC"
