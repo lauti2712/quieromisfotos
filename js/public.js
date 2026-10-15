@@ -61,12 +61,13 @@ let loading = false;
 async function renderHome() {
   const tax = await loadTaxonomy();
   app.innerHTML = `
-    <section class="home-hero">
-      <h1>Encontrá tu foto.</h1>
-      <p>Buscá el partido, la carrera o el evento donde estuviste y llevate tus fotos en alta calidad.</p>
+    <section style="margin-bottom:18px">
+      <h1>Encontrá tus fotos</h1>
+      <p class="muted">Buscá el evento donde participaste y comprá tus fotos en alta calidad.</p>
     </section>
+    <section id="upcoming"></section>
     <div class="filters">
-      <input class="search" type="search" id="f-q" placeholder="Buscá tu evento, club o lugar" aria-label="Buscar evento" value="${esc(filters.q)}">
+      <input class="search" type="text" id="f-q" placeholder="Buscar evento por nombre o lugar…" value="${esc(filters.q)}">
       ${tax.types.map(t => `
         <select data-type="${t.id}">
           <option value="">${esc(t.name)}: todos</option>
@@ -78,7 +79,6 @@ async function renderHome() {
         <input type="date" id="f-to" value="${filters.to}" title="Hasta" aria-label="Hasta">
       </div>
     </div>
-    <section id="upcoming"></section>
     <div id="results" class="events-grid"></div>
     <div id="more" class="row" style="justify-content:center;margin-top:20px"></div>`;
 
@@ -145,7 +145,7 @@ async function drawUpcoming(tax) {
     const snap = await getDocs(query(collection(db, 'events'), where('status', '==', 'published'), where('date', '>', todayIso()), orderBy('date'), limit(8)));
     const evs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     box.innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:10px">
-        <h2 style="margin:0">Próximos eventos</h2><a class="btn sm" href="#/calendario">Ver calendario</a></div>
+        <h2 style="margin:0">📅 Próximos eventos</h2><a class="btn sm" href="#/calendario">Ver calendario</a></div>
       ${evs.length ? `<div class="upcoming-row">${evs.map(ev => eventCard(ev, tax)).join('')}</div>`
         : '<p class="muted small">Todavía no hay eventos próximos cargados. <a href="#/calendario">Ver el calendario</a></p>'}
       <h2 style="margin:22px 0 10px">Eventos con fotos</h2>`;
@@ -154,22 +154,15 @@ async function drawUpcoming(tax) {
 
 export const isUpcoming = ev => !!ev.date && ev.date > todayIso();
 
-// Fecha tipo marcador de cancha sobre la portada: día grande, mes y año chicos.
-function scoreDate(iso) {
-  if (!iso) return '';
-  const d = new Date(`${iso}T12:00:00`);
-  return `<span class="ev-date" aria-label="${esc(fmtDate(iso, { day: 'numeric', month: 'long', year: 'numeric' }))}"><b>${d.getDate()}</b><span>${esc(d.toLocaleDateString('es-AR', { month: 'short' }).replace('.', ''))}<br>${d.getFullYear()}</span></span>`;
-}
-
 function eventCard(ev, tax) {
   const tags = tagPills(ev.tagIds, tax, 3);
   return `
     <a class="event-card" href="#/evento/${ev.id}">
-      ${coverHtml(ev, isUpcoming(ev) ? 'Próximamente' : '')}
-      ${scoreDate(ev.date)}
+      ${coverHtml(ev, isUpcoming(ev) ? '📅 Próximamente' : '')}
       <div class="body">
+        <span class="date">${esc(fmtDate(ev.date))}</span>
         <span class="name">${esc(ev.name)}</span>
-        ${ev.location ? `<span class="muted small">${esc(ev.location)}</span>` : ''}
+        ${ev.location ? `<span class="muted small">📍 ${esc(ev.location)}</span>` : ''}
         ${tags.length ? `<div class="pills">${tags.map(t => `<span class="pill">${esc(t.name)}</span>`).join('')}</div>` : ''}
       </div>
     </a>`;
