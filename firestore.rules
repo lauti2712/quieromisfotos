@@ -194,6 +194,16 @@ service cloud.firestore {
       allow read: if isSuper() || (signedIn() && (resource.data.photographerUid == uid() || resource.data.buyerUid == uid()));
       allow write: if false;
     }
+    // Clientes registrados (los escribe cada uno al ingresar; los lee el superadmin)
+    match /customers/{cid} {
+      allow read: if isSuper() || (signedIn() && uid() == cid);
+      allow create, update: if signedIn() && uid() == cid
+        && request.resource.data.keys().hasOnly(['name', 'email', 'provider', 'createdAt', 'lastLoginAt'])
+        && request.resource.data.email == request.auth.token.get('email', '')
+        && request.resource.data.lastLoginAt == request.time;
+      allow delete: if isSuper();
+    }
+
     // Suscripción del fotógrafo a un plan (la escribe el Worker con Mercado Pago)
     match /subscriptions/{uid} {
       allow read: if isSuper() || (signedIn() && uid() == uid);

@@ -202,6 +202,7 @@ function navItems() {
     { group: 'Administración' },
     { href: '#/admin/metricas', label: '📊 Métricas' },
     { href: '#/admin/fotografos', label: '👥 Fotógrafos' },
+    { href: '#/admin/clientes', label: '👤 Clientes' },
     { href: '#/admin/eventos', label: '🏟️ Eventos' },
     { href: '#/admin/etiquetas', label: '🏷️ Etiquetas' },
     { href: '#/admin/almacenamiento', label: '💾 Almacenamiento' },
@@ -257,6 +258,7 @@ function route() {
     if (b === 'config') return run(viewAdminConfig);
     if (b === 'almacenamiento') return run(viewAdminStorage);
     if (b === 'metricas') return run(viewAdminMetrics);
+    if (b === 'clientes') return run(viewAdminCustomers);
     return run(viewAdminPhotographers);
   }
   if (a === 'perfil') return run(viewProfile);
@@ -1364,6 +1366,81 @@ async function viewAdminEvents() {
   $('#new').onclick = () => eventDialog(null);
   $$('[data-f]').forEach(b => b.onclick = () => { adminEvFilter = b.dataset.f; viewAdminEvents(); });
   $$('[data-share]').forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation(); shareEvent(evs.find(x => x.id === b.dataset.share)); });
+}
+
+// ================================================================ superadmin: clientes
+let custFilter = 'all', custQ = '';
+async function viewAdminCustomers() {
+  const [cs, os, us] = await Promise.all([
+    getDocs(query(collection(db, 'customers'), limit(5000))).catch(() => null),
+    getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(5000))),
+    getDocs(query(collection(db, 'users'), where('role', '==', 'photographer'))),
+  ]);
+  const photogs = new Set(us.docs.map(d => d.id));
+  const ts = t => t?.toMillis?.() || 0;
+  const map = new Map();
+  const get = (uid, base = {}) => { if (!map.has(uid)) map.set(uid, { uid, name: '', email: '', createdAt: 0, lastLoginAt: 0, orders: 0, photos: 0, spent: 0, lastBuy: 0, events: new Set(), ...base }); return map.get(uid); };
+  for (const d of cs?.docs || []) {
+    const c = d.data();
+    Object.assign(get(d.id), { name: c.name || '', email: c.email || '', provider: c.provider || '', createdAt: ts(c.createdAt), lastLoginAt: ts(c.lastLoginAt) });
+  }
+  // Los que compraron antes de existir el registro salen de sus pedidos.
+  for (const d of os.docs) {
+    const o = d.data();
+    if (!o.buyerUid || o.status !== 'approved') continue;
+    const c = get(o.buyerUid);
+    if (!c.email) c.email = o.buyerEmail || '';
+    if (!c.name) c.name = o.buyerName || '';
+    c.orders++; c.photos += o.count || 0; c.spent += o.total || 0;
+    c.lastBuy = Math.max(c.lastBuy, ts(o.paidAt || o.createdAt));
+    if (!c.createdAt) c.createdAt = ts(o.createdAt);
+    c.events.add(o.eventName || o.eventId);
+  }
+  const all = [...map.values()].map(c => ({ ...c, photographer: photogs.has(c.uid) }));
+  const q = normalize(custQ);
+  const list = all
+    .filter(c => custFilter === 'all' || (custFilter === 'buyers' ? c.orders > 0 : c.orders === 0))
+    .filter(c => !q || normalize(`${c.name} ${c.email}`).includes(q))
+    .sort((a, b) => (b.lastBuy || b.lastLoginAt || b.createdAt) - (a.lastBuy || a.lastLoginAt || a.createdAt));
+  const d = ms => (ms ? new Date(ms).toLocaleDateString('es-AR') : '—');
+  const buyers = all.filter(c => c.orders > 0);
+
+  $('#view').innerHTML = `
+    <div class="row" style="justify-content:space-between;margin-bottom:14px">
+      <h1 style="margin:0">Clientes</h1><button class="btn" id="cu-csv">⬇️ Exportar CSV</button>
+    </div>
+    <div class="stats">
+      <div class="stat"><span class="muted small">Registrados</span><strong>${all.length}</strong></div>
+      <div class="stat"><span class="muted small">Compraron</span><strong>${buyers.length}</strong><span class="muted small">${all.length ? Math.round((buyers.length / all.length) * 100) : 0}% de los registrados</span></div>
+      <div class="stat"><span class="muted small">Volvieron a comprar</span><strong>${buyers.filter(c => c.orders > 1).length}</strong></div>
+      <div class="stat"><span class="muted small">Gasto promedio</span><strong>${fmtMoney(buyers.length ? buyers.reduce((a, c) => a + c.spent, 0) / buyers.length : 0)}</strong></div>
+    </div>
+    <div class="row" style="margin-bottom:12px">
+      <input type="search" id="cu-q" placeholder="Buscar por nombre o email" value="${esc(custQ)}" style="max-width:320px">
+      <div class="tabs" style="margin:0">${[['all', 'Todos'], ['buyers', 'Compraron'], ['none', 'Nunca compraron']].map(([k, l]) => `<button class="chip ${custFilter === k ? 'on' : ''}" data-cf="${k}">${l}</button>`).join('')}</div>
+    </div>
+    <div class="card">${list.length ? `<div class="table-wrap"><table class="list">
+      <tr><th>Cliente</th><th>Alta</th><th>Último ingreso</th><th>Compras</th><th>Fotos</th><th>Gastó</th><th>Última compra</th><th>Eventos</th></tr>
+      ${list.slice(0, 500).map(c => `<tr>
+        <td><strong>${esc(c.name || '—')}</strong>${c.photographer ? ' <span class="pill">Fotógrafo</span>' : ''}<br><span class="muted small">${esc(c.email)}</span></td>
+        <td>${d(c.createdAt)}</td><td>${d(c.lastLoginAt)}</td><td>${c.orders}</td><td>${c.photos}</td><td>${c.spent ? fmtMoney(c.spent) : '—'}</td>
+        <td>${d(c.lastBuy)}</td><td class="small">${esc([...c.events].slice(0, 3).join(', '))}${c.events.size > 3 ? ` +${c.events.size - 3}` : ''}</td></tr>`).join('')}
+    </table></div>${list.length > 500 ? '<p class="muted small">Se muestran los primeros 500: usá la búsqueda o exportá el CSV.</p>' : ''}`
+      : '<div class="empty">No hay clientes con ese filtro.</div>'}</div>
+    <p class="muted small">Desde el 14/10/2026 se registra a todos los que ingresan al sitio. Antes, solo figuran los que compraron.</p>`;
+
+  let t;
+  $('#cu-q').oninput = e => { clearTimeout(t); t = setTimeout(() => { custQ = e.target.value; viewAdminCustomers().then(() => { const i = $('#cu-q'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }); }, 300); };
+  $$('[data-cf]').forEach(b => b.onclick = () => { custFilter = b.dataset.cf; viewAdminCustomers(); });
+  $('#cu-csv').onclick = () => {
+    const cell = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const rows = [['Nombre', 'Email', 'Fotógrafo', 'Alta', 'Último ingreso', 'Compras', 'Fotos', 'Gastó', 'Última compra', 'Eventos'],
+      ...list.map(c => [c.name, c.email, c.photographer ? 'sí' : '', d(c.createdAt), d(c.lastLoginAt), c.orders, c.photos, c.spent, d(c.lastBuy), [...c.events].join(' | ')])];
+    const blob = new Blob(['\ufeff' + rows.map(r => r.map(cell).join(';')).join('\n')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = `clientes-quieromisfotos-${todayIso()}.csv`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  };
 }
 
 // ================================================================ superadmin: métricas
