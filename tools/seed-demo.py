@@ -17,7 +17,7 @@ else:
     TOKEN = 'owner'
     IMG = 'http://localhost:5175/demo'
 
-V = '?v=2'  # cache-busting cuando se regeneran las imágenes
+V = '?v=3'  # cache-busting cuando se regeneran las imágenes
 UID = 'demo-fotografo'
 SLUG = 'fotografo-ejemplo'
 EID = 'demo-evento'
@@ -82,7 +82,7 @@ def plain(fields):
 # ---------------------------------------------------------------- borrar
 if delete:
     for i in range(12): rm(f'photos/demo-{i:02d}')
-    for i in range(6): rm(f'portfolio/{UID}_{i}')
+    for i in range(12): rm(f'portfolio/{UID}_{i}')
     rm(f'events/{EID}/sets/{UID}'); rm(f'events/{EID}'); rm(f'slugs/{SLUG}'); rm(f'users/{UID}')
     print('Ejemplo borrado.')
     sys.exit()
@@ -120,8 +120,8 @@ put(f'slugs/{SLUG}', {'uid': UID})
 put(f'users/{UID}', {
     'role': 'photographer', 'status': 'approved', 'demo': True,
     'displayName': 'Tomás Aguirre Fotografía', 'slug': SLUG, 'avatarUrl': f'{IMG}/avatar.jpg{V}',
-    'bio': ('Fotógrafo deportivo con más de 10 años cubriendo fútbol, hockey y rugby en Rosario y la región. '
-            'Trabajo en torneos de ligas infantiles, juveniles y amateurs, y también en eventos sociales e institucionales.\n\n'
+    'bio': ('Fotógrafo con más de 10 años en Rosario y la región: deportes, casamientos, cumpleaños, retratos, producto y tomas con drone. '
+            'Cubro torneos de ligas infantiles, juveniles y amateurs, y también eventos sociales e institucionales.\n\n'
             '📸 Entrega rápida: las fotos de cada fecha se suben el mismo día.\n'
             '🏆 Cobertura de torneos completos, con equipo de varios fotógrafos.\n'
             '💬 Escribime para presupuestos de eventos, books deportivos o fotos de equipo.'),
@@ -129,7 +129,7 @@ put(f'users/{UID}', {
     'workZones': 'Rosario, Funes, Roldán, Granadero Baigorria y Villa Gobernador Gálvez',
     'socials': {'instagram': '@tomasaguirre.foto', 'facebook': 'tomasaguirrefoto', 'whatsapp': '341 555-0100', 'web': 'www.tomasaguirrefoto.com.ar'},
     'specialties': [sport_ids[n] for n in ('Fútbol', 'Hockey', 'Rugby') if n in sport_ids],
-    'services': ['Deportes', 'Eventos sociales', 'Retratos / books', 'Institucional'],
+    'services': ['Deportes', 'Eventos sociales', 'Retratos / books', 'Producto', 'Institucional'],
     'gear': [{'type': 'Cámara', 'name': 'Sony A1'}, {'type': 'Cámara', 'name': 'Sony A7 IV'},
              {'type': 'Lente', 'name': 'Sony FE 70-200mm f/2.8 GM II'}, {'type': 'Lente', 'name': 'Sony FE 24-70mm f/2.8 GM II'},
              {'type': 'Lente', 'name': 'Sony FE 400mm f/2.8 GM'}, {'type': 'Drone', 'name': 'DJI Air 3'},
@@ -138,17 +138,21 @@ put(f'users/{UID}', {
     'mpConnected': False, 'mpUserId': None,
     'defaults': {'price': 2500, 'packs': [{'qty': 3, 'price': 6000}, {'qty': 5, 'price': 9000}], 'feeMode': 'buyer'},
     'watermark': {'type': 'text', 'text': 'www.quieromisfotos.com.ar', 'position': 'both', 'opacity': 0.35},
-    'site': {'template': 'oscura', 'accent': '#ff5a1f', 'tagline': 'Fotografía deportiva en Rosario y alrededores', 'heroUrl': f'{IMG}/pf-0_p.jpg{V}',
+    'site': {'template': 'oscura', 'accent': '#ff5a1f', 'tagline': 'Deportes, eventos, retratos y drone en Rosario', 'heroUrl': f'{IMG}/pf-0_p.jpg{V}',
              'clean': False, 'showEvents': True,
              'services': [{'name': 'Cobertura de partido', 'detail': 'Hasta 2 horas · 80 fotos editadas', 'price': '$35.000'},
                           {'name': 'Torneo completo', 'detail': 'Todo el día · fotos a la venta para las familias', 'price': 'Consultar'},
                           {'name': 'Book deportivo', 'detail': '1 hora · 30 fotos editadas', 'price': '$40.000'}]},
     'createdAt': NOW,
 })
-for i in range(6):
+# Portfolio: fotos reales de Pexels (licencia libre) de distintos tipos de fotografía.
+PF = [('Tackle en la semifinal', 'Deportes', 1200, 800), ('Los novios', 'Casamientos', 1600, 1200), ('Atardecer sobre la ciudad', 'Drone', 1600, 899),
+      ('Cumple de Sofi', 'Cumpleaños', 1600, 1067), ('Retrato corporativo', 'Retratos', 1600, 1067), ('Labiales para catálogo', 'Producto', 1600, 900),
+      ('Jugada en el área', 'Deportes', 1200, 798), ('Casamiento al aire libre', 'Casamientos', 1600, 1067), ('La costa desde el aire', 'Drone', 1600, 1200),
+      ('Soplando la vela', 'Cumpleaños', 1600, 1067), ('Book profesional', 'Retratos', 1600, 900), ('Perfumes', 'Producto', 1600, 1067)]
+for i, (cap, album, w, h) in enumerate(PF):
     put(f'portfolio/{UID}_{i}', {'photographerUid': UID, 'slot': i, 'url': f'{IMG}/pf-{i}_p.jpg{V}', 'thumbUrl': f'{IMG}/pf-{i}_t.jpg{V}',
-                                 'width': 1600, 'height': 1067, 'caption': ['Final de torneo', 'Festejo', 'Entrada en calor', 'Jugada', 'Equipo', 'Atardecer en la cancha'][i],
-                                 'album': ['Rugby', 'Fútbol', 'Rugby', 'Fútbol', 'Hockey', 'Hockey'][i],
+                                 'cleanUrl': f'{IMG}/pf-{i}_c.jpg{V}', 'width': w, 'height': h, 'caption': cap, 'album': album,
                                  'order': i, 'demo': True, 'createdAt': NOW})
 
 # ---------------------------------------------------------------- evento + set + fotos
