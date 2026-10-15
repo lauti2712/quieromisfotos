@@ -65,9 +65,8 @@ async function renderHome() {
       <h1>Encontrá tus fotos</h1>
       <p class="muted">Buscá el evento donde participaste y comprá tus fotos en alta calidad.</p>
     </section>
-    <section id="upcoming"></section>
     <div class="filters">
-      <input class="search" type="text" id="f-q" placeholder="Buscar evento por nombre o lugar…" value="${esc(filters.q)}">
+      <input class="search" type="search" id="f-q" placeholder="Buscá tu evento, club o lugar" aria-label="Buscar evento" value="${esc(filters.q)}">
       ${tax.types.map(t => `
         <select data-type="${t.id}">
           <option value="">${esc(t.name)}: todos</option>
@@ -79,6 +78,7 @@ async function renderHome() {
         <input type="date" id="f-to" value="${filters.to}" title="Hasta" aria-label="Hasta">
       </div>
     </div>
+    <section id="upcoming"></section>
     <div id="results" class="events-grid"></div>
     <div id="more" class="row" style="justify-content:center;margin-top:20px"></div>`;
 

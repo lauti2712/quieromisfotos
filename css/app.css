@@ -78,7 +78,7 @@ footer.site { text-align: center; color: var(--muted); font-size: .85rem; paddin
 
 label.field { display: grid; gap: 4px; font-weight: 600; font-size: .9rem; }
 label.field .hint { font-weight: 400; color: var(--muted); font-size: .82rem; }
-input[type=text], input[type=email], input[type=password], input[type=number], input[type=date], input[type=url], select, textarea {
+input[type=text], input[type=search], input[type=email], input[type=password], input[type=number], input[type=date], input[type=url], select, textarea {
   width: 100%; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 9px 11px; }
 textarea { min-height: 80px; resize: vertical; }
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
@@ -563,3 +563,12 @@ body:has(.lightbox, .intro, dialog[open]) .wa-fab { display: none; }
 
 .plan-cfg input[type=number] { width: 110px; }
 .plan-cfg td { vertical-align: top; }
+
+/* ---------- detalles ---------- */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.filters .search { flex-basis: 100%; font-size: 1.05rem; padding: 12px 14px; }
+#upcoming:not(:empty) { margin-bottom: 4px; }
+.top-nav { display: flex; gap: 16px; margin-left: 14px; }
+.top-nav a { font-weight: 600; font-size: .95rem; text-decoration: none; color: var(--muted); }
+.top-nav a:hover { color: var(--text); }
+footer.site .foot-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px; }
