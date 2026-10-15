@@ -1,7 +1,7 @@
 // Extensiones de retención: el fotógrafo paga (a la cuenta de la plataforma, MP_ACCESS_TOKEN) para que su álbum
 // se siga vendiendo y no se borren los originales. Se puede extender mientras los originales existan
 // (también en los días de gracia después de vencido).
-import { adminGet, adminGetMany, adminSet, adminUpdate } from './admin.js';
+import { adminGet, adminGetMany, adminSet, adminUpdate, adminIncrement } from './admin.js';
 import { requireUser } from './firebase.js';
 import { mpFetch, panelUrl } from './mp.js';
 import { setAvailableUntil } from './orders.js';
@@ -13,21 +13,23 @@ const newId = () => crypto.randomUUID().replace(/-/g, '').slice(0, 20);
 // POST /extensions/checkout  (Bearer fotógrafo) {eventId, planId} -> { extensionId, initPoint }
 export async function extensionCheckout(req, env) {
   const claims = await requireUser(req, env);
-  const { eventId, planId } = await req.json().catch(() => ({}));
+  const { eventId, planId, kind = 'time' } = await req.json().catch(() => ({}));
+  if (!['time', 'space'].includes(kind)) throw httpError(400, 'Tipo inválido');
   if (!ID_RE.test(eventId || '') || typeof planId !== 'string' || !planId) throw httpError(400, 'Pedido inválido');
   const uid = claims.sub;
   const [ev, set, settings] = await adminGetMany(env, [`events/${eventId}`, `events/${eventId}/sets/${uid}`, 'settings/platform']);
   if (!ev || !set) throw httpError(404, 'No tenés fotos en este evento');
   if (set.originalsDeleted) throw httpError(409, 'Los originales de este álbum ya se eliminaron');
-  if (!setAvailableUntil(set)) throw httpError(409, 'El plazo arranca cuando subís la primera foto');
-  const plan = (settings?.extensionPlans || []).find(p => p.id === planId);
-  if (!plan || !(plan.price > 0) || !(plan.days > 0)) throw httpError(400, 'Plan inválido');
+  if (kind === 'time' && !setAvailableUntil(set)) throw httpError(409, 'El plazo arranca cuando subís la primera foto');
+  const plan = (settings?.[kind === 'space' ? 'storagePlans' : 'extensionPlans'] || []).find(p => p.id === planId);
+  if (!plan || !(plan.price > 0) || !(kind === 'space' ? plan.gb > 0 : plan.days > 0)) throw httpError(400, 'Plan inválido');
   if (!env.MP_ACCESS_TOKEN) throw httpError(503, 'Pagos de la plataforma no configurados');
 
   const id = newId();
   await adminSet(env, `extensions/${id}`, {
     photographerUid: uid, photographerEmail: claims.email || '', eventId, eventName: ev.name || '',
-    planId: plan.id, label: plan.label || '', days: plan.days, price: plan.price, status: 'pending', createdAt: new Date(),
+    kind, planId: plan.id, label: plan.label || '', ...(kind === 'space' ? { gb: plan.gb } : { days: plan.days }),
+    price: plan.price, status: 'pending', createdAt: new Date(),
   }, { mustNotExist: true });
 
   const fromStaging = req.headers.get('Origin') === 'https://prueba.quieromisfotos.com.ar';
@@ -36,7 +38,7 @@ export async function extensionCheckout(req, env) {
     method: 'POST',
     headers: { 'X-Idempotency-Key': id },
     body: JSON.stringify({
-      items: [{ id, title: `Extensión ${plan.label || `+${plan.days} días`} — ${ev.name || 'evento'}`.slice(0, 250), quantity: 1, unit_price: plan.price, currency_id: 'ARS' }],
+      items: [{ id, title: `${kind === 'space' ? `Espacio ${plan.label || `+${plan.gb} GB`}` : `Extensión ${plan.label || `+${plan.days} días`}`} — ${ev.name || 'evento'}`.slice(0, 250), quantity: 1, unit_price: plan.price, currency_id: 'ARS' }],
       ...(claims.email ? { payer: { email: claims.email } } : {}),
       external_reference: `ext_${id}`,
       notification_url: `${apiUrl(env, req)}/mp/webhook?x=${id}`,
@@ -62,6 +64,10 @@ async function applyExtensionPayment(env, id, ext, payment) {
   const won = await adminUpdate(env, `extensions/${id}`, { ...upd, status: 'approved', paidAt: new Date() }, { ifUpdateTime: ext._updateTime });
   if (!won) return (await adminGet(env, `extensions/${id}`)) || ext;
   const setPath = `events/${ext.eventId}/sets/${ext.photographerUid}`;
+  if (ext.kind === 'space') {
+    await adminIncrement(env, setPath, { extraBytes: Math.round(ext.gb * 1e9) });
+    return { ...ext, ...upd, status: 'approved' };
+  }
   const set = await adminGet(env, setPath);
   // Desde el vencimiento actual o desde hoy si ya venció.
   const from = Math.max(setAvailableUntil(set) || 0, Date.now());

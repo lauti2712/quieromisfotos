@@ -34,10 +34,11 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings }) {
         <strong>Arrastrá las fotos acá</strong>
         <span class="muted small">o tocá para elegirlas · JPG, PNG o WEBP · la marca de agua se aplica en tu dispositivo</span>
       </label>
+      <p class="muted small mobile-only" style="margin:6px 0 0">📱 Desde el celular: dejá esta pantalla abierta mientras sube (no la bloquees ni cambies de app). Si se corta la conexión, sigue sola cuando vuelve.</p>
       <div id="up-status" class="hidden">
         <div class="row" style="justify-content:space-between">
           <span id="up-summary" class="small"></span>
-          <span class="row"><button class="btn sm hidden" id="up-retry">Reintentar fallidas</button><button class="btn sm" id="up-clear">Limpiar terminadas</button></span>
+          <span class="row"><button class="btn sm primary hidden" id="up-full">➕ Comprar más espacio</button><button class="btn sm hidden" id="up-retry">Reintentar fallidas</button><button class="btn sm" id="up-clear">Limpiar terminadas</button></span>
         </div>
         <div class="progress"><span id="up-bar"></span></div>
         <div id="up-list" class="up-list"></div>
@@ -147,7 +148,7 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings }) {
         b.delete(doc(db, 'photos', id));
         b.update(doc(db, 'events', ev.id, 'sets', uid), { photoCount: increment(-1), bytesOriginal: increment(-(p?.bytes || 0)), bytesPublic: increment(-(p?.bytesPublic || 0)) });
         await b.commit();
-        if (p) uploadedKeys?.delete(`${p.fileName}|${p.bytes}`);
+        if (p) uploadedKeys?.delete(`${p.fileName}|${p.fileBytes || p.bytes}`);
         bytes += p?.bytes || 0; pubBytes += p?.bytesPublic || 0; n++;
         photos = photos.filter(x => x.id !== id);
         selected.delete(id);
@@ -185,7 +186,7 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings }) {
   };
   let up;
   if (activeUploader?.busy() && activeUploader.eventId === ev.id) { up = activeUploader; up.setHandlers(handlers); }
-  else up = activeUploader = createUploader({ eventId: ev.id, uid, wm, logo, ...handlers });
+  else up = activeUploader = createUploader({ eventId: ev.id, uid, wm, logo, optimize: profile.optimizeOriginals !== false, ...handlers });
   // El vencimiento de los originales arranca con la primera subida (una sola vez).
   let expiryStarted = !!set.expiresAt;
   function startExpiry() {
@@ -211,6 +212,8 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings }) {
     $('#up-summary').textContent = `${s.done} de ${s.total} subidas${s.failed ? ` · ${s.failed} con error` : ''} · ${s.pct}%`;
     $('#up-bar').style.width = `${s.pct}%`;
     $('#up-retry').classList.toggle('hidden', !s.failed);
+    const full = s.items.some(i => i.full && i.status === 'error');
+    $('#up-full').classList.toggle('hidden', !full);
     $('#up-list').innerHTML = s.items.filter(i => i.status !== 'done').slice(0, 60).map(i => `
       <div class="up-item ${i.status}">
         <span class="name">${esc(i.file.name)}</span>
@@ -227,7 +230,7 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings }) {
     try {
       if (!uploadedKeys) {
         const snap = await getDocs(query(collection(db, 'photos'), where('eventId', '==', ev.id), where('photographerUid', '==', uid)));
-        uploadedKeys = new Set(snap.docs.map(d => `${d.data().fileName}|${d.data().bytes}`));
+        uploadedKeys = new Set(snap.docs.map(d => `${d.data().fileName}|${d.data().fileBytes || d.data().bytes}`));
       }
     } catch (e) { console.warn('duplicados', e); }
     const fresh = uploadedKeys ? files.filter(f => !uploadedKeys.has(fileKey(f))) : files;
@@ -241,6 +244,7 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings }) {
   dz.addEventListener('dragleave', () => dz.classList.remove('over'));
   dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('over'); addFiles(e.dataTransfer.files); });
   $('#up-retry').onclick = () => up.retryFailed();
+  $('#up-full').onclick = () => window.onqmfAlbumFull?.();
   $('#up-clear').onclick = () => up.clearDone();
 
   await load(true);

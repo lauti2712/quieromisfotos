@@ -4,10 +4,10 @@ import { uploadSession, invalidateSession, putBlob } from './api.js';
 import { processFile } from './image-proc.js';
 
 const ACCEPT = /^image\/(jpeg|png|webp)$/;
-const MAX_ATTEMPTS = 3;
+const MAX_ATTEMPTS = 5;
 export const fileKey = f => `${f.name}|${f.size}`;
 
-export function createUploader({ eventId, uid, wm, logo = null, onChange, onPhoto }) {
+export function createUploader({ eventId, uid, wm, logo = null, optimize = false, onChange, onPhoto }) {
   // Se pueden reemplazar (setHandlers) si el fotógrafo sale y vuelve al evento mientras sube.
   const lowEnd = (navigator.deviceMemory && navigator.deviceMemory <= 4) || (navigator.hardwareConcurrency || 4) <= 4;
   const concurrency = lowEnd ? 2 : 3;
@@ -42,21 +42,42 @@ export function createUploader({ eventId, uid, wm, logo = null, onChange, onPhot
 
   function process(file) {
     const w = pool().find(x => !x.busy);
-    if (!w) return processFile(file, wm, logo);
+    if (!w) return processFile(file, wm, logo, { optimize });
     w.busy = true;
     const id = ++seq;
     w.current = id;
     return new Promise((resolve, reject) => {
       waiting.set(id, data => {
         if (data.ok) resolve(data);
-        else if (data.fallback) processFile(file, wm, logo).then(resolve, reject);
+        else if (data.fallback) processFile(file, wm, logo, { optimize }).then(resolve, reject);
         else reject(new Error(data.error));
       });
-      w.postMessage({ id, file, wm, logo });
+      w.postMessage({ id, file, wm, logo, optimize });
     });
   }
 
-  const emit = () => onChange?.(summary());
+  const emit = () => { onChange?.(summary()); keepAwake(); };
+
+  // Celular: mientras sube, la pantalla no se apaga (si se apaga, el navegador frena la subida).
+  let wakeLock = null;
+  async function keepAwake() {
+    const busy = items.some(i => ['queued', 'processing', 'uploading', 'retrying'].includes(i.status));
+    if (busy && !wakeLock && document.visibilityState === 'visible' && navigator.wakeLock) {
+      wakeLock = 'pending';
+      try { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); }
+      catch { wakeLock = null; }
+    } else if (!busy && wakeLock && wakeLock !== 'pending') {
+      wakeLock.release().catch(() => {}); wakeLock = null;
+    }
+  }
+  // Al volver a la pestaña o recuperar la conexión, retoma lo pendiente.
+  const resume = () => {
+    if (document.visibilityState !== 'visible') return;
+    items.filter(i => i.status === 'retrying' && i.waitingNet).forEach(i => { i.status = 'queued'; i.waitingNet = false; });
+    pump();
+  };
+  document.addEventListener('visibilitychange', resume);
+  window.addEventListener('online', resume);
 
   function summary() {
     const total = items.length;
@@ -80,21 +101,22 @@ export function createUploader({ eventId, uid, wm, logo = null, onChange, onPhot
     it.status = 'uploading'; emit();
 
     const extra = r.preview.size + r.thumb.size;
-    const progress = (base) => (l) => { it.loaded = Math.min(it.file.size, ((base + l) / (extra + it.file.size)) * it.file.size); emit(); };
+    const orig = r.original || it.file; // optimizado si achicó; si no, el archivo tal cual
+    const progress = (base) => (l) => { it.loaded = Math.min(it.file.size, ((base + l) / (extra + orig.size)) * it.file.size); emit(); };
     const p = await putBlob(`/upload/preview/${eventId}/${pid}`, r.preview, s.token, progress(0));
     const t = await putBlob(`/upload/thumb/${eventId}/${pid}`, r.thumb, s.token, progress(r.preview.size));
-    await putBlob(`/upload/original/${eventId}/${pid}`, it.file, s.token, progress(extra));
+    await putBlob(`/upload/original/${eventId}/${pid}`, orig, s.token, progress(extra));
 
     const photo = {
       eventId, photographerUid: uid, subalbumId: it.subalbumId || '',
       previewUrl: p.url, thumbUrl: t.url,
-      width: r.width, height: r.height, bytes: it.file.size, bytesPublic: extra,
+      width: r.width, height: r.height, bytes: orig.size, fileBytes: it.file.size, bytesPublic: extra,
       takenAt: Timestamp.fromMillis(r.takenAt), fileName: it.file.name.slice(0, 120),
       bibs: [], hidden: false, originalDeleted: false, createdAt: serverTimestamp(),
     };
     const b = writeBatch(db);
     b.set(doc(db, 'photos', pid), photo);
-    b.update(doc(db, 'events', eventId, 'sets', uid), { photoCount: increment(1), bytesOriginal: increment(it.file.size), bytesPublic: increment(extra) });
+    b.update(doc(db, 'events', eventId, 'sets', uid), { photoCount: increment(1), bytesOriginal: increment(orig.size), bytesPublic: increment(extra) });
     await b.commit();
     it.status = 'done'; it.loaded = it.file.size;
     onPhoto?.({ id: pid, ...photo, takenAt: photo.takenAt });
@@ -107,8 +129,15 @@ export function createUploader({ eventId, uid, wm, logo = null, onChange, onPhot
       running++;
       runItem(it)
         .catch(e => {
+          // Sin conexión: espera a que vuelva sin gastar intentos.
+          if (!navigator.onLine) { it.status = 'retrying'; it.waitingNet = true; it.error = 'Sin conexión: se retoma sola'; return; }
           it.attempts = (it.attempts || 0) + 1;
           if (e.status === 401) invalidateSession(eventId);
+          // Álbum lleno: se frena toda la cola (se reintenta después de comprar espacio).
+          if (e.status === 402) {
+            items.filter(i => i.status === 'queued' || i === it).forEach(i => { i.status = 'error'; i.error = e.message; i.full = true; });
+            return;
+          }
           const retriable = !e.status || e.status >= 500 || e.status === 401 || e.status === 429;
           if (retriable && it.attempts < MAX_ATTEMPTS) {
             it.status = 'retrying'; it.error = e.message;
@@ -148,6 +177,11 @@ export function createUploader({ eventId, uid, wm, logo = null, onChange, onPhot
     },
     busy: () => items.some(i => ['queued', 'processing', 'uploading', 'retrying'].includes(i.status)),
     summary,
-    destroy() { (workers || []).forEach(w => w.terminate()); workers = null; },
+    destroy() {
+      (workers || []).forEach(w => w.terminate()); workers = null;
+      document.removeEventListener('visibilitychange', resume);
+      window.removeEventListener('online', resume);
+      if (wakeLock && wakeLock !== 'pending') wakeLock.release().catch(() => {});
+    },
   };
 }

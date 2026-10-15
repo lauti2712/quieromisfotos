@@ -30,6 +30,7 @@
 //   qmf-private: e/{eid}/{uid}/{pid}        (original, nunca público)
 
 import { verifyIdToken, getDocAsUser } from './firebase.js';
+import { adminGetMany } from './admin.js';
 import { signToken, verifyToken } from './tokens.js';
 import { json, httpError, apiUrl } from './http.js';
 import { connectUrl, callback, disconnect } from './mp.js';
@@ -167,6 +168,16 @@ async function uploadPhotoPart(req, env, kind, eid, pid) {
   checkSize(req, kind);
 
   const base = `e/${eid}/${s.uid}/${pid}`;
+  // Límite de espacio por álbum (settings.albumLimitGB + espacio comprado): se controla al empezar cada foto.
+  if (kind === 'preview') {
+    const [set, st] = await adminGetMany(env, [`events/${eid}/sets/${s.uid}`, 'settings/platform']);
+    const limit = (Number(st?.albumLimitGB) || 0) * 1e9;
+    if (limit > 0 && set) {
+      const used = (set.bytesOriginal || 0) + (set.bytesPublic || 0);
+      const max = limit + (set.extraBytes || 0);
+      if (used >= max) throw httpError(402, `El álbum llegó a su límite de ${Math.round(max / 1e8) / 10} GB. Comprá más espacio para seguir subiendo.`);
+    }
+  }
   if (kind === 'original') {
     const type = req.headers.get('Content-Type') || 'application/octet-stream';
     await env.PRIVATE.put(base, req.body, { httpMetadata: { contentType: type }, customMetadata: { uid: s.uid } });

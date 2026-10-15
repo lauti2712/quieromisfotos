@@ -184,7 +184,7 @@ async function renderEvent(id) {
       <h2>Fotos</h2>
       <div id="gallery"></div>
     </section>`;
-  mountGallery($('#gallery'), { ev, photographers, sets, initialUid: parseHash().query.get('f') || '' });
+  mountGallery($('#gallery'), { ev, photographers, sets, initialUid: parseHash().query.get('f') || '', initialPhoto: parseHash().query.get('foto') || '' });
   $('#ev-share').onclick = () => shareLink({ title: ev.name, text: `📸 Fotos de ${ev.name} en Quiero Mis Fotos:`, url: eventUrl(ev.id) });
 }
 

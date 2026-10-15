@@ -10,7 +10,7 @@ import {
   $, $$, esc, slugify, SLUG_RE, searchTokens, fmtMoney, fmtDate, fmtTs, todayIso, parseHash,
   toast, errMsg, avatarHtml, coverHtml, SOCIALS, newId, normalize, fmtBytes, setBytes,
 } from './util.js';
-import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, ACTIVITY_TYPE, USER_TAG_TYPES, tagPills, SERVICES, isPro, mpPlanOf, GEAR_TYPES, PLANS, planOf, siteUrlOf, setUntil, setDeleteAt, GRACE_DAYS } from './data.js';
+import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, ACTIVITY_TYPE, USER_TAG_TYPES, tagPills, SERVICES, isPro, mpPlanOf, GEAR_TYPES, PLANS, planOf, siteUrlOf, setUntil, setDeleteAt, GRACE_DAYS, albumLimit } from './data.js';
 import { viewWeb } from './panel-web.js';
 import { sellerNet } from './pricing.js';
 import { viewPortfolio } from './panel-portfolio.js';
@@ -547,6 +547,11 @@ function viewConfig() {
             <p class="muted small">Vista previa de una muestra.</p></div>
         </div>
       </div>
+      <div class="card stack">
+        <h2>Originales</h2>
+        <label class="check"><input type="checkbox" id="cf-optimize" ${p.optimizeOriginals !== false ? 'checked' : ''}> Optimizar los originales al subir (recomendado)</label>
+        <p class="muted small" style="margin:0">Se guardan a la misma resolución con calidad JPEG alta (92%): a simple vista no se distingue, ni impresa, pero ocupan alrededor de la mitad. La subida es más rápida y tu álbum rinde el doble de fotos. Si lo destildás, se guarda el archivo exacto de la cámara.</p>
+      </div>
       <div class="row end" style="margin-top:14px"><button class="btn primary" type="submit">Guardar</button></div>
     </form>`;
   const feeMode = () => $('input[name=cf-fee]:checked').value;
@@ -596,6 +601,7 @@ function viewConfig() {
       const upd = {
         defaults: { price: Math.round(Number($('#cf-price').value) || 0), packs: packs.get(), feeMode: feeMode() },
         watermark: readWm(),
+        optimizeOriginals: $('#cf-optimize').checked,
       };
       await updateDoc(doc(db, 'users', S.user.uid), upd);
       Object.assign(S.profile, upd);
@@ -756,22 +762,28 @@ function retentionHtml(set) {
       <span>⛔ Este álbum dejó de venderse el ${fmtMs(r.until)}. <strong>Los originales se borran el ${fmtMs(r.deleteAt)}</strong>: extendé el plazo para volver a venderlo.</span>${btn}</div>`;
 }
 
-// Elegir plan de extensión y pagar con Mercado Pago (a la plataforma).
-function extensionDialog(ev, set) {
-  const plans = (S.settings.extensionPlans || []).filter(p => p.days > 0 && p.price > 0);
-  if (!plans.length) return toast('Todavía no hay planes de extensión. Escribinos por WhatsApp.', 'error');
+// Elegir plan y pagar con Mercado Pago (a la plataforma): kind 'time' = más días de venta, 'space' = más GB en el álbum.
+function extensionDialog(ev, set, kind = 'time') {
+  const space = kind === 'space';
+  const plans = (space ? S.settings.storagePlans : S.settings.extensionPlans || []).filter(p => (space ? p.gb : p.days) > 0 && p.price > 0);
+  if (!plans.length) return toast(`Todavía no hay planes de ${space ? 'espacio' : 'extensión'}. Escribinos por WhatsApp.`, 'error');
   const from = Math.max(setUntil(set), Date.now());
-  const dlg = openDialog('Extender plazo', `
-    <p class="muted" style="margin-top:0">Tus fotos de <strong>${esc(ev.name)}</strong> se siguen vendiendo y los originales no se borran.</p>
+  const limit = albumLimit(set, S.settings);
+  const dlg = openDialog(space ? 'Más espacio para el álbum' : 'Extender plazo', `
+    <p class="muted" style="margin-top:0">${space
+      ? `Tu álbum de <strong>${esc(ev.name)}</strong> usa ${fmtBytes(setBytes(set))} de ${fmtBytes(limit)}. Sumá espacio para seguir subiendo.`
+      : `Tus fotos de <strong>${esc(ev.name)}</strong> se siguen vendiendo y los originales no se borran.`}</p>
     <div class="stack">${plans.map((p, i) => `
       <label class="check card" style="margin:0;padding:12px"><input type="radio" name="ext-plan" value="${esc(p.id)}" ${i === 0 ? 'checked' : ''}>
-        <span class="grow"><strong>${esc(p.label || `+${p.days} días`)}</strong> · ${fmtMoney(p.price)}<br><span class="muted small">Se vende hasta el ${fmtMs(from + p.days * 86400000)}</span></span></label>`).join('')}
+        <span class="grow"><strong>${esc(p.label || (space ? `+${p.gb} GB` : `+${p.days} días`))}</strong> · ${fmtMoney(p.price)}<br><span class="muted small">${space
+          ? `El álbum queda con ${fmtBytes(limit + p.gb * 1e9)} (≈ ${Math.round((p.gb * 1e9) / 6e6)} fotos más)`
+          : `Se vende hasta el ${fmtMs(from + p.days * 86400000)}`}</span></span></label>`).join('')}
     </div>`, '<button class="btn primary" id="ext-pay">Pagar con Mercado Pago</button>');
   $('#ext-pay', dlg).onclick = async () => {
     const b = $('#ext-pay', dlg); b.disabled = true; b.textContent = 'Abriendo Mercado Pago…';
     try {
       const planId = $('input[name="ext-plan"]:checked', dlg).value;
-      const { initPoint } = await apiPost('/extensions/checkout', { eventId: ev.id, planId });
+      const { initPoint } = await apiPost('/extensions/checkout', { eventId: ev.id, planId, kind });
       location.href = initPoint;
     } catch (e) { toast(errMsg(e), 'error'); b.disabled = false; b.textContent = 'Pagar con Mercado Pago'; }
   };
@@ -789,7 +801,7 @@ function setStatsHtml(set) {
   return `
     <div class="set-stats">
       <span class="stat-chip" title="Fotos en el álbum">📷 ${set.photoCount || 0}</span>
-      <span class="stat-chip" title="Espacio que ocupa el álbum (originales + muestras)">💾 ${fmtBytes(setBytes(set))}</span>
+      <span class="stat-chip ${albumLimit(set, S.settings) && setBytes(set) >= albumLimit(set, S.settings) * 0.9 ? 'warn' : ''}" title="Espacio que ocupa el álbum (originales + muestras)">💾 ${fmtBytes(setBytes(set))}${albumLimit(set, S.settings) ? ` / ${fmtBytes(albumLimit(set, S.settings))}` : ''}</span>
       <span class="stat-chip ${set.soldPhotos ? 'ok' : ''}" title="Fotos vendidas">🛒 ${set.soldPhotos || 0} vendida${set.soldPhotos === 1 ? '' : 's'}</span>
       ${exp}
     </div>`;
@@ -1024,12 +1036,15 @@ async function viewEvent(id) {
   renderSetEditor(ev, sets.get(me) || null, reload);
   const mySet = sets.get(me);
   $('#ext-btn')?.addEventListener('click', () => extensionDialog(ev, mySet));
+  $('#space-btn')?.addEventListener('click', () => extensionDialog(ev, mySet, 'space'));
+  // La subida avisa cuando el álbum se llenó.
+  window.onqmfAlbumFull = () => extensionDialog(ev, mySet, 'space');
   // Vuelta de Mercado Pago después de pagar una extensión.
   const extId = parseHash().query.get('ext');
   if (extId) {
     history.replaceState(null, '', `#/evento/${id}`);
     apiPost(`/extensions/${encodeURIComponent(extId)}/sync`).then(r => {
-      if (r.status === 'approved') { toast('¡Listo! Extendiste el plazo del álbum'); reload(); }
+      if (r.status === 'approved') { toast('¡Listo! Pago acreditado'); reload(); }
       else if (r.status === 'rejected') toast('El pago fue rechazado', 'error');
       else toast('El pago todavía se está procesando. Se aplica solo cuando se acredite.');
     }).catch(e => toast(errMsg(e), 'error'));
@@ -1083,8 +1098,10 @@ function renderSetEditor(ev, set, reload) {
       ${S.profile.mpConnected ? '' : '<div class="notice warn">Para que puedan comprar tus fotos tenés que <a href="#/mp">vincular Mercado Pago</a>.</div>'}
       <div class="row">
         <span class="pill">📷 ${set.photoCount || 0} fotos</span>
-        <span class="pill">💾 ${fmtBytes(setBytes(set))}</span>
+        <span class="pill">💾 ${fmtBytes(setBytes(set))}${albumLimit(set, S.settings) ? ` de ${fmtBytes(albumLimit(set, S.settings))}` : ''}</span>
+        ${albumLimit(set, S.settings) ? '<button class="btn sm" id="space-btn">➕ Más espacio</button>' : ''}
       </div>
+      ${albumLimit(set, S.settings) ? `<div class="meter"><span class="${setBytes(set) >= albumLimit(set, S.settings) ? 'danger' : setBytes(set) >= albumLimit(set, S.settings) * 0.9 ? 'warn' : ''}" style="width:${Math.min(100, (setBytes(set) / albumLimit(set, S.settings)) * 100).toFixed(1)}%"></span></div>` : ''}
       ${retentionHtml(set)}
     </div>
     <form class="card stack" id="set-form">
@@ -1323,6 +1340,14 @@ async function viewAdminStorage() {
         Ejemplo: 100 GB ≈ ${fmtUsd(r2Cost(100e9))}/mes · 500 GB ≈ ${fmtUsd(r2Cost(500e9))}/mes.</p>
       <p class="muted small" style="margin:0">Última medición: ${st.scannedAt ? st.scannedAt.toDate().toLocaleString('es-AR') : '—'} (se recalcula sola todos los días).</p>
     </div>
+    <form class="card stack" id="lim-form"><h2 style="margin:0">Límite por álbum</h2>
+      <p class="muted small" style="margin:0">Espacio que cada fotógrafo puede usar por álbum (originales + muestras). Al llegar al límite no puede subir más fotos hasta comprar espacio adicional, que se paga con Mercado Pago a tu cuenta. 0 = sin límite.
+        Referencia: una foto ocupa ~${fmtBytes(top.length ? top.reduce((a, t) => a + t.bytes, 0) / Math.max(1, top.reduce((a, t) => a + (t.photos || 0), 0)) : 12e6)} (sin optimizar).</p>
+      <label class="field" style="max-width:240px">Límite por álbum (GB)<input type="number" id="lim-gb" min="0" step="0.5" value="${S.settings.albumLimitGB || 0}"></label>
+      <h3 style="margin:4px 0 0">Packs de espacio adicional</h3>
+      <div id="lim-plans" class="stack"></div>
+      <div class="row"><button type="button" class="btn sm" id="lim-add">+ Agregar pack</button><span class="spacer" style="flex:1"></span><button class="btn primary">Guardar</button></div>
+    </form>
     <div class="card stack"><h2 style="margin:0">Borrado de originales</h2>
       <p class="muted small" style="margin:0">Los álbumes se venden ${S.settings.retentionDays} días desde la primera foto (más las extensiones pagas). Después quedan ${GRACE_DAYS} días para descargas y para extender, y se borran los originales (las muestras quedan).
         ${ret.mode === 'on' ? '<strong>Borrado activo.</strong>' : '<strong>Modo simulación:</strong> todavía no borra nada, solo informa.'}</p>
@@ -1343,6 +1368,32 @@ async function viewAdminStorage() {
       </tbody></table></div>` : '<p class="muted">Sin álbumes.</p>'}
     </div>`;
   bindScan();
+
+  // ---- límite por álbum + packs de espacio
+  let sp = (S.settings.storagePlans || []).map(p => ({ ...p }));
+  const drawPlans = () => {
+    $('#lim-plans').innerHTML = sp.length ? sp.map((p, i) => `
+      <div class="row">
+        <input type="text" data-i="${i}" data-k="label" value="${esc(p.label || '')}" placeholder="Nombre (ej: +5 GB)" style="flex:2;min-width:140px">
+        <input type="number" data-i="${i}" data-k="gb" value="${p.gb || ''}" placeholder="GB" min="0.5" step="0.5" style="flex:1;min-width:70px">
+        <input type="number" data-i="${i}" data-k="price" value="${p.price || ''}" placeholder="Precio ARS" min="1" style="flex:1;min-width:100px">
+        <button type="button" class="btn sm danger" data-rm="${i}">✕</button>
+      </div>`).join('') : '<p class="muted small" style="margin:0">Sin packs: si un álbum se llena, el fotógrafo no puede comprar más.</p>';
+    $$('#lim-plans input').forEach(inp => inp.oninput = () => { sp[inp.dataset.i][inp.dataset.k] = inp.type === 'number' ? Number(inp.value) : inp.value; });
+    $$('#lim-plans [data-rm]').forEach(b => b.onclick = () => { sp.splice(+b.dataset.rm, 1); drawPlans(); });
+  };
+  drawPlans();
+  $('#lim-add').onclick = () => { sp.push({ id: newId(), label: '', gb: 5, price: 0 }); drawPlans(); };
+  $('#lim-form').onsubmit = async e => {
+    e.preventDefault();
+    const clean = sp.filter(p => p.label || p.price).map(p => ({ id: p.id || newId(), label: (p.label || '').trim() || `+${p.gb} GB`, gb: Number(p.gb), price: Math.round(p.price) }));
+    if (clean.some(p => !(p.gb > 0) || !(p.price > 0))) return toast('Cada pack necesita GB y precio.', 'error');
+    try {
+      await setDoc(doc(db, 'settings', 'platform'), { albumLimitGB: Math.max(0, Number($('#lim-gb').value) || 0), storagePlans: clean, updatedAt: serverTimestamp() }, { merge: true });
+      S.settings = await loadSettings();
+      toast('Límite guardado');
+    } catch (err) { toast(errMsg(err), 'error'); }
+  };
 
   function retTable(title, rows, key) {
     if (!rows.length) return '';

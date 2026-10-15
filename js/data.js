@@ -5,6 +5,9 @@ export const DEFAULT_SETTINGS = {
   feePercent: 3,
   retentionDays: 14,
   extensionPlans: [],
+  // Límite de espacio por álbum en GB (0 = sin límite) y packs de espacio adicional que compra el fotógrafo.
+  albumLimitGB: 0,
+  storagePlans: [],
   proPrice: 4500,
   webPrice: 9000,
   webDomainPrice: 12000,
@@ -111,3 +114,6 @@ const ms = t => t?.toMillis?.() || (t instanceof Date ? t.getTime() : 0);
 export const setUntil = set => Math.max(ms(set?.expiresAt), ms(set?.extendedUntil)) || 0;
 export const setDeleteAt = set => (setUntil(set) ? setUntil(set) + GRACE_DAYS * 86400000 : 0);
 export const setForSale = set => !!set && set.price > 0 && !set.originalsDeleted && (!setUntil(set) || setUntil(set) > Date.now());
+
+// Límite de espacio del álbum en bytes (0 = sin límite): el general + lo que compró el fotógrafo.
+export const albumLimit = (set, settings) => (Number(settings?.albumLimitGB) > 0 ? settings.albumLimitGB * 1e9 + (set?.extraBytes || 0) : 0);
