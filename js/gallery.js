@@ -134,6 +134,8 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
   function itemHtml(p, i) {
     return `<div class="g-item ${cart.has(p.id) ? 'in-cart' : ''}" data-i="${i}" data-id="${p.id}" role="button" tabindex="0" aria-label="Ver foto">
       <img src="${esc(p.thumbUrl)}" alt="" loading="lazy" decoding="async">
+      <span class="g-n" aria-hidden="true">${i + 1}</span>
+      <svg class="g-ring" viewBox="0 0 100 70" preserveAspectRatio="none" aria-hidden="true"><path pathLength="100" d="M52 3C80 2 98 14 97 34 96 55 75 67 47 66 20 65 2 53 3 33 4 14 24 4 55 5 64 5 71 8 76 12"/></svg>
       <button class="g-fav ${favs.has(p.id) ? 'on' : ''}" data-favi="${i}" aria-label="Favorita">${favs.has(p.id) ? '♥' : '♡'}</button>
       ${forSale(p.photographerUid) ? `<button class="g-add" data-add="${i}" aria-label="Agregar al carrito">${cart.has(p.id) ? '✓' : '+'}</button>` : ''}
     </div>`;

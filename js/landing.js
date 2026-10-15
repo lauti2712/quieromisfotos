@@ -75,8 +75,7 @@ export async function renderPhotographerLanding(app) {
     </nav>
     <section class="lp-hero">
       <div class="lp-hero-txt reveal">
-        <span class="lp-kicker">Para fotógrafos</span>
-        <h1>Vos sacá fotos.<br><span>Nosotros nos encargamos del resto.</span></h1>
+        <h1>Vos sacá fotos. Nosotros nos encargamos del resto.</h1>
         <p>Subí las fotos de tus partidos, torneos y carreras, y vendelas en alta calidad. Sin armar una web, sin mandar fotos una por una por WhatsApp y sin perseguir a nadie para cobrar.</p>
         <div class="row">
           <a class="btn primary lp-cta" href="panel.html">Empezar gratis</a>
@@ -100,27 +99,27 @@ export async function renderPhotographerLanding(app) {
       <h2 class="reveal">Así de simple</h2>
       <div class="lp-steps">${STEPS.map((s, i) => `
         <div class="lp-step reveal" style="--d:${i * 120}ms">
-          <span class="lp-n">${i + 1}</span><span class="lp-ic">${s.ic}</span>
+          <span class="lp-n">${i + 1}</span>
           <h3>${s.t}</h3><p>${s.d}</p>
         </div>`).join('')}</div>
     </section>
 
     <section class="lp-sec lp-split">
       <div class="lp-box us reveal">
-        <h3>🧰 De esto nos encargamos nosotros</h3>
+        <h3>De esto nos encargamos nosotros</h3>
         <ul><li>Guardar tus fotos y los originales</li><li>La marca de agua en cada foto</li><li>La galería, los filtros y el carrito</li><li>El cobro y las descargas del comprador</li><li>Tu perfil, tu portfolio y tu web</li><li>Avisarle a tus seguidores</li></ul>
       </div>
       <div class="lp-box you reveal" style="--d:150ms">
-        <h3>📷 Vos hacés lo que te apasiona</h3>
+        <h3>Vos hacés lo que te apasiona</h3>
         <ul><li>Sacar fotos</li><li>Vincular tu Mercado Pago <small>(una sola vez)</small></li><li>Subirlas y compartir el link</li></ul>
-        <p class="lp-big">Y listo. ☕</p>
+        <p class="lp-big">Y listo.</p>
       </div>
     </section>
 
     <section class="lp-sec">
       <h2 class="reveal">Todo lo que tenés</h2>
       <div class="lp-feats">${FEATURES.map((f, i) => `
-        <div class="lp-feat reveal" style="--d:${(i % 4) * 90}ms"><span>${f.ic}</span><h3>${f.t}</h3><p>${f.d}</p></div>`).join('')}</div>
+        <div class="lp-feat"><h3>${f.t}</h3><p>${f.d}</p></div>`).join('')}</div>
     </section>
 
     <section id="planes" class="lp-sec">
@@ -197,7 +196,4 @@ export async function renderPhotographerLanding(app) {
   calc();
   $$('[data-scroll]', app).forEach(a => a.onclick = e => { e.preventDefault(); document.getElementById('como-funciona')?.scrollIntoView({ behavior: 'smooth' }); });
   $$('[data-goto]', app).forEach(a => a.onclick = e => { e.preventDefault(); document.getElementById(a.dataset.goto)?.scrollIntoView({ behavior: 'smooth' }); });
-  // Aparición al hacer scroll.
-  const io = new IntersectionObserver(es => es.forEach(en => { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } }), { threshold: 0.15 });
-  $$('.reveal', app).forEach(el => io.observe(el));
 }
