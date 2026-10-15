@@ -6,6 +6,7 @@ import { $, $$, esc, toast, errMsg, fmtBytes, setBytes } from './util.js';
 import { createUploader, fileKey } from './uploader.js';
 import { uploadSession, apiDelete, loadLogoBitmap } from './api.js';
 import { DEFAULT_WATERMARK, wantsLogo } from './watermark.js';
+import { rulesFor } from './data.js';
 
 const PAGE = 120;
 let activeUploader = null;
@@ -192,7 +193,7 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings }) {
   function startExpiry() {
     if (expiryStarted) return;
     expiryStarted = true;
-    const expiresAt = Timestamp.fromMillis(Date.now() + (settings.retentionDays || 14) * 86400000);
+    const expiresAt = Timestamp.fromMillis(Date.now() + rulesFor(profile, settings).days * 86400000);
     updateDoc(doc(db, 'events', ev.id, 'sets', uid), { expiresAt })
       .then(() => { set.expiresAt = expiresAt; })
       .catch(e => { expiryStarted = false; console.warn('expiresAt', e); });

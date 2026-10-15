@@ -45,7 +45,7 @@ import { notifyFollowersOnce, drainPushQueue } from './push.js';
 import { extensionCheckout, extensionSync } from './extensions.js';
 import { subscribe, syncRequest, cancelSubscription, syncAllSubscriptions } from './subscriptions.js';
 
-const MAX = { preview: 6e6, thumb: 1e6, original: 80e6, avatar: 3e6, logo: 2e6, cover: 6e6, portfolio: 6e6 };
+const MAX = { preview: 6e6, thumb: 1e6, original: 80e6, avatar: 3e6, logo: 2e6, cover: 6e6, portfolio: 6e6, pcover: 6e6 };
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
 const SESSION_TTL = 2 * 3600;
 const BACKUP_CRON = '0 7 * * 1'; // lunes 04:00 (Argentina)
@@ -228,7 +228,7 @@ async function deletePhoto(req, env, eid, pid) {
 
 // ------------------------------------------------------------------ avatar / logo / portada
 async function uploadAsset(req, env, kind) {
-  if (!['avatar', 'logo', 'cover', 'portfolio'].includes(kind)) throw httpError(400, 'Tipo inválido');
+  if (!['avatar', 'logo', 'cover', 'portfolio', 'pcover'].includes(kind)) throw httpError(400, 'Tipo inválido');
   const s = await session(req, env);
   if (kind === 'cover' && !s.eid) throw httpError(400, 'La portada requiere un evento');
   checkSize(req, kind);

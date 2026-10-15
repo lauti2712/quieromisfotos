@@ -1,6 +1,6 @@
 // Página "Soy fotógrafo": explica cómo funciona la plataforma para fotógrafos, con animaciones.
 import { $, $$, esc, fmtMoney } from './util.js';
-import { loadSettings, DEFAULT_SETTINGS, planSpec } from './data.js';
+import { loadSettings, DEFAULT_SETTINGS, planSpec, rulesFor, planFeatures } from './data.js';
 import { sellerNet } from './pricing.js';
 
 // Fotos de la animación (Pexels, licencia libre): una disciplina por ciclo.
@@ -33,28 +33,22 @@ export async function renderPhotographerLanding(app) {
   document.title = 'Vendé tus fotos de eventos · Quiero Mis Fotos';
   const st = await loadSettings();
   const v2 = !!st.plansV2;
-  const free = v2 ? st.freeFeePercent ?? 5 : st.feePercent ?? 3;
+  const free = rulesFor({}, st).fee; // comisión del plan Gratis (la de hoy si los planes nuevos están apagados)
   const fee = st.feePercent ?? 3;
   const mpPlans = st.mpFeePlans?.length ? st.mpFeePlans : DEFAULT_SETTINGS.mpFeePlans;
 
   // Planes: sin v2, Gratis + Web; con v2, Gratis + Profesional + Profesional + Dominio.
   const sp = id => planSpec(id, st);
-  const space = st.albumLimitGB > 0 ? `${st.albumLimitGB} GB por álbum (ampliable)` : 'Más espacio por álbum';
   const plans = v2 ? [
-    { id: 'free', name: 'Gratis', price: 0, cta: 'Empezar gratis', items: ['1 álbum activo a la vez', `Hasta ${st.freeAlbumLimitGB ?? 3} GB por álbum`,
-      `Perfil y portfolio de ${sp('free').portfolio} fotos`, `Comisión ${sp('free').fee}% por venta`] },
-    { id: 'lite', name: 'Profesional Lite', price: sp('lite').price, cta: 'Quiero este plan', items: ['Álbumes ilimitados', space,
-      `Portfolio de ${sp('lite').portfolio} fotos`, ...(sp('lite').featured ? ['Destacado en el directorio'] : []), `Comisión ${sp('lite').fee}% por venta`] },
-    { id: 'web', name: 'Profesional', price: sp('web').price, hot: true, cta: 'Quiero este plan', items: ['Todo lo de Lite', `Portfolio de ${sp('web').portfolio} fotos`,
-      'Tu web: tunombre.quieromisfotos.com.ar', 'Fotos de tu web sin marca de agua', ...(sp('web').featured ? ['Destacado en el directorio'] : []), `Comisión ${sp('web').fee}% por venta`] },
-    { id: 'webdomain', name: 'Profesional + Dominio', price: sp('webdomain').price, cta: 'Quiero este plan',
-      first: sp('webdomain').first > sp('webdomain').price ? sp('webdomain').first : 0,
-      items: ['Todo lo de Profesional', 'Tu propio dominio (tunombre.com.ar)', `Portfolio de ${sp('webdomain').portfolio} fotos`,
-        ...(sp('webdomain').featured ? ['Destacado en el directorio'] : []), `Comisión ${sp('webdomain').fee}% por venta`] },
+    { id: 'free', name: 'Gratis', price: 0, cta: 'Empezar gratis', items: planFeatures('free', st) },
+    { id: 'lite', name: 'Profesional Lite', price: sp('lite').price, year: sp('lite').year, cta: 'Quiero este plan', items: planFeatures('lite', st) },
+    { id: 'web', name: 'Profesional', price: sp('web').price, year: sp('web').year, hot: true, cta: 'Quiero este plan', items: planFeatures('web', st) },
+    { id: 'webdomain', name: 'Profesional Premium', price: sp('webdomain').price, year: sp('webdomain').year, cta: 'Quiero este plan',
+      first: sp('webdomain').first > sp('webdomain').price ? sp('webdomain').first : 0, items: planFeatures('webdomain', st) },
   ] : [
     { name: 'Gratis', price: 0, cta: 'Empezar gratis', items: ['Vendé tus fotos en eventos', '1 álbum activo a la vez', 'Marca de agua, galería y cobro incluidos',
       `Portfolio de ${st.freePortfolioLimit ?? 12} fotos`, `Comisión ${fee}% por venta`] },
-    { name: 'Web', price: st.webPrice, hot: true, cta: 'Quiero este plan', items: ['Álbumes ilimitados', `Portfolio de ${st.proPortfolioLimit ?? 80} fotos`,
+    { name: 'Profesional', price: st.webPrice, hot: true, cta: 'Quiero este plan', items: ['Álbumes ilimitados', `Portfolio de ${st.proPortfolioLimit ?? 80} fotos`,
       'Tu web: tunombre.quieromisfotos.com.ar', 'Fotos de tu web sin marca de agua', 'Destacado en el directorio', `Comisión ${fee}% por venta`] },
   ];
   const planCard = (p, i) => `
@@ -63,6 +57,7 @@ export async function renderPhotographerLanding(app) {
           <h3>${esc(p.name)}</h3>
           <div class="lp-price">${p.price ? `${fmtMoney(p.price)}<small>/mes</small>` : '$0'}</div>
           ${p.first ? `<p class="muted small">Primer mes ${fmtMoney(p.first)} (incluye el dominio)</p>` : ''}
+          ${p.year ? `<p class="muted small">o ${fmtMoney(p.year)}/año (2 meses gratis)</p>` : ''}
           <ul>${p.items.map(t => `<li>${esc(t)}</li>`).join('')}</ul>
           <a class="btn ${p.hot ? 'primary' : ''} lp-plan-cta" href="panel.html">${esc(p.cta)}</a>
         </div>`;
@@ -157,7 +152,7 @@ export async function renderPhotographerLanding(app) {
       <h2 class="reveal">Preguntas frecuentes</h2>
       <details class="reveal"><summary>¿Cuándo cobro?</summary><p>Cada venta se paga con Mercado Pago y entra directo a tu cuenta. El plazo de acreditación lo elegís vos en Mercado Pago (al instante o más adelante, con menos comisión de MP).</p></details>
       <details class="reveal"><summary>¿Las fotos pierden calidad?</summary><p>No. El comprador descarga la foto en alta resolución y sin marca de agua. Las muestras de la galería son livianas y llevan la marca para que nadie se las lleve sin pagar.</p></details>
-      <details class="reveal"><summary>¿Cuánto tiempo quedan las fotos?</summary><p>Cada álbum se vende ${st.retentionDays || 14} días desde que subís la primera foto. Si querés seguir vendiendo, lo extendés desde el panel.</p></details>
+      <details class="reveal"><summary>¿Cuánto tiempo quedan las fotos?</summary><p>Cada álbum se vende ${v2 ? `entre ${planSpec('free', st).days} y ${planSpec('webdomain', st).days} días según tu plan` : `${st.retentionDays || 14} días`} desde que subís la primera foto. Si querés seguir vendiendo, lo extendés desde el panel.</p></details>
       <details class="reveal"><summary>¿Puedo subir desde el celular?</summary><p>Sí. La marca de agua se aplica en tu dispositivo y la subida se retoma sola si se corta la conexión.</p></details>
       <details class="reveal"><summary>¿Y si en el evento hay más fotógrafos?</summary><p>Pueden estar todos en el mismo evento: cada uno con su álbum, sus precios y sus ventas.</p></details>
     </section>

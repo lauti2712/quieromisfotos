@@ -572,3 +572,7 @@ body:has(.lightbox, .intro, dialog[open]) .wa-fab { display: none; }
 .top-nav a { font-weight: 600; font-size: .95rem; text-decoration: none; color: var(--muted); }
 .top-nav a:hover { color: var(--text); }
 footer.site .foot-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px; }
+
+/* ---------- personalización del perfil ---------- */
+.profile-cover { height: clamp(140px, 26vw, 260px); border-radius: var(--radius); background: var(--surface-2) center / cover no-repeat; margin-bottom: 18px; }
+.pf-cover-prev { height: 120px; border-radius: 10px; background: var(--surface-2) center / cover no-repeat; display: grid; place-items: center; border: 1px dashed var(--border); }
