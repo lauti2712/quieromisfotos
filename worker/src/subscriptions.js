@@ -7,7 +7,8 @@ import { mpFetch, panelUrl } from './mp.js';
 import { json, httpError } from './http.js';
 
 // 'pro' (Portfolio Pro) solo por compatibilidad: el panel ya no lo ofrece.
-const PLANS = { pro: { label: 'Portfolio Pro', priceKey: 'proPrice' }, web: { label: 'Profesional', priceKey: 'webPrice' }, webdomain: { label: 'Profesional + Dominio', priceKey: 'webDomainPrice' } };
+// firstKey: precio del primer mes (ej. Profesional + Dominio cobra más el primero para cubrir el dominio).
+const PLANS = { pro: { label: 'Portfolio Pro', priceKey: 'proPrice' }, web: { label: 'Profesional', priceKey: 'webPrice' }, webdomain: { label: 'Profesional + Dominio', priceKey: 'webDomainPrice', firstKey: 'webDomainFirstPrice' } };
 const DAY = 86400_000;
 const GRACE = 3 * DAY; // margen por si el débito del mes se demora
 
@@ -22,6 +23,9 @@ export async function subscribe(req, env) {
   if (!user || user.role !== 'photographer') throw httpError(403, 'Solo fotógrafos');
   const amount = Number(settings?.[PLANS[plan].priceKey]) || 0;
   if (!(amount > 0)) throw httpError(409, 'Precio del plan no configurado');
+  // MP no admite un primer mes distinto: la suscripción arranca con el precio del primer mes y, cuando se cobra,
+  // syncSubscription la baja al precio mensual.
+  const first = Math.max(amount, Number(settings?.[PLANS[plan].firstKey]) || 0);
 
   const fromStaging = req.headers.get('Origin') === 'https://prueba.quieromisfotos.com.ar';
   const back = `${fromStaging ? 'https://prueba.quieromisfotos.com.ar/panel.html' : panelUrl(env)}#/web?sub=1`;
@@ -31,14 +35,14 @@ export async function subscribe(req, env) {
       reason: `Quiero Mis Fotos — Plan ${PLANS[plan].label}`,
       external_reference: `sub_${claims.sub}_${plan}`,
       payer_email: email,
-      auto_recurring: { frequency: 1, frequency_type: 'months', transaction_amount: amount, currency_id: 'ARS' },
+      auto_recurring: { frequency: 1, frequency_type: 'months', transaction_amount: first, currency_id: 'ARS' },
       back_url: back,
       status: 'pending',
     }),
   });
   const prev = await adminGet(env, `subscriptions/${claims.sub}`);
   await adminSet(env, `subscriptions/${claims.sub}`, {
-    plan, amount, payerEmail: email, preapprovalId: pre.id, status: pre.status || 'pending', createdAt: new Date(),
+    plan, amount, firstAmount: first, needsAdjust: first !== amount, payerEmail: email, preapprovalId: pre.id, status: pre.status || 'pending', createdAt: new Date(),
     // La anterior se cancela recién cuando la nueva queda autorizada (cambio de plan sin cortar el servicio).
     ...(prev?.preapprovalId && prev.status === 'authorized' ? { previousPreapprovalId: prev.preapprovalId } : {}),
   });
@@ -64,6 +68,12 @@ export async function syncSubscription(env, uid) {
       upd.previousPreapprovalId = null;
     }
     if (last) upd.lastPaidAt = new Date(last);
+    // Ya se cobró el primer mes (más caro): de acá en adelante, el precio mensual.
+    if (sub.needsAdjust && (pre.summarized?.charged_quantity || 0) >= 1) {
+      await mpFetch(env.MP_ACCESS_TOKEN, `/preapproval/${encodeURIComponent(sub.preapprovalId)}`, {
+        method: 'PUT', body: JSON.stringify({ auto_recurring: { transaction_amount: sub.amount, currency_id: 'ARS' } }),
+      }).then(() => { upd.needsAdjust = false; upd.amountAdjustedAt = new Date(); }).catch(e => console.error('ajuste de monto', e));
+    }
   }
   await adminUpdate(env, `subscriptions/${uid}`, upd);
   return { ...sub, ...upd };

@@ -16,6 +16,7 @@ export const DEFAULT_SETTINGS = {
   proPrice: 4500,
   webPrice: 9000,
   webDomainPrice: 12000,
+  webDomainFirstPrice: 18000, // primer mes de Profesional + Dominio (cubre el registro del dominio)
   freePortfolioLimit: 12,
   proPortfolioLimit: 80,
   // Comisión de Mercado Pago por plazo de acreditación (tarjeta de crédito, IVA incluido). Editable por el superadmin.

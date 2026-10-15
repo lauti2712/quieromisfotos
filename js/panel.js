@@ -1806,6 +1806,8 @@ async function viewAdminConfig() {
         <div class="grid2">
           <label class="field">Profesional (ARS/mes)<input type="number" id="a-web-price" min="0" step="1" value="${st.webPrice}" required></label>
           <label class="field">Profesional + Dominio (ARS/mes)<input type="number" id="a-webdom-price" min="0" step="1" value="${st.webDomainPrice}" required></label>
+          <label class="field">Profesional + Dominio — primer mes (ARS)<input type="number" id="a-webdom-first" min="0" step="1" value="${st.webDomainFirstPrice ?? 18000}" required>
+            <span class="hint">Cubre el registro del dominio. Después se cobra el precio mensual.</span></label>
           <label class="field">Fotos de portfolio — Gratis<input type="number" id="a-free-lim" min="0" max="500" step="1" value="${st.freePortfolioLimit}" required></label>
           <label class="field">Fotos de portfolio — Profesional<input type="number" id="a-pro-lim" min="1" max="2000" step="1" value="${st.proPortfolioLimit}" required><span class="hint">Para Profesional y Profesional + Dominio.</span></label>
         </div>
@@ -1847,6 +1849,7 @@ async function viewAdminConfig() {
         extensionPlans: clean,
         webPrice: Math.round(Number($('#a-web-price').value) || 0),
         webDomainPrice: Math.round(Number($('#a-webdom-price').value) || 0),
+        webDomainFirstPrice: Math.round(Number($('#a-webdom-first').value) || 0),
         mpFeePlans: $$('#a-mp [data-mp]').map(i => ({ id: i.dataset.mp, label: i.dataset.label, percent: Math.round(Number(i.value) * 100) / 100 })),
         freePortfolioLimit: Math.round(Number($('#a-free-lim').value) || 0),
         proPortfolioLimit: Math.round(Number($('#a-pro-lim').value) || 1),

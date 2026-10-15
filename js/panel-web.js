@@ -41,6 +41,7 @@ export async function viewWeb(view, { uid, profile, settings }) {
   const pending = reqSnap?.exists() ? reqSnap.data() : null;
   const sub = subSnap?.exists() ? subSnap.data() : null;
   const subActive = sub?.status === 'authorized';
+  const first = id => (id === 'webdomain' && settings.webDomainFirstPrice > settings.webDomainPrice ? settings.webDomainFirstPrice : 0);
   const price = id => (PLANS[id].priceKey ? fmtMoney(settings[PLANS[id].priceKey]) + '/mes' : 'Gratis');
 
   view.innerHTML = `
@@ -52,6 +53,7 @@ export async function viewWeb(view, { uid, profile, settings }) {
         <div class="plan-card ${p.id === plan ? 'current' : ''}">
           <div class="row" style="justify-content:space-between"><strong>${PLANS[p.id].label}</strong>${p.id === plan ? '<span class="pill ok">Tu plan</span>' : ''}</div>
           <div class="plan-price">${price(p.id)}</div>
+          ${first(p.id) ? `<div class="muted small">Primer mes ${fmtMoney(first(p.id))} (incluye el registro de tu dominio)</div>` : ''}
           <ul>${p.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>
           ${p.id !== 'free' && p.id !== plan ? `<button class="btn ${p.id === 'web' ? 'primary' : ''} sm" data-sub="${p.id}">${plan === 'free' || plan === 'pro' ? 'Suscribirme' : 'Cambiar a este plan'}</button>` : ''}
         </div>`).join('')}
@@ -73,7 +75,7 @@ export async function viewWeb(view, { uid, profile, settings }) {
     dlg.innerHTML = `
       <div class="dlg-head"><h2>Plan ${esc(PLANS[want].label)}</h2><button class="btn ghost sm" data-close>✕</button></div>
       <div class="dlg-body stack">
-        <p style="margin:0"><strong>${price(want)}</strong> · se debita automáticamente cada mes. Lo cancelás cuando quieras desde acá.</p>
+        <p style="margin:0">${first(want) ? `<strong>${fmtMoney(first(want))} el primer mes</strong> (incluye el registro de tu dominio) y después <strong>${price(want)}</strong>` : `<strong>${price(want)}</strong>`} · se debita automáticamente cada mes. Lo cancelás cuando quieras desde acá.</p>
         <label class="field">Email de tu cuenta de Mercado Pago<input type="email" id="sub-email" value="${esc(auth.currentUser?.email || '')}" required>
           <span class="hint">Tiene que ser el mismo email con el que entrás a Mercado Pago para pagar.</span></label>
         ${plan !== 'free' ? '<p class="muted small" style="margin:0">Tu plan actual se cancela cuando se active el nuevo.</p>' : ''}
