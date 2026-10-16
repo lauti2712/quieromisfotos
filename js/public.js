@@ -8,6 +8,7 @@ import {
 import { initTheme } from './theme.js';
 import { loadTaxonomy, tagPills, loadSettings, isFeatured, portfolioLimit, rulesFor, GEAR_TYPES, GEAR_PLURAL, hasWeb, siteUrlOf } from './data.js';
 import { openViewer } from './viewer.js';
+import { renderCancel } from './cancel-view.js';
 import { mountGallery } from './gallery.js';
 import { renderCart } from './cart-view.js';
 import { renderAccount } from './account.js';
@@ -61,6 +62,7 @@ function route() {
   if (parts[0] === 'fotografos') return run(renderDirectory);
   if (parts[0] === 'calendario') return run(() => renderCalendar(app));
   if (parts[0] === 'soy-fotografo') return run(() => renderPhotographerLanding(app));
+  if (parts[0] === 'arrepentimiento') return run(() => renderCancel(app));
   return run(renderHome);
 }
 

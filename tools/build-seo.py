@@ -96,7 +96,7 @@ def page(title, desc, canonical, body, image=None, jsonld=None, redirect=None):
 </div></header>
 <main class="container">{body}</main>
 <footer class="site">Quiero Mis Fotos · Encontrá tu foto. Reviví tu momento.
-  <div class="foot-links"><a href="/eventos/">Eventos</a> · <a href="/fotografos/">Fotógrafos</a> · <a href="/panel.html">Soy fotógrafo</a></div>
+  <div class="foot-links"><a href="/#/arrepentimiento"><strong>Botón de arrepentimiento</strong></a> · <a href="/eventos/">Eventos</a> · <a href="/fotografos/">Fotógrafos</a> · <a href="/panel.html">Soy fotógrafo</a></div>
   <div class="credit">Desarrollado por <a href="https://solucionescotidianas.com.ar" target="_blank" rel="noopener">Soluciones Cotidianas</a></div></footer>
 </body>
 </html>'''

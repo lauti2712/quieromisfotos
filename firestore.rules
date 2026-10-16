@@ -217,6 +217,18 @@ service cloud.firestore {
         && request.resource.data.get('views', 0) >= resource.data.get('views', 0);
     }
 
+    // Botón de arrepentimiento (Res. 424/2020): cualquiera lo puede enviar, sin cuenta. Lo lee el superadmin.
+    match /cancelRequests/{id} {
+      allow create: if request.resource.data.keys().hasOnly(['name', 'email', 'orderRef', 'reason', 'uid', 'createdAt'])
+        && request.resource.data.name is string && request.resource.data.name.size() >= 2 && request.resource.data.name.size() <= 100
+        && request.resource.data.email is string && request.resource.data.email.matches('^[^@ ]+@[^@ ]+[.][^@ ]+$') && request.resource.data.email.size() <= 120
+        && request.resource.data.get('orderRef', '') is string && request.resource.data.get('orderRef', '').size() <= 40
+        && request.resource.data.get('reason', '') is string && request.resource.data.get('reason', '').size() <= 1000
+        && request.resource.data.get('uid', '') == (signedIn() ? uid() : '')
+        && request.resource.data.createdAt == request.time;
+      allow read, delete: if isSuper();
+    }
+
     // Ventas por álbum (las escribe el Worker): solo el fotógrafo y el superadmin.
     match /salesStats/{id} {
       allow read: if isSuper() || (signedIn() && resource.data.photographerUid == uid());

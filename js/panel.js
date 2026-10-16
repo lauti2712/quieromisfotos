@@ -292,14 +292,22 @@ function renderShell() {
 async function drawAlerts() {
   const box = $('#alerts');
   if (!box) return;
-  const snap = await getDocs(query(collection(db, 'alerts'), orderBy('createdAt', 'desc'), limit(20))).catch(() => null);
-  const list = (snap?.docs || []).map(d => ({ id: d.id, ...d.data() }));
+  const [snap, cx] = await Promise.all([
+    getDocs(query(collection(db, 'alerts'), orderBy('createdAt', 'desc'), limit(20))).catch(() => null),
+    getDocs(query(collection(db, 'cancelRequests'), orderBy('createdAt', 'desc'), limit(20))).catch(() => null),
+  ]);
+  // Pedidos del botón de arrepentimiento: hay que responder dentro de las 24 h.
+  const list = [
+    ...(cx?.docs || []).map(d => ({ id: d.id, coll: 'cancelRequests', createdAt: d.data().createdAt,
+      text: `🔙 Botón de arrepentimiento — código ${d.id.slice(0, 8).toUpperCase()}: ${d.data().name} <${d.data().email}>${d.data().orderRef ? `, pedido ${d.data().orderRef}` : ''}${d.data().reason ? `. Motivo: ${d.data().reason}` : ''}. Responder dentro de las 24 h.` })),
+    ...(snap?.docs || []).map(d => ({ id: d.id, coll: 'alerts', ...d.data() })),
+  ];
   box.innerHTML = list.length ? `<div class="notice danger stack" style="max-width:1200px;margin:12px auto 0">
     <strong>⚠️ ${list.length} alerta${list.length > 1 ? 's' : ''} para revisar</strong>
-    ${list.map(a => `<div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px"><span class="small">${esc(fmtTs(a.createdAt))} · ${esc(a.text)}</span><button class="btn sm" data-alert="${esc(a.id)}">Resuelta</button></div>`).join('')}
+    ${list.map(a => `<div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px"><span class="small">${esc(fmtTs(a.createdAt))} · ${esc(a.text)}</span><button class="btn sm" data-alert="${esc(a.id)}" data-coll="${a.coll}">Resuelta</button></div>`).join('')}
   </div>` : '';
   $$('[data-alert]', box).forEach(b => b.onclick = async () => {
-    try { await deleteDoc(doc(db, 'alerts', b.dataset.alert)); drawAlerts(); } catch (e) { toast(errMsg(e), 'error'); }
+    try { await deleteDoc(doc(db, b.dataset.coll, b.dataset.alert)); drawAlerts(); } catch (e) { toast(errMsg(e), 'error'); }
   });
 }
 

@@ -279,3 +279,14 @@ test('ventas por álbum y alertas: privadas', async () => {
   await assertSucceeds(getDoc(doc(as(SUPER), 'alerts/a1')));
   await assertFails(getDoc(doc(user('ana'), 'alerts/a1')));
 });
+
+test('botón de arrepentimiento: cualquiera envía, solo el superadmin lee', async () => {
+  const { serverTimestamp } = await import('firebase/firestore');
+  const ok = { name: 'Juan Pérez', email: 'juan@x.com', orderRef: 'abc', reason: 'me equivoqué', uid: '', createdAt: serverTimestamp() };
+  await assertSucceeds(setDoc(doc(as(), 'cancelRequests/c1'), ok));
+  await assertFails(setDoc(doc(as(), 'cancelRequests/c2'), { ...ok, email: 'no-es-email' }));
+  await assertFails(setDoc(doc(as(), 'cancelRequests/c3'), { ...ok, extra: 1 }));
+  await assertFails(setDoc(doc(as(), 'cancelRequests/c4'), { ...ok, uid: 'ana' }));   // no puede firmar como otro
+  await assertFails(getDoc(doc(as(), 'cancelRequests/c1')));
+  await assertSucceeds(getDoc(doc(as(SUPER), 'cancelRequests/c1')));
+});
