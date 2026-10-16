@@ -138,8 +138,12 @@ export async function subscriptionWebhook(env, preapprovalId) {
   return json({ ok: true });
 }
 
-// Cron diario: renueva los planes de las suscripciones activas.
-export async function syncAllSubscriptions(env) {
-  const subs = await adminQuery(env, 'subscriptions', { filters: [['status', '==', 'authorized']], limit: 500 });
-  for (const s of subs) await syncSubscription(env, s.id).catch(e => console.error('sub sync', s.id, e));
+// Cron cada 5 minutos: sincroniza de a pocas las suscripciones que no se revisaron en las últimas 20 horas
+// (el plan gratis de Workers limita los pedidos por ejecución; así cada suscripción se revisa una vez por día).
+const PER_RUN = 5;
+export async function syncDueSubscriptions(env) {
+  const subs = await adminQuery(env, 'subscriptions', { filters: [['status', '==', 'authorized']], limit: 1000 });
+  const due = subs.filter(s => !s.syncedAt || Date.now() - s.syncedAt.getTime() > 20 * 3600_000)
+    .sort((a, b) => (a.syncedAt?.getTime?.() || 0) - (b.syncedAt?.getTime?.() || 0)).slice(0, PER_RUN);
+  for (const s of due) await syncSubscription(env, s.id).catch(e => console.error('sub sync', s.id, e));
 }

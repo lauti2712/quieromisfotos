@@ -48,7 +48,7 @@ import { scanRequest, scanStorage } from './storage.js';
 import { runBackup, backupRequest } from './backup.js';
 import { notifyFollowersOnce, drainPushQueue } from './push.js';
 import { extensionCheckout, extensionSync } from './extensions.js';
-import { subscribe, syncRequest, cancelSubscription, syncAllSubscriptions } from './subscriptions.js';
+import { subscribe, syncRequest, cancelSubscription, syncDueSubscriptions } from './subscriptions.js';
 
 const MAX = { preview: 6e6, thumb: 1e6, original: 80e6, avatar: 3e6, logo: 2e6, cover: 6e6, portfolio: 6e6, pcover: 6e6 };
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
@@ -73,12 +73,16 @@ export default {
       return json({ error: e.message || 'Error' }, status, cors);
     }
   },
-  // Cron diario: recalcula el uso de R2.
+  // Crons: diario (uso de R2, retención, limpieza), semanal (respaldo) y cada 5 minutos (avisos y suscripciones).
   async scheduled(event, env, ctx) {
     if (event.cron === BACKUP_CRON) { ctx.waitUntil(runBackup(env)); return; }
-    if (event.cron === PUSH_CRON) { ctx.waitUntil(drainPushQueue(env)); return; }
+    // Cada 5 minutos: avisos a seguidores y suscripciones (de a pocas). Una tarea por vez para no pasar el límite de pedidos.
+    if (event.cron === PUSH_CRON) {
+      ctx.waitUntil(drainPushQueue(env).catch(e => { console.error('push', e); return 99; })
+        .then(sent => (sent > 5 ? null : syncDueSubscriptions(env))).catch(e => console.error('subs', e)));
+      return;
+    }
     ctx.waitUntil(scanStorage(env));
-    ctx.waitUntil(syncAllSubscriptions(env));
   },
 };
 

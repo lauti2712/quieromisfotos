@@ -82,10 +82,14 @@ export async function scanStorage(env) {
   retention.upcoming.sort((a, b) => a.deleteAt - b.deleteAt).splice(40);
   const warnUpd = await sendWarnings(env, warnings).catch(e => { console.error('avisos', e); return {}; });
   // Avisos a seguidores pendientes (álbumes con menos de 20 fotos o eventos publicados después de subir).
+  // De a 3 por día como máximo (cada uno son varios pedidos); los demás quedan para el día siguiente.
+  let followersSent = 0;
   for (const [i, id] of ids.entries()) {
     const set = docs[i];
+    if (followersSent >= 3) break;
     if (!set || set.followersNotifiedAt || !(set.photoCount > 0) || set.originalsDeleted) continue;
     const [eid, uid] = id.split('/');
+    followersSent++;
     await notifyFollowersOnce(env, eid, uid).catch(e => console.error('seguidores', e));
   }
 
@@ -142,6 +146,8 @@ export async function scanRequest(req, env) {
 // Envía los avisos de vencimiento y devuelve los campos a marcar en cada set (para no repetirlos).
 async function sendWarnings(env, warnings) {
   const out = {};
+  // Máximo 10 avisos por día (el aviso de vencimiento se repite 3 días seguidos, así que los que quedan salen al otro día).
+  warnings = warnings.slice(0, 10);
   if (!warnings.length) return out;
   const evs = await adminGetMany(env, [...new Set(warnings.map(w => w.id.split('/')[0]))].map(e => `events/${e}`));
   const name = Object.fromEntries(evs.filter(Boolean).map(e => [e.id, e.name || 'tu evento']));

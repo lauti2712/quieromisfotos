@@ -43,13 +43,17 @@ export async function cleanOrphans(env, { sets, ids, docs, profileObjs, coverObj
 
   // ---- perfil: avatar, logo y portfolio
   const uids = Object.keys(profileObjs);
+  // Todo el portfolio en una sola consulta (antes era una por fotógrafo: muchos pedidos por ejecución).
+  const pfAll = uids.length ? await adminQuery(env, 'portfolio', { limit: 20000 }) : [];
+  const pfBy = new Map();
+  for (const p of pfAll) (pfBy.get(p.photographerUid) || pfBy.set(p.photographerUid, []).get(p.photographerUid)).push(p);
   for (let j = 0; j < uids.length; j += 100) {
     const users = await adminGetMany(env, uids.slice(j, j + 100).map(u => `users/${u}`));
     for (const [n, user] of users.entries()) {
       if (!user) continue; // sin perfil: no se toca (por las dudas)
       const uid = uids[j + n];
       const keep = new Set([keyOf(user.avatarUrl || ''), user.watermark?.logoKey || '', keyOf(user.watermark?.logoUrl || ''), keyOf(user.site?.heroUrl || ''), keyOf(user.profileCoverUrl || '')]);
-      const pf = await adminQuery(env, 'portfolio', { filters: [['photographerUid', '==', uid]], limit: 2000 });
+      const pf = pfBy.get(uid) || [];
       for (const p of pf) [p.urlKey, p.thumbKey, p.cleanKey, keyOf(p.url || ''), keyOf(p.thumbUrl || ''), keyOf(p.cleanUrl || '')].forEach(k => k && keep.add(k));
       profileObjs[uid].forEach(o => { if (!keep.has(o.key)) add(o, o.key.includes('/pf/') ? 'Foto de portfolio borrada' : 'Imagen de perfil reemplazada'); });
     }

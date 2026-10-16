@@ -53,10 +53,11 @@ export async function notifyFollowersOnce(env, eid, uid) {
   return true;
 }
 
+// Devuelve cuántos avisos mandó (el cron usa el resto de los pedidos de la ejecución para las suscripciones).
 export async function drainPushQueue(env) {
-  if (env.FIREBASE_EMULATOR) return;
+  if (env.FIREBASE_EMULATOR) return 0;
   const [job] = await adminQuery(env, 'pushQueue', { limit: 1 });
-  if (!job) return;
+  if (!job) return 0;
   const batch = job.uids.slice(0, 25), rest = job.uids.slice(25);
   const privs = await adminGetMany(env, batch.map(u => `userPrivate/${u}`));
   const tokens = privs.flatMap(p => p?.fcmTokens || []).slice(0, SEND_PER_RUN);
@@ -71,4 +72,5 @@ export async function drainPushQueue(env) {
   }
   if (rest.length) await adminUpdate(env, `pushQueue/${job.id}`, { uids: rest });
   else await adminDelete(env, `pushQueue/${job.id}`);
+  return tokens.length;
 }
