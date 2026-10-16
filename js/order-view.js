@@ -6,6 +6,15 @@ import { cart } from './cart.js';
 import { currentUser, requireLogin } from './account.js';
 
 let unsub = null;
+
+// Celular con "Compartir archivos" (iPhone, Android): las fotos se guardan directo en la galería.
+function canShareFiles() {
+  try {
+    return matchMedia('(pointer: coarse)').matches && !!navigator.canShare
+      && navigator.canShare({ files: [new File([new Blob(['x'], { type: 'image/jpeg' })], 'x.jpg', { type: 'image/jpeg' })] });
+  } catch { return false; }
+}
+const SHARE_GROUP = 10;
 window.addEventListener('hashchange', () => { unsub?.(); unsub = null; });
 
 export async function renderOrder(app, orderId, query) {
@@ -57,7 +66,9 @@ function draw(app, o) {
       </div>
       ${o.status === 'approved' ? `
         ${expired ? '<div class="notice danger">El plazo de descarga venció.</div>' : `
-          <button class="btn primary big-cta" id="dl-all">⬇️ Descargar todas las fotos (${o.items.length})</button>
+          ${canShareFiles() ? `<button class="btn primary big-cta" id="dl-share">📲 Guardar en la galería del celular (${o.items.length})</button>
+          <div id="dl-share-steps" class="stack"></div>` : ''}
+          <button class="btn ${canShareFiles() ? '' : 'primary big-cta'}" id="dl-all">⬇️ Descargar todas las fotos (${o.items.length})</button>
           <div class="notice stack" style="margin:0">
             <span>📌 <strong>Tus fotos quedan guardadas hasta el ${esc(fmtTs(o.downloadExpiresAt))}.</strong> Podés volver a descargarlas cuando quieras desde <a href="#/cuenta">Mis compras</a> (arriba, en el ícono de tu cuenta).</span>
             <span class="small">📱 En el celular se guardan en <em>Descargas</em> / <em>Archivos</em>. Para pasarlas a la galería: abrí la foto y tocá <em>Compartir → Guardar imagen</em>.</span>
@@ -92,6 +103,37 @@ function draw(app, o) {
     try { const l = await getLinks(); fire(l.links[+b.dataset.dl].url); b.textContent = '✓ Descargada'; }
     catch (err) { toast(errMsg(err), 'error'); }
     b.disabled = false;
+  });
+  // Dos pasos: primero se bajan (puede tardar) y después un toque abre "Compartir → Guardar imágenes"
+  // (el navegador solo deja compartir como respuesta directa a un toque). De a 10 fotos para no llenar la memoria.
+  $('#dl-share')?.addEventListener('click', async e => {
+    const btn = e.target;
+    btn.disabled = true;
+    const steps = $('#dl-share-steps', app);
+    try {
+      const l = await getLinks();
+      const groups = [];
+      for (let i = 0; i < l.links.length; i += SHARE_GROUP) groups.push(l.links.slice(i, i + SHARE_GROUP));
+      steps.innerHTML = groups.map((g, k) => `<button class="btn" data-group="${k}" disabled>Preparando fotos ${k * SHARE_GROUP + 1} a ${k * SHARE_GROUP + g.length}…</button>`).join('');
+      btn.textContent = 'Tocá cada botón para guardarlas 👇';
+      for (const [k, g] of groups.entries()) {
+        const files = [];
+        for (const [j, link] of g.entries()) {
+          const res = await fetch(link.url);
+          if (!res.ok) throw new Error('No se pudo bajar una foto. Probá de nuevo.');
+          const blob = await res.blob();
+          const ext = blob.type.includes('png') ? 'png' : blob.type.includes('webp') ? 'webp' : 'jpg';
+          files.push(new File([blob], `quieromisfotos-${o.id.slice(0, 6)}-${String(k * SHARE_GROUP + j + 1).padStart(3, '0')}.${ext}`, { type: blob.type || 'image/jpeg' }));
+        }
+        const b = $(`[data-group="${k}"]`, steps);
+        b.disabled = false; b.classList.add('primary');
+        b.textContent = `📲 Guardar fotos ${k * SHARE_GROUP + 1} a ${k * SHARE_GROUP + g.length}`;
+        b.onclick = async () => {
+          try { await navigator.share({ files, title: o.eventName }); b.textContent = '✓ Listo'; b.classList.remove('primary'); }
+          catch (err) { if (err.name !== 'AbortError') toast('Tu celular no dejó guardarlas así: usá Descargar.', 'error'); }
+        };
+      }
+    } catch (err) { btn.disabled = false; btn.textContent = '📲 Reintentar'; toast(errMsg(err), 'error'); }
   });
   $('#dl-all')?.addEventListener('click', async e => {
     const btn = e.target;
