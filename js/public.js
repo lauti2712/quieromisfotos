@@ -217,7 +217,7 @@ async function renderEvent(id) {
       <h2>Fotos</h2>
       <div id="gallery"></div>
     </section>`;
-  mountGallery($('#gallery'), { ev, photographers, sets, initialUid: parseHash().query.get('f') || '', initialPhoto: parseHash().query.get('foto') || '' });
+  mountGallery($('#gallery'), { ev, photographers, sets, initialUid: parseHash().query.get('f') || '', initialPhoto: parseHash().query.get('foto') || '', initialBib: parseHash().query.get('dorsal') || '' });
   $('#ev-share').onclick = () => shareLink({ title: ev.name, text: `📸 Fotos de ${ev.name} en Quiero Mis Fotos:`, url: eventUrl(ev.id) });
   // Aviso cuando suban las fotos.
   const fb = $('#ev-follow');

@@ -10,12 +10,15 @@ import { trackPhotoView, trackCartAdd } from './stats.js';
 
 const PAGE = 60;
 
-export function mountGallery(box, { ev, photographers, sets, initialUid = '', initialPhoto = '' }) {
+export function mountGallery(box, { ev, photographers, sets, initialUid = '', initialPhoto = '', initialBib = '' }) {
   const byUid = new Map(photographers.map(p => [p.uid, p]));
   const withPhotos = photographers.filter(p => (sets.get(p.uid)?.photoCount || 0) > 0);
   const state = { uid: '', sub: '', hour: 0, fav: false, bib: '', photos: [], cursor: null, done: false, loading: false };
   // Búsqueda por dorsal: aparece si algún fotógrafo tiene fotos con dorsales leídos.
   const hasBibs = withPhotos.some(p => (sets.get(p.uid)?.bibPhotos || 0) > 0);
+  const cleanBib = v => { const n = (String(v || '').match(/\d{1,6}/) || [''])[0]; return n ? String(parseInt(n, 10)) : ''; };
+  // Link con dorsal (#/evento/{id}?dorsal=123): abre directo con la búsqueda hecha.
+  if (hasBibs && cleanBib(initialBib) && cleanBib(initialBib) !== '0') state.bib = cleanBib(initialBib);
   let hours = []; // inicio (ms) de cada hora que tiene fotos
   let hourCount = new Map();
 
@@ -36,7 +39,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
     ${expired.length ? `<div class="notice warn">${expired.length === withPhotos.length ? 'Las fotos de este evento' : `Las fotos de ${expired.map(p => esc(p.displayName)).join(', ')}`} ya no están a la venta (venció el plazo de disponibilidad).</div>` : ''}
     ${hasBibs ? `<form class="g-bib" id="g-bib" role="search">
       <label for="g-bib-in">🔢 Buscá tus fotos por número de dorsal</label>
-      <div class="row"><input id="g-bib-in" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="Ej: 1234" autocomplete="off">
+      <div class="row"><input id="g-bib-in" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="Ej: 1234" autocomplete="off" value="${esc(state.bib)}">
       <button class="btn primary">Buscar</button><button type="button" class="btn hidden" id="g-bib-x">Ver todas</button></div>
     </form>` : ''}
     <div class="g-price" id="g-price"></div>
@@ -135,7 +138,15 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
       if (!state.photos.length) $('#g-grid', box).innerHTML = state.bib
         ? `<div class="empty" style="grid-column:1/-1">No encontramos fotos con el dorsal <strong>${esc(state.bib)}</strong>.<br>Puede que el número haya quedado tapado en la foto: probá buscando por horario.</div>`
         : '<div class="empty" style="grid-column:1/-1">No hay fotos con este filtro.</div>';
-      else if (state.bib && !start) $('#g-grid', box).insertAdjacentHTML('afterbegin', `<div class="g-bib-found">${state.done ? state.photos.length : `${state.photos.length}+`} foto${state.photos.length === 1 ? '' : 's'} con el dorsal <strong>${esc(state.bib)}</strong></div>`);
+      else if (state.bib && !start) {
+        $('#g-grid', box).insertAdjacentHTML('afterbegin', `<div class="g-bib-found"><span>${state.done ? state.photos.length : `${state.photos.length}+`} foto${state.photos.length === 1 ? '' : 's'} con el dorsal <strong>${esc(state.bib)}</strong></span>
+          <button type="button" class="btn sm" id="g-bib-share">🔗 Compartir</button></div>`);
+        const bib = state.bib;
+        $('#g-bib-share', box).onclick = () => shareLink({
+          title: `Fotos del dorsal ${bib} · ${ev.name}`, text: `📸 Mirá las fotos del dorsal ${bib} en ${ev.name}:`,
+          url: `${eventUrl(ev.id)}${eventUrl(ev.id).includes('?') ? '&' : '?'}dorsal=${bib}`,
+        });
+      }
       $('#g-more', box).innerHTML = state.done ? '' : '<button class="btn">Ver más fotos</button>';
       $('#g-more button', box)?.addEventListener('click', loadMore);
     } catch (e) {
@@ -283,8 +294,8 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
   if (bibForm) {
     bibForm.onsubmit = e => {
       e.preventDefault();
-      const n = ($('#g-bib-in', box).value.match(/\d{1,6}/) || [''])[0];
-      state.bib = n ? String(parseInt(n, 10)) : '';
+      const n = cleanBib($('#g-bib-in', box).value);
+      state.bib = n === '0' ? '' : n;
       Object.assign(state, { fav: false, hour: 0 });
       $('#g-bib-in', box).blur();
       reset();

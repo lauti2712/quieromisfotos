@@ -240,6 +240,19 @@ dialog .dlg-foot { padding: 14px 18px; border-top: 1px solid var(--border); disp
 .lightbox .lb-top .spacer { flex: 1; }
 .lightbox .lb-stage { position: relative; display: flex; align-items: center; justify-content: center; min-height: 0; overflow: hidden; padding: 8px 64px; touch-action: pan-y; }
 @media (max-width: 640px) { .lightbox .lb-stage { padding: 4px 0; } }
+.lightbox .lb-stage img { transition: transform .12s ease-out; transform-origin: center; will-change: transform; }
+.lightbox.zoomed .lb-stage { touch-action: none; cursor: grab; }
+.lightbox.zoomed .lb-nav, .lightbox.zoomed .lb-hint { display: none; }
+.lightbox .lb-stage { touch-action: none; }
+.lb-hint { position: absolute; left: 50%; top: 56px; transform: translateX(-50%); z-index: 3; font-size: .78rem; color: rgba(255,255,255,.75); background: rgba(0,0,0,.5); padding: 4px 10px; border-radius: 99px; pointer-events: none; animation: lbHint 3.5s ease forwards; white-space: nowrap; }
+@keyframes lbHint { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
+@media (hover: hover) { .lb-hint { display: none; } }
+/* Celular: botón de carrito grande, al alcance del pulgar */
+@media (max-width: 640px) {
+  .lightbox .lb-bottom { flex-direction: column; align-items: stretch; gap: 8px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+  .lightbox .lb-bottom > .row { display: grid; grid-template-columns: auto auto 1fr; gap: 8px; }
+  .lightbox .lb-bottom #lb-add, .lightbox .lb-bottom button[disabled] { grid-column: 1 / -1; order: -1; padding: 14px; font-size: 1.05rem; }
+}
 .lightbox .lb-stage img { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; border-radius: 4px; user-select: none; -webkit-user-drag: none; }
 .lightbox .lb-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; border-radius: 50%; border: 0; background: rgba(255,255,255,.12); color: #fff; font-size: 22px; cursor: pointer; }
 .lightbox .lb-nav:hover { background: rgba(255,255,255,.22); }
@@ -285,11 +298,11 @@ footer.site .credit a:hover { text-decoration: underline; }
 /* ---------- cuenta del comprador ---------- */
 .avatar.xs { width: 22px; height: 22px; font-size: .7rem; }
 .acct-btn { gap: 6px; }
-.acct-btn .acct-icon { display: none; }
+.acct-btn .acct-icon, .soy-btn .acct-icon { display: none; }
 @media (max-width: 520px) {
   .hide-sm { display: none !important; }
-  .acct-btn .acct-label { display: none; }
-  .acct-btn .acct-icon { display: inline; }
+  .acct-btn .acct-label, .soy-btn .acct-label { display: none; }
+  .acct-btn .acct-icon, .soy-btn .acct-icon { display: inline; }
 }
 .order-row:hover { border-color: var(--accent); }
 footer.site .foot-links { margin-top: 8px; font-size: .85rem; }
@@ -426,7 +439,7 @@ body:has(.lightbox, .intro, dialog[open]) .wa-fab { display: none; }
 .g-bib { display: grid; gap: 6px; margin-bottom: 12px; padding: 12px; border: 2px solid var(--accent); border-radius: var(--radius); background: var(--surface); }
 .g-bib label { font-weight: 700; }
 .g-bib input { flex: 1; min-width: 0; max-width: 220px; font-size: 1.15rem; letter-spacing: .04em; }
-.g-bib-found { grid-column: 1 / -1; font-size: .95rem; padding: 2px 0 6px; }
+.g-bib-found { grid-column: 1 / -1; font-size: .95rem; padding: 2px 0 6px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .g-price-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .big-cta { width: 100%; padding: 16px; font-size: 1.1rem; }
 
@@ -604,3 +617,31 @@ footer.site .foot-links { display: flex; flex-wrap: wrap; justify-content: cente
 .foot-theme { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px; margin-top: 10px; align-items: center; }
 .foot-theme a { padding: 3px 10px; border-radius: 99px; border: 1px solid var(--border); text-decoration: none; color: var(--muted); }
 .foot-theme a.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+
+/* ---------- panel en el celular: pestañas abajo ---------- */
+.tabbar { display: none; }
+@media (max-width: 800px) {
+  body.with-tabbar { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+  body.with-tabbar .wa-fab { bottom: calc(76px + env(safe-area-inset-bottom)); }
+  .tabbar { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; position: fixed; left: 0; right: 0; bottom: 0; z-index: 70;
+    background: var(--surface); border-top: 1px solid var(--border); padding: 4px 4px calc(4px + env(safe-area-inset-bottom)); }
+  .tabbar a, .tabbar button { display: grid; justify-items: center; gap: 1px; padding: 6px 2px; border: 0; background: none; font: inherit; font-size: .72rem; font-weight: 600;
+    color: var(--muted); text-decoration: none; border-radius: 10px; cursor: pointer; }
+  .tabbar span { font-size: 1.25rem; line-height: 1.1; }
+  .tabbar .on { color: var(--accent); background: var(--accent-soft); }
+  .panel.has-tabs .sidenav { display: none; }
+  .panel.has-tabs .sidenav.open { display: grid; position: fixed; left: 8px; right: 8px; bottom: calc(70px + env(safe-area-inset-bottom)); z-index: 71; max-height: 70vh; overflow-y: auto;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 8px; box-shadow: 0 12px 40px rgba(0,0,0,.3); gap: 2px; }
+  .panel.has-tabs .sidenav.open .group { display: block; }
+  .panel.has-tabs .sidenav.open a { border: 0; background: none; padding: 12px; font-size: 1rem; }
+  .panel.has-tabs .sidenav.open a.mobile-only { display: block; }
+  .panel.has-tabs .sidenav.open a.on { background: var(--accent-soft); }
+  /* fotos del álbum: casillas grandes para el dedo */
+  .ph input[type=checkbox] { width: 26px; height: 26px; }
+}
+.up-fab { display: none; position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(76px + env(safe-area-inset-bottom)); z-index: 65;
+  align-items: center; gap: 8px; padding: 12px 22px; border-radius: 99px; border: 0; background: var(--accent); color: var(--accent-ink); font: inherit; font-weight: 700;
+  box-shadow: 0 8px 24px rgba(0,0,0,.3); cursor: pointer; }
+@media (max-width: 800px) { .up-fab { display: flex; } }
+body:not(.with-tabbar) .up-fab { bottom: calc(16px + env(safe-area-inset-bottom)); }
+.install-card .row { gap: 8px; }

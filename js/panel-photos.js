@@ -62,7 +62,14 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
       </div>
       <div id="ph-grid" class="photo-grid"></div>
       <div class="row" style="justify-content:center"><button class="btn hidden" id="ph-more">Cargar más</button></div>
-    </div>`;
+    </div>
+    <button type="button" class="up-fab hidden" id="up-fab">📤 Subir fotos</button>`;
+  // Celular: botón fijo para subir mientras la zona de subida no está a la vista.
+  $('#up-fab', box).onclick = () => $('#up-files').click();
+  new IntersectionObserver(([en], obs) => {
+    if (!document.body.contains(box)) return obs.disconnect();
+    $('#up-fab', box).classList.toggle('hidden', en.isIntersecting);
+  }).observe($('#dz', box));
 
   // ------------------------------------------------ listado
   let photos = [];

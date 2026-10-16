@@ -34,6 +34,33 @@ const myRules = () => rulesFor(S.profile, S.settings);
 
 initRefresh({ busy: uploadsInProgress });
 initTheme();
+
+// Instalar el panel como app (Android/Chrome avisa con beforeinstallprompt; en iPhone se explica a mano).
+let installEvt = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; document.querySelector('#install-card')?.classList.remove('hidden'); });
+function installCardHtml() {
+  let dismissed = false;
+  try { dismissed = localStorage.getItem('qmf-install-off') === '1'; } catch { /* nada */ }
+  if (isStandalone() || dismissed || !matchMedia('(pointer: coarse)').matches) return '';
+  const ios = isIos();
+  return `<div class="card stack install-card ${ios || installEvt ? '' : 'hidden'}" id="install-card">
+    <h2 style="margin:0">📲 Tené el panel como una app</h2>
+    <p class="muted small" style="margin:0">${ios
+      ? 'En Safari tocá <strong>Compartir</strong> (el cuadrado con la flecha) y después <strong>Agregar a inicio</strong>. Se abre a pantalla completa, como una app.'
+      : 'Queda un ícono en tu pantalla de inicio y se abre a pantalla completa, como una app.'}</p>
+    <div class="row">${ios ? '' : '<button class="btn primary" id="install-go">Instalar</button>'}<button class="btn" id="install-off">Ahora no</button></div>
+  </div>`;
+}
+function bindInstallCard() {
+  $('#install-go')?.addEventListener('click', async () => {
+    if (!installEvt) return;
+    installEvt.prompt();
+    await installEvt.userChoice.catch(() => null);
+    installEvt = null;
+    $('#install-card')?.remove();
+  });
+  $('#install-off')?.addEventListener('click', () => { try { localStorage.setItem('qmf-install-off', '1'); } catch { /* nada */ } $('#install-card')?.remove(); });
+}
 listenForeground();
 
 // ================================================================ auth
@@ -251,7 +278,9 @@ function renderShell() {
     root.innerHTML = `<div class="container"><div class="auth-box card"><h1>Cuenta suspendida</h1><p class="muted">Tu cuenta de fotógrafo está suspendida. Si creés que es un error, contactá al administrador.</p></div></div>`;
     return;
   }
-  root.innerHTML = `<div class="panel"><nav class="sidenav" id="nav"></nav><main id="view"></main></div>`;
+  root.innerHTML = `<div class="panel ${S.isSuper ? '' : 'has-tabs'}"><nav class="sidenav" id="nav"></nav><main id="view"></main></div>
+    ${S.isSuper ? '' : '<nav class="tabbar" id="tabbar" aria-label="Secciones"></nav>'}`;
+  document.body.classList.toggle('with-tabbar', !S.isSuper);
   window.onhashchange = route;
   route();
 }
@@ -267,6 +296,7 @@ function route() {
   nav.innerHTML = navItems().map(i => i.group
     ? `<div class="group">${i.group}</div>`
     : (i.need && !isApproved()) ? '' : `<a href="${i.href}" class="${!i.external && ('#/' + key).startsWith(i.href) ? 'on' : ''} ${i.mobileOnly ? 'mobile-only' : ''}" ${i.blank ? 'target="_blank"' : ''}>${i.label}</a>`).join('');
+  drawTabbar(key);
   const view = $('#view');
   view.innerHTML = '<div class="spinner"></div>';
   const [a, b] = parts;
@@ -291,6 +321,32 @@ function route() {
   if (a === 'portfolio' && !S.isSuper) return run(() => viewPortfolio($('#view'), { uid: S.user.uid, profile: S.profile, settings: S.settings }));
   if (S.isSuper) return run(viewAdminPhotographers);
   return run(viewHome);
+}
+
+// Celular: barra de pestañas abajo (lo más usado) + "Más" abre el resto del menú.
+function drawTabbar(key) {
+  const bar = $('#tabbar');
+  if (!bar) return;
+  const nav = $('#nav');
+  nav.classList.remove('open');
+  const tabs = [
+    { href: '#/inicio', icon: '🏠', label: 'Inicio' },
+    ...(isApproved() ? [{ href: '#/eventos', icon: '🏟️', label: 'Eventos', also: '#/evento/' }, { href: '#/ventas', icon: '💰', label: 'Ventas' }] : []),
+    { href: '#/perfil', icon: '👤', label: 'Perfil' },
+  ];
+  const cur = '#/' + key;
+  const inTabs = tabs.some(t => cur.startsWith(t.href) || (t.also && cur.startsWith(t.also)));
+  bar.innerHTML = tabs.map(t => `<a href="${t.href}" class="${cur.startsWith(t.href) || (t.also && cur.startsWith(t.also)) ? 'on' : ''}"><span>${t.icon}</span>${t.label}</a>`).join('')
+    + `<button type="button" id="tab-more" class="${inTabs ? '' : 'on'}" aria-expanded="false"><span>☰</span>Más</button>`;
+  $('#tab-more').onclick = e => {
+    e.stopPropagation();
+    const open = nav.classList.toggle('open');
+    $('#tab-more').setAttribute('aria-expanded', open);
+  };
+  if (!drawTabbar.bound) {
+    drawTabbar.bound = true;
+    document.addEventListener('click', e => { if (!e.target.closest('#nav, #tab-more')) $('#nav')?.classList.remove('open'); });
+  }
 }
 
 // ================================================================ fotógrafo: inicio
@@ -324,6 +380,7 @@ async function viewHome() {
   $('#view').innerHTML = `
     <h1>Hola, ${esc(p.displayName)}</h1>
     <div id="home-alerts"></div>
+    ${installCardHtml()}
     ${p.status === 'pending' ? `<div class="notice warn"><strong>Tu cuenta está pendiente de aprobación.</strong><br>Mientras tanto podés completar tu perfil, subir tu foto y tu portfolio, y configurar precios y marca de agua.</div>` : ''}
     ${done < steps.length ? `<div class="card stack">
       <div class="row" style="justify-content:space-between"><h2 style="margin:0">🚀 Primeros pasos</h2><span class="muted small">${done} de ${steps.length}</span></div>
@@ -340,6 +397,7 @@ async function viewHome() {
 
   // ---- álbumes por vencer
   const rows = evs.map((ev, i) => ({ ev, r: retentionState(sets[i]) })).filter(({ r }) => (r.k === 'active' && r.days <= 3) || r.k === 'grace');
+  bindInstallCard();
   if (rows.length) $('#home-alerts').innerHTML = `<div class="notice ${rows.some(x => x.r.k === 'grace') ? 'danger' : 'warn'} stack">
     <strong>⏳ Álbumes por vencer</strong>
     ${rows.map(({ ev, r }) => `<div class="row" style="justify-content:space-between">
@@ -1330,7 +1388,8 @@ function renderSetEditor(ev, set, reload) {
       <label class="check"><input type="checkbox" id="st-hours" ${set.showHours !== false ? 'checked' : ''}> Mostrar el filtro por horario</label>
       <p class="muted small" style="margin:0">Botones por hora (ej: “15:00 a 16:00”) según la hora en que sacaste cada foto, para que cada uno encuentre la suya más rápido. Desactivalo si la hora de tu cámara no está bien configurada.</p>
       ${S.settings.bibsEnabled === false ? '' : `<label class="check"><input type="checkbox" id="st-bibs" ${bibsOn(set, ev, S.tax) ? 'checked' : ''}> 🔢 Leer los dorsales automáticamente al subir</label>
-      <p class="muted small" style="margin:0">Para carreras (running, ciclismo, triatlón…): cada participante busca su número y ve solo sus fotos. Se aplica a las fotos que subas desde ahora; si alguno no se leyó bien, lo corregís con “🔢 Dorsales” en tus fotos.</p>`}
+      <p class="muted small" style="margin:0">Para carreras (running, ciclismo, triatlón…): cada participante busca su número y ve solo sus fotos. Se aplica a las fotos que subas desde ahora; si alguno no se leyó bien, lo corregís con “🔢 Dorsales” en tus fotos.</p>
+      <p class="muted small" style="margin:0">🔗 Link directo para cada corredor (cambiá el número al final): <code style="word-break:break-all">${esc(`${location.origin}/e/${ev.id}/?s=1&dorsal=123`)}</code></p>`}
       <div class="row end"><button class="btn primary" type="submit">Guardar set</button></div>
     </form>
     <div id="set-photos"></div>`;
