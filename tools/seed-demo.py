@@ -168,14 +168,19 @@ RUN = [  # (sub-álbum, ancho, alto, dorsales)
     ('rec', 1600, 900, ['537', '278']), ('rec', 1600, 900, ['2', '294', '289']), ('lle', 1600, 1067, ['56224', '34101']),
     ('lle', 1600, 1067, ['62956', '64938', '15249']), ('lle', 1600, 1067, ['3028']), ('lle', 1600, 1067, ['692', '684', '654', '66']),
 ]
+start = datetime.datetime(2026, 10, 11, 10, 0, tzinfo=datetime.timezone.utc)  # 7:00 en Argentina
+hour_counts = {}
+for i in range(len(RUN)):
+    ms = int((start + datetime.timedelta(minutes=6 * i)).timestamp() * 1000)
+    k = str(ms // 3600000 * 3600000)
+    hour_counts[k] = hour_counts.get(k, 0) + 1
 subs = [{'id': 'lar', 'name': 'Largada', 'order': 0}, {'id': 'rec', 'name': 'Recorrido', 'order': 1}, {'id': 'lle', 'name': 'Llegada', 'order': 2}]
 put(f'events/{EID}/sets/{UID}', {
     'price': 3000, 'packs': [{'qty': 3, 'price': 7500}, {'qty': 5, 'price': 11000}], 'feeMode': 'buyer',
     'subalbums': subs, 'photoCount': len(RUN), 'bytesOriginal': len(RUN) * 8_000_000, 'showHours': True,
-    'detectBibs': True, 'bibScans': len(RUN), 'bibPhotos': sum(1 for r in RUN if r[3]),
+    'detectBibs': True, 'bibScans': len(RUN), 'hourCounts': hour_counts, 'bibPhotos': sum(1 for r in RUN if r[3]),
     'expiresAt': datetime.datetime(2099, 1, 1, tzinfo=datetime.timezone.utc), 'demo': True, 'createdAt': NOW,
 })
-start = datetime.datetime(2026, 10, 11, 10, 0, tzinfo=datetime.timezone.utc)  # 7:00 en Argentina
 for i, (sub, w, h, bibs) in enumerate(RUN):
     put(f'photos/demo-{i:02d}', {
         'eventId': EID, 'photographerUid': UID, 'subalbumId': sub,

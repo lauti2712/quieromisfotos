@@ -219,8 +219,18 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
   }, { rootMargin: '600px' });
   io.observe($('#g-sentinel', box));
 
-  // Rango horario del evento: primera y última foto visibles (2 lecturas). Máximo 48 chips.
-  (async () => {
+  // Horario: si todos los álbumes tienen el conteo por hora (lo lleva el Worker al subir), no hace falta consultar nada.
+  const counted = withPhotos.every(p => sets.get(p.uid)?.hourCounts);
+  if (counted) {
+    const sum = new Map();
+    for (const p of withPhotos) {
+      for (const [h, n] of Object.entries(sets.get(p.uid).hourCounts || {})) if (n > 0) sum.set(Number(h), (sum.get(Number(h)) || 0) + n);
+    }
+    hours = [...sum.keys()].sort((a, b) => a - b).slice(0, 48);
+    hourCount = sum;
+  }
+  // Álbumes viejos sin conteo: primera y última foto visibles (2 lecturas) y un conteo por hora. Máximo 48 chips.
+  if (!counted) (async () => {
     const base = [where('eventId', '==', ev.id), where('hidden', '==', false)];
     const [a, b] = await Promise.all([
       getDocs(query(collection(db, 'photos'), ...base, orderBy('takenAt'), limit(1))),
