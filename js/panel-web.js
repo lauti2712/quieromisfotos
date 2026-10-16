@@ -60,6 +60,7 @@ export async function viewWeb(view, { uid, profile, settings }) {
     ${plan !== 'free' ? `<p class="muted small">${profile.courtesy ? '🎁 Tenés este plan de cortesía, sin costo y sin vencimiento' : `${profile.trial ? '🎁 Estás usando la prueba gratis, hasta' : 'Tu plan está activo hasta'} el ${esc(fmtTs(profile.proUntil))}`}${subActive ? ` y se renueva solo ${sub.period === 'year' ? 'cada año' : 'cada mes'} con Mercado Pago` : profile.trial ? '. Suscribite antes para no perder tu web' : ''}.
       ${subActive ? '<button class="btn sm ghost" id="sub-cancel">Cancelar suscripción</button>' : ''}</p>` : ''}
     ${sub?.status === 'pending' ? `<div class="notice">Tu suscripción al plan <strong>${esc(PLANS[sub.plan]?.label)}</strong> está esperando la confirmación de Mercado Pago.</div>` : ''}
+    ${sub?.pending?.plan ? `<div class="notice">Tu cambio al plan <strong>${esc(PLANS[sub.pending.plan]?.label)}</strong> está esperando la confirmación de Mercado Pago. Mientras tanto sigue tu plan actual; si no lo confirmás en 3 días, se descarta.</div>` : ''}
     ${pending && pending.plan !== plan && !sub ? `<div class="notice">Pediste el plan <strong>${esc(PLANS[pending.plan]?.label)}</strong>. Te vamos a contactar para activarlo. <button class="btn sm ghost" id="req-cancel">Cancelar pedido</button></div>` : ''}
     <div id="web-config"></div>`;
 

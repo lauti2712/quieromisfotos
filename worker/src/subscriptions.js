@@ -48,31 +48,56 @@ export async function subscribe(req, env) {
     }),
   });
   const prev = await adminGet(env, `subscriptions/${claims.sub}`);
-  await adminSet(env, `subscriptions/${claims.sub}`, {
-    plan, period, amount, firstAmount: first, needsAdjust: first !== amount, payerEmail: email, preapprovalId: pre.id, status: pre.status || 'pending', createdAt: new Date(),
-    // La anterior se cancela recién cuando la nueva queda autorizada (cambio de plan sin cortar el servicio).
-    ...(prev?.preapprovalId && prev.status === 'authorized' ? { previousPreapprovalId: prev.preapprovalId } : {}),
-  });
+  const attempt = { plan, period, amount, firstAmount: first, needsAdjust: first !== amount, payerEmail: email, preapprovalId: pre.id, createdAt: new Date() };
+  if (prev?.preapprovalId && prev.status === 'authorized') {
+    // Cambio de plan: la activa no se toca hasta que la nueva quede autorizada (si la abandona, sigue la de antes).
+    if (prev.pending?.preapprovalId) await cancelPreapproval(env, prev.pending.preapprovalId);
+    await adminUpdate(env, `subscriptions/${claims.sub}`, { pending: attempt });
+  } else {
+    if (prev?.preapprovalId && prev.status === 'pending') await cancelPreapproval(env, prev.preapprovalId);
+    await adminSet(env, `subscriptions/${claims.sub}`, { ...attempt, status: pre.status || 'pending' });
+  }
   return json({ initPoint: pre.init_point });
 }
 
 // Lee la suscripción en MP y actualiza el plan del usuario.
+const cancelPreapproval = (env, id) => mpFetch(env.MP_ACCESS_TOKEN, `/preapproval/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify({ status: 'cancelled' }) })
+  .catch(e => console.error('cancelar suscripción', id, e));
+const PENDING_TTL = 3 * DAY; // un cambio de plan sin confirmar se descarta a los 3 días
+
 export async function syncSubscription(env, uid) {
-  const sub = await adminGet(env, `subscriptions/${uid}`);
+  let sub = await adminGet(env, `subscriptions/${uid}`);
   if (!sub?.preapprovalId) return null;
+  // Cambio de plan en curso: si la nueva quedó autorizada pasa a ser la activa y se cancela la anterior.
+  if (sub.pending?.preapprovalId) {
+    const np = await mpFetch(env.MP_ACCESS_TOKEN, `/preapproval/${encodeURIComponent(sub.pending.preapprovalId)}`).catch(() => null);
+    const age = Date.now() - (sub.pending.createdAt?.getTime?.() || 0);
+    if (np?.status === 'authorized') {
+      await cancelPreapproval(env, sub.preapprovalId);
+      const next = { ...sub.pending, status: 'authorized', pending: null, lastPaidAt: null, nextPaymentDate: null };
+      await adminSet(env, `subscriptions/${uid}`, next);
+      sub = { ...next, id: uid };
+    } else if (np && (['cancelled', 'paused'].includes(np.status) || age > PENDING_TTL)) {
+      if (np.status === 'pending') await cancelPreapproval(env, sub.pending.preapprovalId);
+      await adminUpdate(env, `subscriptions/${uid}`, { pending: null });
+      sub.pending = null;
+    }
+  }
   const pre = await mpFetch(env.MP_ACCESS_TOKEN, `/preapproval/${encodeURIComponent(sub.preapprovalId)}`);
   const upd = { status: pre.status, nextPaymentDate: pre.next_payment_date ? new Date(pre.next_payment_date) : null, syncedAt: new Date() };
   const last = pre.summarized?.last_charged_date ? new Date(pre.summarized.last_charged_date).getTime() : 0;
   if (pre.status === 'authorized') {
     const user = await adminGet(env, `users/${uid}`);
     const current = user?.proUntil?.getTime?.() || 0;
-    // Cubierto hasta un mes después del último cobro (o unos días si todavía no se debitó el primero).
-    const paidUntil = last ? last + (sub.period === 'year' ? 366 : 31) * DAY + GRACE : Date.now() + GRACE;
+    // Cubierto hasta un período después del último cobro. Si todavía no se cobró nunca, unos días desde el alta
+    // (una sola vez: si el primer cobro no entra, el plan vence y no se renueva solo).
+    const startedAt = sub.createdAt?.getTime?.() || Date.now();
+    const paidUntil = last ? last + (sub.period === 'year' ? 366 : 31) * DAY + GRACE : startedAt + GRACE;
     // Al pasar de la prueba gratis a un plan pago, se respeta lo que quedaba de prueba.
     const until = user?.plan === sub.plan || user?.trial ? Math.max(current, paidUntil) : paidUntil;
-    if (user && (user.plan !== sub.plan || until !== current || user.trial)) await adminUpdate(env, `users/${uid}`, { plan: sub.plan, proUntil: new Date(until), trial: false });
+    if (user && !user.courtesy && (user.plan !== sub.plan || until !== current || user.trial)) await adminUpdate(env, `users/${uid}`, { plan: sub.plan, proUntil: new Date(until), trial: false });
     if (sub.previousPreapprovalId && sub.previousPreapprovalId !== sub.preapprovalId) {
-      await mpFetch(env.MP_ACCESS_TOKEN, `/preapproval/${encodeURIComponent(sub.previousPreapprovalId)}`, { method: 'PUT', body: JSON.stringify({ status: 'cancelled' }) }).catch(e => console.error('cancel prev', e));
+      await cancelPreapproval(env, sub.previousPreapprovalId);
       upd.previousPreapprovalId = null;
     }
     if (last) upd.lastPaidAt = new Date(last);
