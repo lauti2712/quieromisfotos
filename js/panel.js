@@ -1236,6 +1236,8 @@ async function viewEvent(id) {
       }).join('') : '<p class="muted">Todavía no se sumó ningún fotógrafo.</p>'}</div>`;
     $('#ev-danger').innerHTML = `<button class="btn danger" id="ev-del">Eliminar evento</button>`;
     $('#ev-del').onclick = async () => {
+      // Con ventas no se borra: los compradores tienen que poder descargar (la limpieza borraría los originales).
+      if (setsSnap.docs.some(d => (d.data().soldOrders || 0) > 0)) return toast('Este evento tiene ventas: no se puede eliminar. Pasalo a borrador para ocultarlo.', 'error');
       if (!confirm(`¿Eliminar "${ev.name}"? Se borran también los sets de los fotógrafos.`)) return;
       try {
         const b = writeBatch(db);
