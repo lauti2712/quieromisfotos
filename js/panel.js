@@ -1420,7 +1420,7 @@ async function viewAdminPhotographers() {
         <strong>${esc(u.displayName)}</strong> <span class="muted small">/${esc(u.slug)}</span><br>
         <span class="muted small">${esc(privs[i].email || '')}${u.zone ? ' · ' + esc(u.zone) : ''} · alta ${esc(fmtTs(u.createdAt))}</span><br>
         ${u.mpConnected ? '<span class="pill ok">MP vinculado</span>' : '<span class="pill">MP sin vincular</span>'}
-        ${planOf(u) !== 'free' ? `<span class="pill accent">⭐ ${esc(PLANS[planOf(u)].label)} hasta ${esc(fmtTs(u.proUntil))}</span>` : '<span class="pill">Gratis</span>'}
+        ${planOf(u) !== 'free' ? `<span class="pill accent">⭐ ${esc(PLANS[planOf(u)].label)} ${u.courtesy ? '· cortesía, sin vencimiento' : `hasta ${esc(fmtTs(u.proUntil))}`}</span>` : '<span class="pill">Gratis</span>'}
         ${reqs[i] && reqs[i].plan !== planOf(u) ? `<span class="pill warn">Pidió: ${esc(PLANS[reqs[i].plan]?.label || reqs[i].plan)}</span>` : ''}
         ${u.site?.requestedDomain && !u.domainActive ? `<span class="pill warn">Dominio pedido: ${esc(u.site.requestedDomain)}</span>` : ''}
         ${u.domainActive ? `<span class="pill ok">🌐 ${esc(u.siteDomain)}</span>` : ''}
@@ -1431,7 +1431,8 @@ async function viewAdminPhotographers() {
         ${u.status !== 'suspended' ? `<button class="btn sm danger" data-st="suspended" data-uid="${u.uid}">Suspender</button>` : ''}
         ${u.status === 'suspended' ? `<button class="btn sm" data-st="pending" data-uid="${u.uid}">Volver a pendiente</button>` : ''}
         ${u.status === 'approved' ? `<select data-plan-sel="${u.uid}" style="width:auto">${Object.entries(PLANS).filter(([k]) => k !== 'free').map(([k, p]) => `<option value="${k}" ${(reqs[i]?.plan || planOf(u)) === k ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}</select>
-          <button class="btn sm" data-pro="${u.uid}">+30 días</button>` : ''}
+          <button class="btn sm" data-pro="${u.uid}">+30 días</button>
+          <button class="btn sm" data-courtesy="${u.uid}" title="Plan sin costo y sin vencimiento, hasta que lo quites">🎁 Cortesía</button>` : ''}
         ${isPro(u) ? `<button class="btn sm ghost" data-unpro="${u.uid}">Quitar plan</button>` : ''}
         ${planOf(u) === 'webdomain' && u.site?.requestedDomain && !u.domainActive ? `<button class="btn sm ok" data-dom="${u.uid}">Activar dominio</button>` : ''}
         ${planOf(u) !== 'free' && PLANS[planOf(u)].web ? `<a class="btn sm" target="_blank" href="${esc(siteUrlOf(u))}">Web</a>` : ''}
@@ -1442,15 +1443,27 @@ async function viewAdminPhotographers() {
     const plan = $(`[data-plan-sel="${u.uid}"]`).value;
     const from = isPro(u) ? u.proUntil.toMillis() : Date.now();
     try {
-      await updateDoc(doc(db, 'users', u.uid), { plan, proUntil: Timestamp.fromMillis(from + 30 * 86400000) });
+      await updateDoc(doc(db, 'users', u.uid), { plan, proUntil: Timestamp.fromMillis(from + 30 * 86400000), courtesy: false });
       await deleteDoc(doc(db, 'planRequests', u.uid)).catch(() => {});
       toast(`Plan ${PLANS[plan].label} activo por 30 días más`);
       viewAdminPhotographers();
     } catch (e) { toast(errMsg(e), 'error'); }
   });
+  // Cortesía: el plan elegido, sin costo y sin vencimiento (ej. familia, socios, prensa).
+  $$('[data-courtesy]').forEach(b => b.onclick = async () => {
+    const u = users.find(x => x.uid === b.dataset.courtesy);
+    const plan = $(`[data-plan-sel="${u.uid}"]`).value;
+    if (!confirm(`¿Dar a ${u.displayName} el plan ${PLANS[plan].label} de cortesía, sin costo y sin vencimiento?`)) return;
+    try {
+      await updateDoc(doc(db, 'users', u.uid), { plan, proUntil: Timestamp.fromDate(new Date('2099-12-31T00:00:00Z')), courtesy: true, trial: false });
+      await deleteDoc(doc(db, 'planRequests', u.uid)).catch(() => {});
+      toast(`${u.displayName}: plan ${PLANS[plan].label} de cortesía`);
+      viewAdminPhotographers();
+    } catch (e) { toast(errMsg(e), 'error'); }
+  });
   $$('[data-unpro]').forEach(b => b.onclick = async () => {
     if (!confirm('¿Quitar el plan? Las fotos de portfolio que superen el límite gratis se ocultan (no se borran) y su web deja de estar disponible.')) return;
-    try { await updateDoc(doc(db, 'users', b.dataset.unpro), { plan: 'free', proUntil: null }); viewAdminPhotographers(); }
+    try { await updateDoc(doc(db, 'users', b.dataset.unpro), { plan: 'free', proUntil: null, courtesy: false }); viewAdminPhotographers(); }
     catch (e) { toast(errMsg(e), 'error'); }
   });
   $$('[data-dom]').forEach(b => b.onclick = async () => {
