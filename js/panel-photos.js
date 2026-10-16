@@ -6,6 +6,7 @@ import { $, $$, esc, toast, errMsg, fmtBytes, setBytes } from './util.js';
 import { createUploader, fileKey } from './uploader.js';
 import { uploadSession, apiDelete, loadLogoBitmap } from './api.js';
 import { DEFAULT_WATERMARK, wantsLogo } from './watermark.js';
+import { rulesFor, albumPhotoLimit } from './data.js';
 
 const PAGE = 120;
 let activeUploader = null;
@@ -192,7 +193,7 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings }) {
   function startExpiry() {
     if (expiryStarted) return;
     expiryStarted = true;
-    const expiresAt = Timestamp.fromMillis(Date.now() + (settings.retentionDays || 14) * 86400000);
+    const expiresAt = Timestamp.fromMillis(Date.now() + rulesFor(profile, settings).days * 86400000);
     updateDoc(doc(db, 'events', ev.id, 'sets', uid), { expiresAt })
       .then(() => { set.expiresAt = expiresAt; })
       .catch(e => { expiryStarted = false; console.warn('expiresAt', e); });
@@ -233,8 +234,19 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings }) {
         uploadedKeys = new Set(snap.docs.map(d => `${d.data().fileName}|${d.data().fileBytes || d.data().bytes}`));
       }
     } catch (e) { console.warn('duplicados', e); }
-    const fresh = uploadedKeys ? files.filter(f => !uploadedKeys.has(fileKey(f))) : files;
-    const skipped = files.length - fresh.length + up.add(fresh, $('#up-sub').value);
+    let fresh = uploadedKeys ? files.filter(f => !uploadedKeys.has(fileKey(f))) : files;
+    const dups = files.length - fresh.length; // ya subidas antes
+    // Tope de fotos del álbum (planes nuevos): se suben solo las que entran.
+    const max = albumPhotoLimit(set, settings, profile);
+    if (max) {
+      const room = Math.max(0, max - (set.photoCount || 0) - up.summary().active);
+      if (fresh.length > room) {
+        toast(room ? `Tu álbum admite ${room} foto${room === 1 ? '' : 's'} más (tope ${max}). Se suben las primeras ${room}.` : `El álbum llegó a su tope de ${max} fotos.`, 'error');
+        fresh = fresh.slice(0, room);
+        if (!room) { window.onqmfAlbumFull?.(); return; }
+      }
+    }
+    const skipped = dups + up.add(fresh, $('#up-sub').value);
     fresh.forEach(f => uploadedKeys?.add(fileKey(f)));
     if (skipped) toast(`${skipped} foto${skipped > 1 ? 's' : ''} ya estaba${skipped > 1 ? 'n' : ''} subida${skipped > 1 ? 's' : ''}: no se repite${skipped > 1 ? 'n' : ''}.`);
   };

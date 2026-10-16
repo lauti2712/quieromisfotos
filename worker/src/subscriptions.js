@@ -1,50 +1,60 @@
-// Suscripciones mensuales a los planes (Pro / Web / Web + Dominio) con Mercado Pago (preapproval), cobradas
+// Suscripciones a los planes (Lite / Profesional / Premium), mensuales o anuales, con Mercado Pago (preapproval), cobradas
 // a la cuenta de la plataforma (MP_ACCESS_TOKEN). Cada cobro aprobado extiende users.proUntil un mes.
 // Se sincroniza al volver de MP, por webhook (si está configurado en la app de MP) y todos los días por cron.
 import { adminGet, adminSet, adminUpdate, adminQuery } from './admin.js';
 import { requireUser } from './firebase.js';
 import { mpFetch, panelUrl } from './mp.js';
 import { json, httpError } from './http.js';
+import { planSpec } from '../../js/plans-core.js';
 
 // 'pro' (Portfolio Pro) solo por compatibilidad: el panel ya no lo ofrece.
-// firstKey: precio del primer mes (ej. Profesional + Dominio cobra más el primero para cubrir el dominio).
-const PLANS = { pro: { label: 'Portfolio Pro', priceKey: 'proPrice' }, lite: { label: 'Profesional Lite', priceKey: 'litePrice' }, web: { label: 'Profesional', priceKey: 'webPrice' }, webdomain: { label: 'Profesional + Dominio', priceKey: 'webDomainPrice', firstKey: 'webDomainFirstPrice' } };
+// 'pro' (Portfolio Pro) queda por compatibilidad. Premium cobra más el primer pago para cubrir el registro del dominio.
+const PLANS = { pro: { label: 'Portfolio Pro', priceKey: 'proPrice' }, lite: { label: 'Profesional Lite', priceKey: 'litePrice' },
+  web: { label: 'Profesional', priceKey: 'webPrice' }, webdomain: { label: 'Profesional Premium', priceKey: 'webDomainPrice', firstKey: 'webDomainFirstPrice' } };
 // Precios por defecto (iguales a planSpec de js/data.js) si todavía no se guardaron en Plataforma.
-const DEFAULT_PRICE = { lite: 5000, web: 9000, webdomain: 12000 };
+const DEFAULT_PRICE = { lite: 4900, web: 9900, webdomain: 12900 };
 const DAY = 86400_000;
 const GRACE = 3 * DAY; // margen por si el débito del mes se demora
 
 // POST /plans/subscribe  (Bearer fotógrafo) {plan, payerEmail} -> { initPoint }
 export async function subscribe(req, env) {
   const claims = await requireUser(req, env);
-  const { plan, payerEmail } = await req.json().catch(() => ({}));
+  const { plan, payerEmail, period = 'month' } = await req.json().catch(() => ({}));
   if (!PLANS[plan]) throw httpError(400, 'Plan inválido');
+  if (!['month', 'year'].includes(period)) throw httpError(400, 'Período inválido');
   const email = String(payerEmail || claims.email || '').trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw httpError(400, 'Ingresá el email de tu cuenta de Mercado Pago');
   const [user, settings] = await Promise.all([adminGet(env, `users/${claims.sub}`), adminGet(env, 'settings/platform')]);
   if (!user || user.role !== 'photographer') throw httpError(403, 'Solo fotógrafos');
-  const amount = Number(settings?.[PLANS[plan].priceKey]) || DEFAULT_PRICE[plan] || 0;
+  const v2 = !!settings?.plansV2;
+  const spec = planSpec(plan, settings || {});
+  const yearly = period === 'year';
+  if (yearly && !(v2 && spec.year > 0)) throw httpError(400, 'Este plan no tiene abono anual');
+  // Abono del período (con planes nuevos sale de la tabla de Plataforma).
+  const amount = yearly ? spec.year : v2 ? spec.price : Number(settings?.[PLANS[plan].priceKey]) || DEFAULT_PRICE[plan] || 0;
   if (!(amount > 0)) throw httpError(409, 'Precio del plan no configurado');
-  // MP no admite un primer mes distinto: la suscripción arranca con el precio del primer mes y, cuando se cobra,
-  // syncSubscription la baja al precio mensual.
-  const first = Math.max(amount, Number(settings?.[PLANS[plan].firstKey]) || 0);
+  // Premium: el primer cobro suma el registro del dominio (primer mes − mensual). MP no admite un primer cobro distinto:
+  // la suscripción arranca con ese monto y, cuando se cobra, syncSubscription la baja al abono normal.
+  const firstMonth = v2 ? (spec.first || 0) : 0; // sin planes nuevos no hay primer mes distinto (las tarjetas no lo muestran)
+  const domainExtra = PLANS[plan].firstKey ? Math.max(0, firstMonth - (v2 ? spec.price : amount)) : 0;
+  const first = amount + domainExtra;
 
   const fromStaging = req.headers.get('Origin') === 'https://prueba.quieromisfotos.com.ar';
   const back = `${fromStaging ? 'https://prueba.quieromisfotos.com.ar/panel.html' : panelUrl(env)}#/web?sub=1`;
   const pre = await mpFetch(env.MP_ACCESS_TOKEN, '/preapproval', {
     method: 'POST',
     body: JSON.stringify({
-      reason: `Quiero Mis Fotos — Plan ${PLANS[plan].label}`,
+      reason: `Quiero Mis Fotos — Plan ${PLANS[plan].label}${yearly ? ' (anual)' : ''}`,
       external_reference: `sub_${claims.sub}_${plan}`,
       payer_email: email,
-      auto_recurring: { frequency: 1, frequency_type: 'months', transaction_amount: first, currency_id: 'ARS' },
+      auto_recurring: { frequency: yearly ? 12 : 1, frequency_type: 'months', transaction_amount: first, currency_id: 'ARS' },
       back_url: back,
       status: 'pending',
     }),
   });
   const prev = await adminGet(env, `subscriptions/${claims.sub}`);
   await adminSet(env, `subscriptions/${claims.sub}`, {
-    plan, amount, firstAmount: first, needsAdjust: first !== amount, payerEmail: email, preapprovalId: pre.id, status: pre.status || 'pending', createdAt: new Date(),
+    plan, period, amount, firstAmount: first, needsAdjust: first !== amount, payerEmail: email, preapprovalId: pre.id, status: pre.status || 'pending', createdAt: new Date(),
     // La anterior se cancela recién cuando la nueva queda autorizada (cambio de plan sin cortar el servicio).
     ...(prev?.preapprovalId && prev.status === 'authorized' ? { previousPreapprovalId: prev.preapprovalId } : {}),
   });
@@ -62,9 +72,10 @@ export async function syncSubscription(env, uid) {
     const user = await adminGet(env, `users/${uid}`);
     const current = user?.proUntil?.getTime?.() || 0;
     // Cubierto hasta un mes después del último cobro (o unos días si todavía no se debitó el primero).
-    const paidUntil = last ? last + 31 * DAY + GRACE : Date.now() + GRACE;
-    const until = user?.plan === sub.plan ? Math.max(current, paidUntil) : paidUntil;
-    if (user && (user.plan !== sub.plan || until !== current)) await adminUpdate(env, `users/${uid}`, { plan: sub.plan, proUntil: new Date(until) });
+    const paidUntil = last ? last + (sub.period === 'year' ? 366 : 31) * DAY + GRACE : Date.now() + GRACE;
+    // Al pasar de la prueba gratis a un plan pago, se respeta lo que quedaba de prueba.
+    const until = user?.plan === sub.plan || user?.trial ? Math.max(current, paidUntil) : paidUntil;
+    if (user && (user.plan !== sub.plan || until !== current || user.trial)) await adminUpdate(env, `users/${uid}`, { plan: sub.plan, proUntil: new Date(until), trial: false });
     if (sub.previousPreapprovalId && sub.previousPreapprovalId !== sub.preapprovalId) {
       await mpFetch(env.MP_ACCESS_TOKEN, `/preapproval/${encodeURIComponent(sub.previousPreapprovalId)}`, { method: 'PUT', body: JSON.stringify({ status: 'cancelled' }) }).catch(e => console.error('cancel prev', e));
       upd.previousPreapprovalId = null;

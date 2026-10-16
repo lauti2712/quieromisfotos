@@ -32,7 +32,7 @@
 
 import { verifyIdToken, getDocAsUser } from './firebase.js';
 import { adminGet, adminGetMany, adminQuery } from './admin.js';
-import { freeLimited, albumLimitBytes, setActive } from './plans.js';
+import { freeLimited, albumLimitBytes, albumPhotoLimit, setActive } from './plans.js';
 import { signToken, verifyToken } from './tokens.js';
 import { json, httpError, apiUrl } from './http.js';
 import { connectUrl, callback, disconnect } from './mp.js';
@@ -45,7 +45,7 @@ import { notifyFollowersOnce, drainPushQueue } from './push.js';
 import { extensionCheckout, extensionSync } from './extensions.js';
 import { subscribe, syncRequest, cancelSubscription, syncAllSubscriptions } from './subscriptions.js';
 
-const MAX = { preview: 6e6, thumb: 1e6, original: 80e6, avatar: 3e6, logo: 2e6, cover: 6e6, portfolio: 6e6 };
+const MAX = { preview: 6e6, thumb: 1e6, original: 80e6, avatar: 3e6, logo: 2e6, cover: 6e6, portfolio: 6e6, pcover: 6e6 };
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
 const SESSION_TTL = 2 * 3600;
 const BACKUP_CRON = '0 7 * * 1'; // lunes 04:00 (Argentina)
@@ -194,6 +194,13 @@ async function uploadPhotoPart(req, env, kind, eid, pid, ctx) {
   // Límite de espacio por álbum (settings.albumLimitGB + espacio comprado): se controla al empezar cada foto.
   if (kind === 'preview') {
     const [set, st, user] = await adminGetMany(env, [`events/${eid}/sets/${s.uid}`, 'settings/platform', `users/${s.uid}`]);
+    // Planes nuevos: tope en cantidad de fotos. Esquema anterior: en espacio.
+    const maxPhotos = albumPhotoLimit(set, st, user);
+    if (maxPhotos > 0 && set && (set.photoCount || 0) >= maxPhotos) {
+      throw httpError(402, freeLimited(user, st)
+        ? `Tu álbum llegó al tope de ${maxPhotos} fotos del plan Gratis. Pasate a un plan pago para seguir subiendo.`
+        : `El álbum llegó a su tope de ${maxPhotos} fotos. Sumá más fotos con un pack para seguir subiendo.`);
+    }
     const max = albumLimitBytes(set, st, user);
     if (max > 0 && set) {
       const used = (set.bytesOriginal || 0) + (set.bytesPublic || 0);
@@ -228,7 +235,7 @@ async function deletePhoto(req, env, eid, pid) {
 
 // ------------------------------------------------------------------ avatar / logo / portada
 async function uploadAsset(req, env, kind) {
-  if (!['avatar', 'logo', 'cover', 'portfolio'].includes(kind)) throw httpError(400, 'Tipo inválido');
+  if (!['avatar', 'logo', 'cover', 'portfolio', 'pcover'].includes(kind)) throw httpError(400, 'Tipo inválido');
   const s = await session(req, env);
   if (kind === 'cover' && !s.eid) throw httpError(400, 'La portada requiere un evento');
   checkSize(req, kind);

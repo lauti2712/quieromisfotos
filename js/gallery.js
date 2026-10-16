@@ -6,6 +6,7 @@ import { openViewer } from './viewer.js';
 import { setForSale, setUntil } from './data.js';
 import { favs } from './favs.js';
 import { shareLink, eventUrl } from './share.js';
+import { trackPhotoView, trackCartAdd } from './stats.js';
 
 const PAGE = 60;
 
@@ -165,6 +166,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
   function toggleCart(p) {
     if (!p) return;
     const added = cart.toggle(p);
+    if (added) trackCartAdd(ev.id, p.photographerUid);
     toast(added ? 'Foto agregada al carrito' : 'Foto quitada del carrito');
     syncCartMarks();
   }
@@ -205,13 +207,16 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
   })().catch(() => {});
 
   // ------------------------------------------------ visor
+  let seenIdx = -1;
   function openGalleryViewer(index) {
+    seenIdx = -1;
     openViewer({
       index,
       src: i => state.photos[i].previewUrl,
       count: () => state.photos.length,
       total: () => `${state.photos.length}${state.done ? '' : '+'}`,
-      onIndex: i => { if (i >= state.photos.length - 5) loadMore(); },
+      // Cuenta la foto vista una vez (el visor también redibuja al tocar ♥ o carrito).
+      onIndex: i => { if (i >= state.photos.length - 5) loadMore(); if (i !== seenIdx) { seenIdx = i; trackPhotoView(ev.id, state.photos[i]?.photographerUid); } },
       footer: (i, el, rerender) => viewerFooter(state.photos[i], el, rerender),
     });
   }

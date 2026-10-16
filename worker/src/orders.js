@@ -50,13 +50,15 @@ export async function checkout(req, env) {
   const t = computeTotals({ count: ids.length, price: set.price, packs: set.packs, feeMode: set.feeMode, feePercent: feePercentFor(ph, settings) });
   const orderId = newId();
   const order = {
-    buyerUid: claims.sub, buyerEmail: claims.email, buyerName: claims.name || '',
+    // Sin nombre ni email del comprador: el fotógrafo lee el pedido. Esos datos van a orderPrivate (superadmin y comprador).
+    buyerUid: claims.sub,
     photographerUid, photographerName: ph.displayName || '', eventId, eventName: ev.name || '', eventDate: ev.date || '',
     items: photos.map(p => ({ photoId: p.id, thumbUrl: p.thumbUrl || '', fileName: p.fileName || '' })),
     count: ids.length, lines: t.lines, subtotal: t.subtotal, serviceFee: t.serviceFee, platformFee: t.platformFee,
     total: t.total, feeMode: t.feeMode, status: 'pending', createdAt: new Date(),
   };
   await adminSet(env, `orders/${orderId}`, order, { mustNotExist: true });
+  await adminSet(env, `orderPrivate/${orderId}`, { buyerUid: claims.sub, buyerEmail: claims.email, buyerName: claims.name || '', createdAt: order.createdAt });
 
   const api = apiUrl(env, req);
   // Si se compró desde el sitio de prueba, MP vuelve ahí.

@@ -3,7 +3,7 @@ import { db, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, que
 import { $, $$, esc, fmtMoney, fmtTs, toast, errMsg, parseHash } from './util.js';
 import { apiPost } from './api.js';
 import { auth } from './fb.js';
-import { PLANS, planOf, hasWeb, siteUrlOf, planSpec } from './data.js';
+import { PLANS, planOf, hasWeb, siteUrlOf, planSpec, planFeatures } from './data.js';
 import { shareLink } from './share.js';
 
 const TEMPLATES = [
@@ -20,16 +20,7 @@ const planInfo = st => {
     { id: 'web', items: ['Todo lo de Gratis', `Portfolio de ${st.proPortfolioLimit ?? 80} fotos`, 'Tu web: tunombre.quieromisfotos.com.ar', 'Fotos de tu web sin marca de agua', 'Destacado en el directorio'] },
     { id: 'webdomain', items: ['Todo lo de Profesional', 'Tu propio dominio (ej: tunombre.com.ar)'] },
   ];
-  const sp = id => planSpec(id, st);
-  const space = st.albumLimitGB > 0 ? `${st.albumLimitGB} GB por álbum (ampliable)` : 'Más espacio por álbum';
-  return [
-    { id: 'free', items: ['Vendé tus fotos en eventos', '1 álbum activo a la vez', `Hasta ${st.freeAlbumLimitGB ?? 3} GB por álbum`, `Portfolio de ${sp('free').portfolio} fotos`, `Comisión ${sp('free').fee}% por venta`] },
-    { id: 'lite', items: ['Álbumes ilimitados', space, `Portfolio de ${sp('lite').portfolio} fotos`, ...(sp('lite').featured ? ['Destacado en el directorio'] : []), `Comisión ${sp('lite').fee}% por venta`] },
-    { id: 'web', items: ['Todo lo de Lite', `Portfolio de ${sp('web').portfolio} fotos`, 'Tu web: tunombre.quieromisfotos.com.ar', 'Fotos de tu web sin marca de agua',
-      ...(sp('web').featured ? ['Destacado en el directorio'] : []), `Comisión ${sp('web').fee}% por venta`] },
-    { id: 'webdomain', items: ['Todo lo de Profesional', 'Tu propio dominio (ej: tunombre.com.ar)', `Portfolio de ${sp('webdomain').portfolio} fotos`,
-      ...(sp('webdomain').featured ? ['Destacado en el directorio'] : []), `Comisión ${sp('webdomain').fee}% por venta`] },
-  ];
+  return ['free', 'lite', 'web', 'webdomain'].map(id => ({ id, items: planFeatures(id, st) }));
 };
 
 export async function viewWeb(view, { uid, profile, settings }) {
@@ -67,11 +58,12 @@ export async function viewWeb(view, { uid, profile, settings }) {
           <div class="row" style="justify-content:space-between"><strong>${PLANS[p.id].label}</strong>${p.id === plan ? '<span class="pill ok">Tu plan</span>' : ''}</div>
           <div class="plan-price">${price(p.id)}</div>
           ${first(p.id) ? `<div class="muted small">Primer mes ${fmtMoney(first(p.id))} (incluye el registro de tu dominio)</div>` : ''}
+          ${settings.plansV2 && p.id !== 'free' && planSpec(p.id, settings).year ? `<div class="muted small">o ${fmtMoney(planSpec(p.id, settings).year)}/año (2 meses gratis)</div>` : ''}
           <ul>${p.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>
           ${p.id !== 'free' && p.id !== plan ? `<button class="btn ${p.id === 'web' ? 'primary' : ''} sm" data-sub="${p.id}">${plan === 'free' || plan === 'pro' ? 'Suscribirme' : 'Cambiar a este plan'}</button>` : ''}
         </div>`).join('')}
     </div>
-    ${plan !== 'free' ? `<p class="muted small">Tu plan está activo hasta el ${esc(fmtTs(profile.proUntil))}${subActive ? ' y se renueva solo cada mes con Mercado Pago' : ''}.
+    ${plan !== 'free' ? `<p class="muted small">${profile.trial ? '🎁 Estás usando la prueba gratis, hasta' : 'Tu plan está activo hasta'} el ${esc(fmtTs(profile.proUntil))}${subActive ? ` y se renueva solo ${sub.period === 'year' ? 'cada año' : 'cada mes'} con Mercado Pago` : profile.trial ? '. Suscribite antes para no perder tu web' : ''}.
       ${subActive ? '<button class="btn sm ghost" id="sub-cancel">Cancelar suscripción</button>' : ''}</p>` : ''}
     ${sub?.status === 'pending' ? `<div class="notice">Tu suscripción al plan <strong>${esc(PLANS[sub.plan]?.label)}</strong> está esperando la confirmación de Mercado Pago.</div>` : ''}
     ${pending && pending.plan !== plan && !sub ? `<div class="notice">Pediste el plan <strong>${esc(PLANS[pending.plan]?.label)}</strong>. Te vamos a contactar para activarlo. <button class="btn sm ghost" id="req-cancel">Cancelar pedido</button></div>` : ''}
@@ -88,7 +80,13 @@ export async function viewWeb(view, { uid, profile, settings }) {
     dlg.innerHTML = `
       <div class="dlg-head"><h2>Plan ${esc(PLANS[want].label)}</h2><button class="btn ghost sm" data-close>✕</button></div>
       <div class="dlg-body stack">
-        <p style="margin:0">${first(want) ? `<strong>${fmtMoney(first(want))} el primer mes</strong> (incluye el registro de tu dominio) y después <strong>${price(want)}</strong>` : `<strong>${price(want)}</strong>`} · se debita automáticamente cada mes. Lo cancelás cuando quieras desde acá.</p>
+        ${settings.plansV2 && planSpec(want, settings).year ? `<div class="stack" style="gap:8px">
+          <label class="check card" style="margin:0;padding:12px"><input type="radio" name="sub-period" value="month" checked>
+            <span><strong>Mensual: ${price(want)}</strong>${first(want) ? `<br><span class="muted small">Primer mes ${fmtMoney(first(want))} (incluye el registro de tu dominio)</span>` : ''}</span></label>
+          <label class="check card" style="margin:0;padding:12px"><input type="radio" name="sub-period" value="year">
+            <span><strong>Anual: ${fmtMoney(planSpec(want, settings).year)}/año</strong> · 2 meses gratis${first(want) ? `<br><span class="muted small">El primer pago suma ${fmtMoney(first(want) - planSpec(want, settings).price)} del registro del dominio</span>` : ''}</span></label>
+        </div>` : `<p style="margin:0">${first(want) ? `<strong>${fmtMoney(first(want))} el primer mes</strong> (incluye el registro de tu dominio) y después <strong>${price(want)}</strong>` : `<strong>${price(want)}</strong>`}</p>`}
+        <p class="muted small" style="margin:0">Se debita automáticamente con Mercado Pago. Lo cancelás cuando quieras desde acá y el plan sigue hasta el final del período pagado.</p>
         <label class="field">Email de tu cuenta de Mercado Pago<input type="email" id="sub-email" value="${esc(auth.currentUser?.email || '')}" required>
           <span class="hint">Tiene que ser el mismo email con el que entrás a Mercado Pago para pagar.</span></label>
         ${plan !== 'free' ? '<p class="muted small" style="margin:0">Tu plan actual se cancela cuando se active el nuevo.</p>' : ''}
@@ -101,7 +99,8 @@ export async function viewWeb(view, { uid, profile, settings }) {
     dlg.querySelector('#sub-go').onclick = async e => {
       const btn = e.target; btn.disabled = true; btn.textContent = 'Abriendo Mercado Pago…';
       try {
-        const { initPoint } = await apiPost('/plans/subscribe', { plan: want, payerEmail: dlg.querySelector('#sub-email').value });
+        const period = dlg.querySelector('input[name="sub-period"]:checked')?.value || 'month';
+        const { initPoint } = await apiPost('/plans/subscribe', { plan: want, payerEmail: dlg.querySelector('#sub-email').value, period });
         location.href = initPoint;
       } catch (err) { toast(errMsg(err), 'error'); btn.disabled = false; btn.textContent = 'Suscribirme con Mercado Pago'; }
     };

@@ -25,9 +25,23 @@ service cloud.firestore {
     function eventAfter(eid) { return getAfter(/databases/$(database)/documents/events/$(eid)).data; }
     function eventData(eid) { return get(/databases/$(database)/documents/events/$(eid)).data; }
     // El vencimiento del set lo fija el fotógrafo una sola vez (primera subida): ahora + retentionDays.
-    function initialExpiry() {
+    // Días de venta del plan del fotógrafo (mismos valores por defecto que js/plans-core.js).
+    function planDays() {
       let sp = /databases/$(database)/documents/settings/platform;
-      let days = exists(sp) ? get(sp).data.get('retentionDays', 14) : 14;
+      let st = exists(sp) ? get(sp).data : {};
+      let base = st.get('retentionDays', 14);
+      let u = get(userPath(uid())).data;
+      let plan = u.get('plan', 'free');
+      let paid = plan in ['pro', 'lite', 'web', 'webdomain'] && u.get('proUntil', null) != null && u.proUntil > request.time;
+      return !st.get('plansV2', false) ? base
+        : !paid ? st.get('freeRetentionDays', base)
+        : plan == 'lite' ? st.get('liteRetentionDays', base)
+        : plan == 'web' ? st.get('webRetentionDays', 21)
+        : plan == 'webdomain' ? st.get('webDomainRetentionDays', 30)
+        : base;
+    }
+    function initialExpiry() {
+      let days = planDays();
       return resource.data.get('expiresAt', null) == null
         && request.resource.data.expiresAt is timestamp
         && request.resource.data.expiresAt > request.time + duration.value(days, 'd') - duration.value(1, 'h')
@@ -67,7 +81,7 @@ service cloud.firestore {
             && request.resource.data.mpConnected == false)
           || (isSuper() && request.resource.data.role == 'superadmin'));
       allow update: if isSuper() || (signedIn() && uid() == userId
-          && !changed().hasAny(['role', 'status', 'mpConnected', 'mpUserId', 'createdAt', 'plan', 'proUntil', 'domainActive', 'siteDomain'])
+          && !changed().hasAny(['role', 'status', 'mpConnected', 'mpUserId', 'createdAt', 'plan', 'proUntil', 'domainActive', 'siteDomain', 'trial', 'trialUsed'])
           && (!changed().hasAny(['slug']) || slugOwnedAfter(userId)));
       allow delete: if isSuper();
     }
@@ -119,9 +133,9 @@ service cloud.firestore {
         allow read: if true;
         allow create: if isApproved() && uid() == pid
           && uid() in eventAfter(eid).photographerUids
-          && !request.resource.data.keys().hasAny(['expiresAt', 'extendedUntil', 'originalsDeleted', 'extraBytes', 'soldPhotos', 'soldOrders']);
+          && !request.resource.data.keys().hasAny(['expiresAt', 'extendedUntil', 'originalsDeleted', 'extraBytes', 'extraPhotos', 'soldPhotos', 'soldOrders']);
         allow update: if isSuper() || (isApproved() && uid() == pid
-          && !changed().hasAny(['extendedUntil', 'originalsDeleted', 'soldPhotos', 'soldOrders', 'storageAt', 'originalsDeletedAt', 'extraBytes'])
+          && !changed().hasAny(['extendedUntil', 'originalsDeleted', 'soldPhotos', 'soldOrders', 'storageAt', 'originalsDeletedAt', 'extraBytes', 'extraPhotos'])
           && (!changed().hasAny(['expiresAt']) || initialExpiry()));
         allow delete: if isSuper() || (signedIn() && uid() == pid && resource.data.photoCount == 0);
       }
@@ -156,9 +170,9 @@ service cloud.firestore {
       // Planes nuevos (plansV2): límite por plan. Antes: uno para todos los pagos.
       return !paid ? st.get('freePortfolioLimit', 12)
         : !st.get('plansV2', false) ? st.get('proPortfolioLimit', 80)
-        : plan == 'lite' ? st.get('litePortfolioLimit', 20)
-        : plan == 'web' ? st.get('webPortfolioLimit', 40)
-        : plan == 'webdomain' ? st.get('webDomainPortfolioLimit', 80)
+        : plan == 'lite' ? st.get('litePortfolioLimit', 30)
+        : plan == 'web' ? st.get('webPortfolioLimit', 60)
+        : plan == 'webdomain' ? st.get('webDomainPortfolioLimit', 100)
         : st.get('proPortfolioLimit', 80);
     }
     match /portfolio/{id} {
@@ -197,6 +211,41 @@ service cloud.firestore {
     }
 
     // ---------- órdenes y extensiones: solo las escribe el Worker ----------
+    // Links cortos de los fotógrafos: quieromisfotos.com.ar/{alias} -> su álbum en un evento (Profesional y Premium).
+    function canShortLink() {
+      let sp = /databases/$(database)/documents/settings/platform;
+      let st = exists(sp) ? get(sp).data : {};
+      let u = get(userPath(uid())).data;
+      let plan = u.get('plan', 'free');
+      let paid = plan in ['pro', 'lite', 'web', 'webdomain'] && u.get('proUntil', null) != null && u.proUntil > request.time;
+      return isSuper() || (paid && (!st.get('plansV2', false) || plan in ['web', 'webdomain']));
+    }
+    match /aliases/{alias} {
+      allow read: if true;
+      allow create: if isApproved() && canShortLink()
+        && alias.matches('^[a-z0-9][a-z0-9-]{2,39}$')
+        && !(alias in ['eventos', 'fotografos', 'terminos', 'privacidad', 'panel', 'demo', 'assets', 'js', 'css', 'api', 'admin', 'cuenta', 'carrito', 'calendario', 'soy-fotografo', 'index', 'sitemap', 'robots'])
+        && request.resource.data.keys().hasOnly(['uid', 'eventId', 'createdAt'])
+        && request.resource.data.uid == uid()
+        && uid() in eventData(request.resource.data.eventId).photographerUids;
+      allow delete: if isSuper() || (signedIn() && resource.data.uid == uid());
+    }
+
+    // Estadísticas anónimas (contadores, sin datos de quién visita). Cualquiera suma; solo de a una visita por escritura.
+    match /stats/{sid} {
+      allow read: if signedIn();
+      allow create: if request.resource.data.keys().hasOnly(['views', 'days', 'src', 'pv', 'ca', 'updatedAt'])
+        && request.resource.data.get('views', 0) <= 1;
+      allow update: if request.resource.data.keys().hasOnly(['views', 'days', 'src', 'pv', 'ca', 'updatedAt'])
+        && request.resource.data.get('views', 0) <= resource.data.get('views', 0) + 1
+        && request.resource.data.get('views', 0) >= resource.data.get('views', 0);
+    }
+
+    // Datos del comprador de cada pedido: solo el superadmin y el comprador (el fotógrafo no).
+    match /orderPrivate/{id} {
+      allow read: if isSuper() || (signedIn() && resource.data.buyerUid == uid());
+      allow write: if false;
+    }
     match /orders/{id} {
       allow read: if isSuper() || (signedIn() && (resource.data.photographerUid == uid() || resource.data.buyerUid == uid()));
       allow write: if false;

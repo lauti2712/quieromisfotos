@@ -48,7 +48,7 @@ export async function cleanOrphans(env, { sets, ids, docs, profileObjs, coverObj
     for (const [n, user] of users.entries()) {
       if (!user) continue; // sin perfil: no se toca (por las dudas)
       const uid = uids[j + n];
-      const keep = new Set([keyOf(user.avatarUrl || ''), user.watermark?.logoKey || '', keyOf(user.watermark?.logoUrl || ''), keyOf(user.site?.heroUrl || '')]);
+      const keep = new Set([keyOf(user.avatarUrl || ''), user.watermark?.logoKey || '', keyOf(user.watermark?.logoUrl || ''), keyOf(user.site?.heroUrl || ''), keyOf(user.profileCoverUrl || '')]);
       const pf = await adminQuery(env, 'portfolio', { filters: [['photographerUid', '==', uid]], limit: 2000 });
       for (const p of pf) [p.urlKey, p.thumbKey, p.cleanKey, keyOf(p.url || ''), keyOf(p.thumbUrl || ''), keyOf(p.cleanUrl || '')].forEach(k => k && keep.add(k));
       profileObjs[uid].forEach(o => { if (!keep.has(o.key)) add(o, o.key.includes('/pf/') ? 'Foto de portfolio borrada' : 'Imagen de perfil reemplazada'); });

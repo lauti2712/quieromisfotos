@@ -5,7 +5,7 @@ import {
 import {
   $, $$, esc, fmtDate, parseHash, queryWords, avatarHtml, coverHtml, SOCIALS, toast, errMsg, waLink, normalize, todayIso,
 } from './util.js';
-import { loadTaxonomy, tagPills, loadSettings, isFeatured, portfolioLimit, GEAR_TYPES, GEAR_PLURAL, hasWeb, siteUrlOf } from './data.js';
+import { loadTaxonomy, tagPills, loadSettings, isFeatured, portfolioLimit, rulesFor, GEAR_TYPES, GEAR_PLURAL, hasWeb, siteUrlOf } from './data.js';
 import { openViewer } from './viewer.js';
 import { mountGallery } from './gallery.js';
 import { renderCart } from './cart-view.js';
@@ -18,6 +18,7 @@ import { cart } from './cart.js';
 import { renderCalendar } from './calendar.js';
 import { renderPhotographerLanding } from './landing.js';
 import { myFollows, toggleFollow } from './follows.js';
+import { trackEventView, trackProfileView } from './stats.js';
 
 const updateCartBadge = () => {
   const n = cart.count();
@@ -44,6 +45,7 @@ function route() {
   const { parts } = parseHash();
   document.title = 'Quiero Mis Fotos';
   window.scrollTo(0, 0);
+  app.style.removeProperty('--accent'); // color propio del perfil de un fotógrafo
   if (parts[0] === 'evento' && parts[1]) return renderEvent(parts[1]);
   if (parts[0] === 'f' && parts[1]) return renderProfile(parts[1]);
   if (parts[0] === 'carrito') return renderCart(app);
@@ -188,6 +190,7 @@ async function renderEvent(id) {
   const sets = new Map((setsSnap?.docs || []).map(d => [d.id, d.data()]));
   const tags = tagPills(ev.tagIds, tax);
   document.title = `${ev.name} · Quiero Mis Fotos`;
+  if (!ev.demo) trackEventView(ev.id);
 
   app.innerHTML = `
     <a href="#/" class="muted small" style="text-decoration:none">← Todos los eventos</a>
@@ -331,12 +334,15 @@ async function renderProfile(slug) {
     return;
   }
   document.title = `${user.displayName} · Quiero Mis Fotos`;
+  if (!user.demo) trackProfileView(user.uid);
   const [tax, settings] = await Promise.all([loadTaxonomy(), loadSettings()]);
+  if (rulesFor(user, settings).profileCustom && /^#[0-9a-f]{6}$/i.test(user.profileAccent || '')) app.style.setProperty('--accent', user.profileAccent);
   const socials = SOCIALS.filter(s => user.socials?.[s.key] && s.key !== 'whatsapp');
   const sports = (user.specialties || []).map(id => tax.tagById.get(id)).filter(Boolean);
   const wa = user.socials?.whatsapp;
   const quoteMsg = `¡Hola ${user.displayName}! Te encontré en Quiero Mis Fotos y quería pedirte un presupuesto para `;
   app.innerHTML = `
+    ${rulesFor(user, settings).profileCustom && user.profileCoverUrl ? `<div class="profile-cover" style="background-image:url('${esc(user.profileCoverUrl)}')"></div>` : ''}
     <div class="profile-head">
       ${avatarHtml(user, 'lg')}
       <div style="flex:1;min-width:220px">
