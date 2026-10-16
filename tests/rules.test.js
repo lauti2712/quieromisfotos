@@ -265,3 +265,17 @@ test('plan Profesional amplía el portfolio; pedidos de plan solo propios', asyn
   await assertFails(updateDoc(doc(user('beto'), 'users/beto'), { domainActive: true, siteDomain: 'x.com' }));
   await assertFails(setDoc(doc(user('beto'), 'domains/x.com'), { uid: 'beto' }));
 });
+
+test('ventas por álbum y alertas: privadas', async () => {
+  await env.withSecurityRulesDisabled(async ctx => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'salesStats/pub_ana'), { eventId: 'pub', photographerUid: 'ana', soldPhotos: 3, soldOrders: 1 });
+    await setDoc(doc(db, 'alerts/a1'), { type: 'x', text: 'y' });
+  });
+  await assertSucceeds(getDoc(doc(user('ana'), 'salesStats/pub_ana')));
+  await assertFails(getDoc(doc(user('beto'), 'salesStats/pub_ana')));
+  await assertFails(getDoc(doc(as(), 'salesStats/pub_ana')));
+  await assertFails(setDoc(doc(user('ana'), 'salesStats/pub_ana'), { soldPhotos: 99 }));
+  await assertSucceeds(getDoc(doc(as(SUPER), 'alerts/a1')));
+  await assertFails(getDoc(doc(user('ana'), 'alerts/a1')));
+});
