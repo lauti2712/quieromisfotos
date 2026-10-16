@@ -10,7 +10,8 @@ import {
   $, $$, esc, slugify, SLUG_RE, searchTokens, fmtMoney, fmtDate, fmtTs, todayIso, parseHash,
   toast, errMsg, avatarHtml, coverHtml, SOCIALS, newId, normalize, fmtBytes, setBytes,
 } from './util.js';
-import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, ACTIVITY_TYPE, USER_TAG_TYPES, tagPills, SERVICES, isPro, mpPlanOf, GEAR_TYPES, PLANS, planOf, siteUrlOf, setUntil, setDeleteAt, GRACE_DAYS, albumPhotoLimit, feePercentFor, isFreePlan, setActive, planSpec, rulesFor } from './data.js';
+import { initTheme } from './theme.js';
+import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, ACTIVITY_TYPE, USER_TAG_TYPES, tagPills, SERVICES, isPro, mpPlanOf, GEAR_TYPES, PLANS, planOf, siteUrlOf, setUntil, setDeleteAt, GRACE_DAYS, albumPhotoLimit, feePercentFor, isFreePlan, setActive, planSpec, rulesFor, bibsOn } from './data.js';
 import { viewWeb } from './panel-web.js';
 import { sellerNet } from './pricing.js';
 import { viewPortfolio } from './panel-portfolio.js';
@@ -32,6 +33,7 @@ const myFee = () => feePercentFor(S.profile, S.settings);
 const myRules = () => rulesFor(S.profile, S.settings);
 
 initRefresh({ busy: uploadsInProgress });
+initTheme();
 listenForeground();
 
 // ================================================================ auth
@@ -1327,10 +1329,12 @@ function renderSetEditor(ev, set, reload) {
       <h2 style="margin-top:8px">Galería</h2>
       <label class="check"><input type="checkbox" id="st-hours" ${set.showHours !== false ? 'checked' : ''}> Mostrar el filtro por horario</label>
       <p class="muted small" style="margin:0">Botones por hora (ej: “15:00 a 16:00”) según la hora en que sacaste cada foto, para que cada uno encuentre la suya más rápido. Desactivalo si la hora de tu cámara no está bien configurada.</p>
+      ${S.settings.bibsEnabled === false ? '' : `<label class="check"><input type="checkbox" id="st-bibs" ${bibsOn(set, ev, S.tax) ? 'checked' : ''}> 🔢 Leer los dorsales automáticamente al subir</label>
+      <p class="muted small" style="margin:0">Para carreras (running, ciclismo, triatlón…): cada participante busca su número y ve solo sus fotos. Se aplica a las fotos que subas desde ahora; si alguno no se leyó bien, lo corregís con “🔢 Dorsales” en tus fotos.</p>`}
       <div class="row end"><button class="btn primary" type="submit">Guardar set</button></div>
     </form>
     <div id="set-photos"></div>`;
-  mountPhotos($('#set-photos'), { ev, set, uid: S.user.uid, profile: S.profile, settings: S.settings })
+  mountPhotos($('#set-photos'), { ev, set, uid: S.user.uid, profile: S.profile, settings: S.settings, bibs: bibsOn(set, ev, S.tax) })
     .catch(e => { $('#set-photos').innerHTML = `<div class="notice danger">${esc(errMsg(e))}</div>`; });
 
   const stFee = () => $('input[name=st-fee]:checked')?.value || 'absorb';
@@ -1389,6 +1393,7 @@ function renderSetEditor(ev, set, reload) {
         feeMode: $('input[name=st-fee]:checked').value,
         subalbums: clean,
         showHours: $('#st-hours').checked,
+        ...($('#st-bibs') ? { detectBibs: $('#st-bibs').checked } : {}),
         updatedAt: serverTimestamp(),
       });
       toast('Set guardado');
@@ -1715,14 +1720,12 @@ async function viewAdminStorage() {
         Ejemplo: 100 GB ≈ ${fmtUsd(r2Cost(100e9))}/mes · 500 GB ≈ ${fmtUsd(r2Cost(500e9))}/mes.</p>
       <p class="muted small" style="margin:0">Última medición: ${st.scannedAt ? st.scannedAt.toDate().toLocaleString('es-AR') : '—'} (se recalcula sola todos los días).</p>
     </div>
-    <form class="card stack" id="lim-form"><h2 style="margin:0">Límite por álbum</h2>
-      <p class="muted small" style="margin:0">Espacio que cada fotógrafo puede usar por álbum (originales + muestras). Al llegar al límite no puede subir más fotos hasta comprar espacio adicional, que se paga con Mercado Pago a tu cuenta. 0 = sin límite.
-        Referencia: una foto ocupa ~${fmtBytes(top.length ? top.reduce((a, t) => a + t.bytes, 0) / Math.max(1, top.reduce((a, t) => a + (t.photos || 0), 0)) : 12e6)} (sin optimizar).</p>
-      <div class="grid2">
-        <p class="muted small" style="margin:0">Con los planes nuevos, el espacio de cada plan se define en Plataforma → Planes.</p>
-      </div>
+    <form class="card stack" id="lim-form"><h2 style="margin:0">Subida de fotos</h2>
+      <p class="muted small" style="margin:0">La cantidad de fotos por álbum de cada plan se define en Plataforma → Planes. Referencia: una foto ocupa ~${fmtBytes(top.length ? top.reduce((a, t) => a + t.bytes, 0) / Math.max(1, top.reduce((a, t) => a + (t.photos || 0), 0)) : 12e6)}.</p>
       <label class="check"><input type="checkbox" id="lim-opt" ${S.settings.optimizeOriginals !== false ? 'checked' : ''}> Optimizar los originales al subir (todos los fotógrafos)</label>
       <p class="muted small" style="margin:0">Se guardan a la misma resolución con calidad JPEG 92%: no se nota a simple vista ni impresa, ocupan ~40-50% y la subida es más rápida. Si lo destildás, se guarda el archivo exacto de la cámara.</p>
+      <label class="check"><input type="checkbox" id="lim-bibs" ${S.settings.bibsEnabled !== false ? 'checked' : ''}> 🔢 Lectura automática de dorsales (todos los fotógrafos)</label>
+      <p class="muted small" style="margin:0">Con IA de Cloudflare (Workers AI): las primeras ~200 fotos por día son gratis; después cuesta ~US$ 0,55 cada 1.000 fotos. Cada fotógrafo la activa en su álbum (viene activada en running, ciclismo, triatlón…).</p>
       <h3 style="margin:4px 0 0">Packs adicionales para un álbum</h3>
       <p class="muted small" style="margin:0">Fotos extra para un álbum. Solo planes pagos (el Gratis tiene tope fijo).</p>
       <div id="lim-plans" class="stack"></div>
@@ -1787,7 +1790,7 @@ async function viewAdminStorage() {
       photos: Math.round(Number(p.photos) || 0), price: Math.round(p.price) }));
     if (clean.some(p => !(p.photos > 0) || !(p.price > 0))) return toast('Cada pack necesita cantidad de fotos y precio.', 'error');
     try {
-      await setDoc(doc(db, 'settings', 'platform'), { optimizeOriginals: $('#lim-opt').checked, storagePlans: clean, updatedAt: serverTimestamp() }, { merge: true });
+      await setDoc(doc(db, 'settings', 'platform'), { optimizeOriginals: $('#lim-opt').checked, bibsEnabled: $('#lim-bibs').checked, storagePlans: clean, updatedAt: serverTimestamp() }, { merge: true });
       S.settings = await loadSettings();
       toast('Límite guardado');
     } catch (err) { toast(errMsg(err), 'error'); }

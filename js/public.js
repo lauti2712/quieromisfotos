@@ -5,6 +5,7 @@ import {
 import {
   $, $$, esc, fmtDate, parseHash, queryWords, avatarHtml, coverHtml, SOCIALS, toast, errMsg, waLink, normalize, todayIso,
 } from './util.js';
+import { initTheme } from './theme.js';
 import { loadTaxonomy, tagPills, loadSettings, isFeatured, portfolioLimit, rulesFor, GEAR_TYPES, GEAR_PLURAL, hasWeb, siteUrlOf } from './data.js';
 import { openViewer } from './viewer.js';
 import { mountGallery } from './gallery.js';
@@ -34,6 +35,7 @@ const PAGE = 24;
 
 maybeShowIntro();
 initRefresh();
+initTheme();
 // El directorio de fotógrafos se muestra en el menú solo si el superadmin lo activa (Plataforma).
 loadSettings().then(st => document.querySelectorAll('[data-dir-link]').forEach(a => { a.hidden = !st.showDirectory; })).catch(() => {});
 window.addEventListener('hashchange', route);
@@ -68,8 +70,9 @@ async function renderHome() {
       <h1>Encontrá tus fotos</h1>
       <p class="muted">Buscá el evento donde participaste y comprá tus fotos en alta calidad.</p>
     </section>
-    <div class="filters">
+    <div class="filters ${(Object.values(filters.tags).filter(Boolean).length + (filters.from ? 1 : 0) + (filters.to ? 1 : 0)) ? 'open' : ''}" id="home-filters">
       <input class="search" type="search" id="f-q" placeholder="Buscá tu evento, club o lugar" aria-label="Buscar evento" value="${esc(filters.q)}">
+      <button type="button" class="btn more-filters" id="f-more" aria-expanded="false">⚙️ Filtros${(Object.values(filters.tags).filter(Boolean).length + (filters.from ? 1 : 0) + (filters.to ? 1 : 0)) ? ` (${(Object.values(filters.tags).filter(Boolean).length + (filters.from ? 1 : 0) + (filters.to ? 1 : 0))})` : ''}</button>
       ${tax.types.map(t => `
         <select data-type="${t.id}">
           <option value="">${esc(t.name)}: todos</option>
@@ -87,6 +90,7 @@ async function renderHome() {
 
   const reload = () => { cursor = null; $('#results').innerHTML = ''; loadEvents(tax); drawUpcoming(tax); };
   let t;
+  $('#f-more').onclick = e => { const open = $('#home-filters').classList.toggle('open'); e.currentTarget.setAttribute('aria-expanded', open); };
   $('#f-q').addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => { filters.q = e.target.value; reload(); }, 350); });
   $('#f-from').addEventListener('change', e => { filters.from = e.target.value; reload(); });
   $('#f-to').addEventListener('change', e => { filters.to = e.target.value; reload(); });

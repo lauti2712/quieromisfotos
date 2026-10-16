@@ -81,6 +81,7 @@ def page(title, desc, canonical, body, image=None, jsonld=None, redirect=None):
 <meta property="og:image" content="{e(img)}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#ff5a1f">
+<script>try{var t=localStorage.getItem("qmf-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
 <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/{css}">
 {f'<script type="application/ld+json">{json.dumps(jsonld, ensure_ascii=False)}</script>' if jsonld else ''}

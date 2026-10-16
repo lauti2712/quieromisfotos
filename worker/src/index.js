@@ -6,6 +6,7 @@
 //   PUT    /asset/{kind}               X-Upload-Token                         kind: avatar|logo|cover|portfolio
 //   DELETE /asset?key=u/{uid}/...      X-Upload-Token                         borra un asset propio
 //   DELETE /photo/{eid}/{pid}          X-Upload-Token                         borra muestra, miniatura y original
+//   PUT    /bibs/{eid}/{pid}           X-Upload-Token  (jpeg sin marca)       lee los dorsales con IA -> { bibs }
 //   GET    /public/{key}                                                      sirve qmf-public (si no hay dominio público)
 //
 // Fase 4 — pagos (Mercado Pago marketplace):
@@ -38,6 +39,7 @@ import { json, httpError, apiUrl } from './http.js';
 import { connectUrl, callback, disconnect } from './mp.js';
 import { checkout, webhook, syncOrder, retryCheckout, downloadLinks, download } from './orders.js';
 import { createTag } from './tags.js';
+import { scanBibsRequest } from './bibs.js';
 import { renderSite } from './site.js';
 import { scanRequest, scanStorage } from './storage.js';
 import { runBackup, backupRequest } from './backup.js';
@@ -102,6 +104,9 @@ async function route(req, env, ctx) {
   if (m === 'GET' && url.pathname === '/') return json({ ok: true, service: 'qmf-api' });
   if (m === 'POST' && url.pathname === '/upload-session') return uploadSession(req, env);
   if (m === 'PUT' && parts[0] === 'upload' && parts.length === 4) return uploadPhotoPart(req, env, parts[1], parts[2], parts[3], ctx);
+  if (m === 'PUT' && parts[0] === 'bibs' && parts.length === 3 && ID_RE.test(parts[1]) && ID_RE.test(parts[2])) {
+    return scanBibsRequest(req, env, await session(req, env), parts[1], parts[2]);
+  }
   if (m === 'PUT' && parts[0] === 'asset' && parts.length === 2) return uploadAsset(req, env, parts[1]);
   if (m === 'DELETE' && parts[0] === 'photo' && parts.length === 3) return deletePhoto(req, env, parts[1], parts[2]);
   if (m === 'DELETE' && url.pathname === '/asset') return deleteAsset(req, env, url.searchParams.get('key') || '');
