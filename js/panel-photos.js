@@ -3,7 +3,7 @@ import {
   db, collection, doc, getDocs, query, where, orderBy, limit, startAfter, writeBatch, Timestamp,
 } from './fb.js';
 import { $, $$, esc, toast, errMsg, fmtBytes, setBytes } from './util.js';
-import { createUploader, fileKey } from './uploader.js';
+import { createUploader, fileKey, interruptedUpload, clearInterrupted } from './uploader.js';
 import { uploadSession, postWithToken, loadLogoBitmap } from './api.js';
 import { DEFAULT_WATERMARK, wantsLogo } from './watermark.js';
 import { albumPhotoLimit } from './data.js';
@@ -35,6 +35,7 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
         <strong>Arrastrá las fotos acá</strong>
         <span class="muted small">o tocá para elegirlas · JPG, PNG o WEBP · la marca de agua se aplica en tu dispositivo</span>
       </label>
+      <div id="up-cut"></div>
       <p class="muted small mobile-only" style="margin:6px 0 0">📱 Desde el celular: dejá esta pantalla abierta mientras sube (no la bloquees ni cambies de app). Si se corta la conexión, sigue sola cuando vuelve.</p>
       <div id="up-status" class="hidden">
         <div class="row" style="justify-content:space-between">
@@ -217,6 +218,13 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
       if (list.length) set.bibPhotos = (set.bibPhotos || 0) + 1;
     },
   };
+  // Subida cortada (se cerró la pestaña): las ya subidas se saltean solas al volver a elegirlas.
+  const cut = !(activeUploader?.busy() && activeUploader.eventId === ev.id) && interruptedUpload(ev.id);
+  if (cut) {
+    $('#up-cut').innerHTML = `<div class="notice warn small" style="margin:8px 0 0">⚠️ Se cortó una subida: quedaron <strong>${cut.left} de ${cut.total}</strong> fotos sin subir.
+      Elegí las mismas fotos de nuevo: las que ya se subieron se saltean solas. <button type="button" class="btn sm ghost" id="up-cut-x">Entendido</button></div>`;
+    $('#up-cut-x').onclick = () => { clearInterrupted(ev.id); $('#up-cut').innerHTML = ''; };
+  }
   let up;
   if (activeUploader?.busy() && activeUploader.eventId === ev.id) { up = activeUploader; up.setHandlers(handlers); }
   else up = activeUploader = createUploader({ eventId: ev.id, uid, wm, logo, optimize: settings.optimizeOriginals !== false, bibs: bibs && settings.bibsEnabled !== false, ...handlers });

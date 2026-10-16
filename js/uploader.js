@@ -6,6 +6,18 @@ import { processFile } from './image-proc.js';
 const ACCEPT = /^image\/(jpeg|png|webp)$/;
 const MAX_ATTEMPTS = 5;
 export const fileKey = f => `${f.name}|${f.size}`;
+const pendingKey = eventId => `qmf-up-${eventId}`;
+
+// Subida que quedó cortada en este dispositivo (la pestaña se cerró con fotos pendientes): { left, total, at } o null.
+export function interruptedUpload(eventId) {
+  try {
+    const v = JSON.parse(localStorage.getItem(pendingKey(eventId)) || 'null');
+    if (v && Date.now() - v.at < 7 * 86400_000) return v;
+    localStorage.removeItem(pendingKey(eventId));
+  } catch { /* sin almacenamiento */ }
+  return null;
+}
+export function clearInterrupted(eventId) { try { localStorage.removeItem(pendingKey(eventId)); } catch { /* nada */ } }
 
 // bibs: además manda una copia sin marca para leer los dorsales (onBibs avisa lo que encontró).
 export function createUploader({ eventId, uid, wm, logo = null, optimize = false, bibs = false, onChange, onPhoto, onBibs }) {
@@ -57,7 +69,19 @@ export function createUploader({ eventId, uid, wm, logo = null, optimize = false
     });
   }
 
-  const emit = () => { onChange?.(summary()); keepAwake(); };
+  const emit = () => { const sum = summary(); onChange?.(sum); keepAwake(); persist(sum); };
+
+  // Si el celular cierra la pestaña a mitad de la subida, al volver al álbum se avisa cuántas faltaban.
+  let persistT = 0;
+  function persist(sum) {
+    const now = Date.now();
+    if (sum.active && now - persistT < 2000) return;
+    persistT = now;
+    try {
+      if (sum.active) localStorage.setItem(pendingKey(eventId), JSON.stringify({ left: sum.active, total: sum.total, at: now }));
+      else localStorage.removeItem(pendingKey(eventId));
+    } catch { /* sin almacenamiento */ }
+  }
 
   // Celular: mientras sube, la pantalla no se apaga (si se apaga, el navegador frena la subida).
   let wakeLock = null;
