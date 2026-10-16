@@ -257,6 +257,7 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
   const addFiles = async files => {
     files = [...files];
     if (!files.length) return;
+    $('#up-cut').innerHTML = '';
     try {
       if (!uploadedKeys) {
         const snap = await getDocs(query(collection(db, 'photos'), where('eventId', '==', ev.id), where('photographerUid', '==', uid)));
