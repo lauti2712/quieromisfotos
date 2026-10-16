@@ -1,6 +1,6 @@
 // Compras: checkout (preferencia de MP con comisión), aviso de pago (webhook), sincronización y descargas.
 import { computeTotals } from '../../js/pricing.js';
-import { adminGet, adminGetMany, adminSet, adminUpdate, adminIncrement, adminQuery } from './admin.js';
+import { adminGet, adminGetMany, adminSet, adminUpdate, adminQuery, adminCommit } from './admin.js';
 import { requireUser } from './firebase.js';
 import { sellerToken, mpFetch, siteUrl } from './mp.js';
 import { signToken, verifyToken } from './tokens.js';
@@ -116,6 +116,15 @@ async function createPreference(req, env, orderId, order, buyerEmail, attempt) {
   return pref;
 }
 
+// Ventas por álbum en salesStats/{eid}_{uid}: privado (fotógrafo y superadmin), no en el set que es público.
+function countSale(env, order, sign) {
+  const path = `salesStats/${order.eventId}_${order.photographerUid}`;
+  return adminCommit(env, [
+    { upsert: path, data: { eventId: order.eventId, photographerUid: order.photographerUid, updatedAt: new Date() } },
+    { inc: path, fields: { soldPhotos: sign * (order.count || 0), soldOrders: sign } },
+  ]).catch(e => console.error('ventas', e));
+}
+
 // ------------------------------------------------------------------ pago -> orden (idempotente)
 const STATUS = { approved: 'approved', authorized: 'pending', pending: 'pending', in_process: 'pending', in_mediation: 'pending',
   rejected: 'rejected', cancelled: 'rejected', refunded: 'refunded', charged_back: 'refunded' };
@@ -154,10 +163,9 @@ async function applyPayment(env, orderId, order, payment) {
   } else {
     await adminUpdate(env, `orders/${orderId}`, upd);
   }
-  // Contador de ventas en el set del fotógrafo (solo la primera vez que el pedido pasa a aprobado o se reembolsa).
-  const setPath = `events/${order.eventId}/sets/${order.photographerUid}`;
+  // Contador de ventas del álbum (solo la primera vez que el pedido pasa a aprobado o se reembolsa).
   if (upd.status === 'approved' && order.status !== 'approved') {
-    await adminIncrement(env, setPath, { soldPhotos: order.count || 0, soldOrders: 1 }).catch(e => console.error('soldPhotos', e));
+    await countSale(env, order, 1);
     // Aviso al fotógrafo en sus dispositivos.
     const n = order.count || 0;
     await notifyUser(env, order.photographerUid, {
@@ -166,7 +174,7 @@ async function applyPayment(env, orderId, order, payment) {
       link: `${(env.PANEL_URL || 'https://quieromisfotos.com.ar/panel.html')}#/ventas`,
     }).catch(e => console.error('push', e));
   } else if (upd.status === 'refunded' && order.status === 'approved') {
-    await adminIncrement(env, setPath, { soldPhotos: -(order.count || 0), soldOrders: -1 }).catch(e => console.error('soldPhotos', e));
+    await countSale(env, order, -1);
   }
   return { ...order, ...upd };
 }

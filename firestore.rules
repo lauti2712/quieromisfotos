@@ -217,6 +217,12 @@ service cloud.firestore {
         && request.resource.data.get('views', 0) >= resource.data.get('views', 0);
     }
 
+    // Ventas por álbum (las escribe el Worker): solo el fotógrafo y el superadmin.
+    match /salesStats/{id} {
+      allow read: if isSuper() || (signedIn() && resource.data.photographerUid == uid());
+      allow write: if false;
+    }
+
     // Datos del comprador de cada pedido: solo el superadmin y el comprador (el fotógrafo no).
     match /orderPrivate/{id} {
       allow read: if isSuper() || (signedIn() && resource.data.buyerUid == uid());

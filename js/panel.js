@@ -458,7 +458,7 @@ async function viewHome() {
     const visitsDay = last30.map(k => ({ k, v: evStats.reduce((a, st) => a + (st.days?.[k] || 0), 0) + (pfStat.days?.[k] || 0) }));
     const maxV = Math.max(1, ...visitsDay.map(d => d.v));
     const rows = evs.map((ev, k) => ({ ev, set: sets[k] || {}, st: evStats[k] || {} })).filter(x => x.set.photoCount)
-      .map(x => ({ ...x, sold: x.set.soldPhotos || 0, net: sum(orders.filter(o => o.eventId === x.ev.id), net),
+      .map(x => ({ ...x, sold: orders.filter(o => o.eventId === x.ev.id).reduce((a, o) => a + (o.count || 0), 0), net: sum(orders.filter(o => o.eventId === x.ev.id), net),
         views: x.st.views || 0, pv: x.st.pv?.[S.user.uid] || 0, ca: x.st.ca?.[S.user.uid] || 0 }))
       .sort((a, b) => b.sold - a.sold || b.views - a.views).slice(0, 8);
     // Avanzadas: horarios en que se vende (hora del pago) y de dónde llega la gente.
@@ -936,8 +936,12 @@ async function viewMyEvents() {
   const snap = await getDocs(query(collection(db, 'events'), where('photographerUids', 'array-contains', S.user.uid), orderBy('date', 'desc'), limit(200)));
   const evs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   // Mi set en cada evento: fotos, vendidas y vencimiento.
-  const sets = await Promise.all(evs.map(ev => getDoc(doc(db, 'events', ev.id, 'sets', S.user.uid)).then(s => s.data() || null).catch(() => null)));
-  evs.forEach((ev, i) => { ev.mySet = sets[i]; });
+  const [sets, sales] = await Promise.all([
+    Promise.all(evs.map(ev => getDoc(doc(db, 'events', ev.id, 'sets', S.user.uid)).then(s => s.data() || null).catch(() => null))),
+    getDocs(query(collection(db, 'salesStats'), where('photographerUid', '==', S.user.uid))).catch(() => null),
+  ]);
+  const sold = new Map((sales?.docs || []).map(d => [d.data().eventId, d.data().soldPhotos || 0]));
+  evs.forEach((ev, i) => { ev.mySet = sets[i] && { ...sets[i], soldPhotos: sold.get(ev.id) || 0 }; });
   $('#view').innerHTML = `
     <div class="row" style="justify-content:space-between;margin-bottom:14px">
       <h1 style="margin:0">Mis eventos</h1>
@@ -1260,7 +1264,8 @@ async function viewEvent(id) {
     $('#ev-danger').innerHTML = `<button class="btn danger" id="ev-del">Eliminar evento</button>`;
     $('#ev-del').onclick = async () => {
       // Con ventas no se borra: los compradores tienen que poder descargar (la limpieza borraría los originales).
-      if (setsSnap.docs.some(d => (d.data().soldOrders || 0) > 0)) return toast('Este evento tiene ventas: no se puede eliminar. Pasalo a borrador para ocultarlo.', 'error');
+      const sales = await getDocs(query(collection(db, 'salesStats'), where('eventId', '==', id))).catch(() => null);
+      if (setsSnap.docs.some(d => (d.data().soldOrders || 0) > 0) || (sales?.docs || []).some(d => (d.data().soldOrders || 0) > 0)) return toast('Este evento tiene ventas: no se puede eliminar. Pasalo a borrador para ocultarlo.', 'error');
       if (!confirm(`¿Eliminar "${ev.name}"? Se borran también los sets de los fotógrafos.`)) return;
       try {
         const b = writeBatch(db);
