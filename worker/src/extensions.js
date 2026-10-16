@@ -5,7 +5,7 @@ import { adminGet, adminGetMany, adminSet, adminUpdate, adminIncrement } from '.
 import { requireUser } from './firebase.js';
 import { mpFetch, panelUrl } from './mp.js';
 import { setAvailableUntil } from './orders.js';
-import { freeLimited } from './plans.js';
+import { isFree } from './plans.js';
 import { json, httpError, apiUrl } from './http.js';
 
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
@@ -22,17 +22,16 @@ export async function extensionCheckout(req, env) {
   if (!ev || !set) throw httpError(404, 'No tenés fotos en este evento');
   if (set.originalsDeleted) throw httpError(409, 'Los originales de este álbum ya se eliminaron');
   if (kind === 'time' && !setAvailableUntil(set)) throw httpError(409, 'El plazo arranca cuando subís la primera foto');
-  if (kind === 'space' && freeLimited(await adminGet(env, `users/${uid}`), settings)) throw httpError(403, 'En el plan Gratis el álbum tiene un tope fijo. Pasate al plan Profesional para tener más espacio.');
+  if (kind === 'space' && isFree(await adminGet(env, `users/${uid}`))) throw httpError(403, 'En el plan Gratis el álbum tiene un tope fijo. Pasate a un plan pago para subir más fotos.');
   const plan = (settings?.[kind === 'space' ? 'storagePlans' : 'extensionPlans'] || []).find(p => p.id === planId);
-  // Packs: con planes nuevos suman fotos al álbum; con el esquema anterior, GB.
-  const byPhotos = kind === 'space' && !!settings?.plansV2;
-  if (!plan || !(plan.price > 0) || !(kind === 'space' ? (byPhotos ? plan.photos > 0 : plan.gb > 0) : plan.days > 0)) throw httpError(400, 'Plan inválido');
+  // Packs de fotos extra para el álbum, o días extra de venta.
+  if (!plan || !(plan.price > 0) || !(kind === 'space' ? plan.photos > 0 : plan.days > 0)) throw httpError(400, 'Plan inválido');
   if (!env.MP_ACCESS_TOKEN) throw httpError(503, 'Pagos de la plataforma no configurados');
 
   const id = newId();
   await adminSet(env, `extensions/${id}`, {
     photographerUid: uid, photographerEmail: claims.email || '', eventId, eventName: ev.name || '',
-    kind, planId: plan.id, label: plan.label || '', ...(kind === 'space' ? (byPhotos ? { photos: plan.photos } : { gb: plan.gb }) : { days: plan.days }),
+    kind, planId: plan.id, label: plan.label || '', ...(kind === 'space' ? { photos: plan.photos } : { days: plan.days }),
     price: plan.price, status: 'pending', createdAt: new Date(),
   }, { mustNotExist: true });
 
@@ -42,7 +41,7 @@ export async function extensionCheckout(req, env) {
     method: 'POST',
     headers: { 'X-Idempotency-Key': id },
     body: JSON.stringify({
-      items: [{ id, title: `${kind === 'space' ? (byPhotos ? `+${plan.photos} fotos` : `Espacio ${plan.label || `+${plan.gb} GB`}`) : `Extensión ${plan.label || `+${plan.days} días`}`} — ${ev.name || 'evento'}`.slice(0, 250), quantity: 1, unit_price: plan.price, currency_id: 'ARS' }],
+      items: [{ id, title: `${kind === 'space' ? `+${plan.photos} fotos` : `Extensión ${plan.label || `+${plan.days} días`}`} — ${ev.name || 'evento'}`.slice(0, 250), quantity: 1, unit_price: plan.price, currency_id: 'ARS' }],
       ...(claims.email ? { payer: { email: claims.email } } : {}),
       external_reference: `ext_${id}`,
       notification_url: `${apiUrl(env, req)}/mp/webhook?x=${id}`,
@@ -69,7 +68,7 @@ async function applyExtensionPayment(env, id, ext, payment) {
   if (!won) return (await adminGet(env, `extensions/${id}`)) || ext;
   const setPath = `events/${ext.eventId}/sets/${ext.photographerUid}`;
   if (ext.kind === 'space') {
-    await adminIncrement(env, setPath, ext.photos ? { extraPhotos: Math.round(ext.photos) } : { extraBytes: Math.round(ext.gb * 1e9) });
+    await adminIncrement(env, setPath, { extraPhotos: Math.round(ext.photos || 0) });
     return { ...ext, ...upd, status: 'approved' };
   }
   const set = await adminGet(env, setPath);

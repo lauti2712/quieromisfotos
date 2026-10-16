@@ -1,4 +1,4 @@
-// Panel: planes (Gratis / Pro / Web / Web + Dominio) y configuración de la web personal del fotógrafo.
+// Panel: planes (Gratis / Lite / Profesional / Premium) y configuración de la web personal del fotógrafo.
 import { db, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, serverTimestamp } from './fb.js';
 import { $, $$, esc, fmtMoney, fmtTs, toast, errMsg, parseHash } from './util.js';
 import { apiPost } from './api.js';
@@ -14,12 +14,7 @@ const TEMPLATES = [
 
 // Planes que se ofrecen (el viejo "Portfolio Pro" ya no). Condiciones de cada uno: planSpec (editable en Plataforma).
 const planInfo = st => {
-  // Planes nuevos apagados: se muestran las condiciones que rigen hoy (una comisión y un portfolio para todos los pagos).
-  if (!st.plansV2) return [
-    { id: 'free', items: ['Vendé tus fotos en eventos', `Portfolio de ${st.freePortfolioLimit ?? 12} fotos`, `Comisión ${st.feePercent ?? 3}% por venta`] },
-    { id: 'web', items: ['Todo lo de Gratis', `Portfolio de ${st.proPortfolioLimit ?? 80} fotos`, 'Tu web: tunombre.quieromisfotos.com.ar', 'Fotos de tu web sin marca de agua', 'Destacado en el directorio'] },
-    { id: 'webdomain', items: ['Todo lo de Profesional', 'Tu propio dominio (ej: tunombre.com.ar)'] },
-  ];
+
   return ['free', 'lite', 'web', 'webdomain'].map(id => ({ id, items: planFeatures(id, st) }));
 };
 
@@ -45,25 +40,24 @@ export async function viewWeb(view, { uid, profile, settings }) {
   const sub = subSnap?.exists() ? subSnap.data() : null;
   const subActive = sub?.status === 'authorized';
   // Sin planes nuevos: precios guardados en Plataforma, sin "primer mes" (se cobra el mensual).
-  const first = id => (settings.plansV2 && id === 'webdomain' && planSpec(id, settings).first > planSpec(id, settings).price ? planSpec(id, settings).first : 0);
-  const price = id => (id === 'free' ? 'Gratis' : fmtMoney(settings.plansV2 ? planSpec(id, settings).price : (settings[PLANS[id].priceKey] ?? planSpec(id, settings).price)) + '/mes');
+  const first = id => (id === 'webdomain' && planSpec(id, settings).first > planSpec(id, settings).price ? planSpec(id, settings).first : 0);
+  const price = id => (id === 'free' ? 'Gratis' : fmtMoney(planSpec(id, settings).price) + '/mes');
 
   view.innerHTML = `
     <h1>Planes y mi web</h1>
     <p class="muted">Con el plan Profesional vendés sin límite de álbumes, pagás menos comisión y tenés tu propia web con tus fotos, servicios y contacto.</p>
-    ${plan === 'pro' ? '<div class="notice">Tenés el plan <strong>Portfolio Pro</strong> anterior. Podés pasarte a Profesional cuando quieras.</div>' : ''}
     <div class="plans">
       ${planInfo(settings).map(p => `
         <div class="plan-card ${p.id === plan ? 'current' : ''}">
           <div class="row" style="justify-content:space-between"><strong>${PLANS[p.id].label}</strong>${p.id === plan ? '<span class="pill ok">Tu plan</span>' : ''}</div>
           <div class="plan-price">${price(p.id)}</div>
           ${first(p.id) ? `<div class="muted small">Primer mes ${fmtMoney(first(p.id))} (incluye el registro de tu dominio)</div>` : ''}
-          ${settings.plansV2 && p.id !== 'free' && planSpec(p.id, settings).year ? `<div class="muted small">o ${fmtMoney(planSpec(p.id, settings).year)}/año (2 meses gratis)</div>` : ''}
+          ${p.id !== 'free' && planSpec(p.id, settings).year ? `<div class="muted small">o ${fmtMoney(planSpec(p.id, settings).year)}/año (2 meses gratis)</div>` : ''}
           <ul>${p.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>
-          ${p.id !== 'free' && p.id !== plan ? `<button class="btn ${p.id === 'web' ? 'primary' : ''} sm" data-sub="${p.id}">${plan === 'free' || plan === 'pro' ? 'Suscribirme' : 'Cambiar a este plan'}</button>` : ''}
+          ${p.id !== 'free' && p.id !== plan ? `<button class="btn ${p.id === 'web' ? 'primary' : ''} sm" data-sub="${p.id}">${plan === 'free' ? 'Suscribirme' : 'Cambiar a este plan'}</button>` : ''}
         </div>`).join('')}
     </div>
-    ${plan !== 'free' ? `<p class="muted small">${profile.trial ? '🎁 Estás usando la prueba gratis, hasta' : 'Tu plan está activo hasta'} el ${esc(fmtTs(profile.proUntil))}${subActive ? ` y se renueva solo ${sub.period === 'year' ? 'cada año' : 'cada mes'} con Mercado Pago` : profile.trial ? '. Suscribite antes para no perder tu web' : ''}.
+    ${plan !== 'free' ? `<p class="muted small">${profile.courtesy ? '🎁 Tenés este plan de cortesía, sin costo y sin vencimiento' : `${profile.trial ? '🎁 Estás usando la prueba gratis, hasta' : 'Tu plan está activo hasta'} el ${esc(fmtTs(profile.proUntil))}`}${subActive ? ` y se renueva solo ${sub.period === 'year' ? 'cada año' : 'cada mes'} con Mercado Pago` : profile.trial ? '. Suscribite antes para no perder tu web' : ''}.
       ${subActive ? '<button class="btn sm ghost" id="sub-cancel">Cancelar suscripción</button>' : ''}</p>` : ''}
     ${sub?.status === 'pending' ? `<div class="notice">Tu suscripción al plan <strong>${esc(PLANS[sub.plan]?.label)}</strong> está esperando la confirmación de Mercado Pago.</div>` : ''}
     ${pending && pending.plan !== plan && !sub ? `<div class="notice">Pediste el plan <strong>${esc(PLANS[pending.plan]?.label)}</strong>. Te vamos a contactar para activarlo. <button class="btn sm ghost" id="req-cancel">Cancelar pedido</button></div>` : ''}
@@ -80,7 +74,7 @@ export async function viewWeb(view, { uid, profile, settings }) {
     dlg.innerHTML = `
       <div class="dlg-head"><h2>Plan ${esc(PLANS[want].label)}</h2><button class="btn ghost sm" data-close>✕</button></div>
       <div class="dlg-body stack">
-        ${settings.plansV2 && planSpec(want, settings).year ? `<div class="stack" style="gap:8px">
+        ${planSpec(want, settings).year ? `<div class="stack" style="gap:8px">
           <label class="check card" style="margin:0;padding:12px"><input type="radio" name="sub-period" value="month" checked>
             <span><strong>Mensual: ${price(want)}</strong>${first(want) ? `<br><span class="muted small">Primer mes ${fmtMoney(first(want))} (incluye el registro de tu dominio)</span>` : ''}</span></label>
           <label class="check card" style="margin:0;padding:12px"><input type="radio" name="sub-period" value="year">

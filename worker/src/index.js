@@ -32,7 +32,7 @@
 
 import { verifyIdToken, getDocAsUser } from './firebase.js';
 import { adminGet, adminGetMany, adminQuery } from './admin.js';
-import { freeLimited, albumLimitBytes, albumPhotoLimit, setActive } from './plans.js';
+import { isFree, albumPhotoLimit, setActive } from './plans.js';
 import { signToken, verifyToken } from './tokens.js';
 import { json, httpError, apiUrl } from './http.js';
 import { connectUrl, callback, disconnect } from './mp.js';
@@ -153,7 +153,7 @@ async function uploadSession(req, env) {
     const member = (ev.photographerUids || []).includes(uid);
     if (member) role = 'member';
     // Plan Gratis: un solo álbum activo a la vez (con fotos y originales guardados).
-    if (member && !isSuper && freeLimited(user, await adminGet(env, 'settings/platform'))) {
+    if (member && !isSuper && isFree(user)) {
       const evs = await adminQuery(env, 'events', { filters: [['photographerUids', 'array-contains', uid]], limit: 300 });
       const others = evs.filter(e => e.id !== eid);
       const sets = others.length ? await adminGetMany(env, others.map(e => `events/${e.id}/sets/${uid}`)) : [];
@@ -191,23 +191,14 @@ async function uploadPhotoPart(req, env, kind, eid, pid, ctx) {
   checkSize(req, kind);
 
   const base = `e/${eid}/${s.uid}/${pid}`;
-  // Límite de espacio por álbum (settings.albumLimitGB + espacio comprado): se controla al empezar cada foto.
+  // Tope de fotos del álbum (según el plan + packs comprados): se controla al empezar cada foto.
   if (kind === 'preview') {
     const [set, st, user] = await adminGetMany(env, [`events/${eid}/sets/${s.uid}`, 'settings/platform', `users/${s.uid}`]);
-    // Planes nuevos: tope en cantidad de fotos. Esquema anterior: en espacio.
     const maxPhotos = albumPhotoLimit(set, st, user);
     if (maxPhotos > 0 && set && (set.photoCount || 0) >= maxPhotos) {
-      throw httpError(402, freeLimited(user, st)
+      throw httpError(402, isFree(user)
         ? `Tu álbum llegó al tope de ${maxPhotos} fotos del plan Gratis. Pasate a un plan pago para seguir subiendo.`
         : `El álbum llegó a su tope de ${maxPhotos} fotos. Sumá más fotos con un pack para seguir subiendo.`);
-    }
-    const max = albumLimitBytes(set, st, user);
-    if (max > 0 && set) {
-      const used = (set.bytesOriginal || 0) + (set.bytesPublic || 0);
-      const gb = Math.round(max / 1e8) / 10;
-      if (used >= max) throw httpError(402, freeLimited(user, st)
-        ? `Tu álbum llegó al tope de ${gb} GB del plan Gratis. Pasate al plan Profesional para seguir subiendo.`
-        : `El álbum llegó a su límite de ${gb} GB. Comprá más espacio para seguir subiendo.`);
     }
     // Avisar a los seguidores del evento y del fotógrafo cuando el álbum ya tiene fotos.
     if (set && !set.followersNotifiedAt && (set.photoCount || 0) >= NOTIFY_AT_PHOTOS) {
