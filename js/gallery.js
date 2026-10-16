@@ -94,7 +94,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
     const shown = (state.uid ? withPhotos.filter(p => p.uid === state.uid) : withPhotos).filter(p => forSale(p.uid));
     $('#g-price', box).innerHTML = shown.map(p => {
       const st = sets.get(p.uid) || {};
-      const packs = (st.packs || []).filter(k => k.qty > 1 && k.price > 0).sort((a, b) => a.qty - b.qty);
+      const packs = (st.packs || []).filter(k => k.qty > 1 && k.price > 0 && k.price < k.qty * st.price).sort((a, b) => a.qty - b.qty);
       return `<div class="g-price-row">💲 ${withPhotos.length > 1 ? `<strong>${esc(p.displayName)}</strong> · ` : ''}<strong>${fmtMoney(st.price)}</strong> por foto
         ${packs.map(k => `<span class="pill ok">${k.qty} fotos x ${fmtMoney(k.price)}</span>`).join(' ')}</div>`;
     }).join('') + (shown.length ? '<div class="muted small">Si llevás varias, se aplica solo la combinación más barata.</div>' : '');
@@ -276,7 +276,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
   function viewerFooter(p, el, rerender) {
     const ph = byUid.get(p.photographerUid);
     const set = sets.get(p.photographerUid) || {};
-    const packs = (set.packs || []).map(k => `${k.qty} x ${fmtMoney(k.price)}`).join(' · ');
+    const packs = (set.packs || []).filter(k => k.qty > 1 && k.price > 0 && k.price < k.qty * set.price).map(k => `${k.qty} x ${fmtMoney(k.price)}`).join(' · ');
     const inCart = cart.has(p.id);
     const fav = favs.has(p.id);
     el.innerHTML = `

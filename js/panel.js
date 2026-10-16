@@ -681,11 +681,15 @@ function sportTags() {
 
 // ================================================================ precios y marca
 // getFeeMode: función que devuelve el modo de comisión elegido (para calcular el neto de cada pack).
-function packsEditor(el, packs, getFeeMode = () => 'absorb') {
+function packsEditor(el, packs, getFeeMode = () => 'absorb', getUnit = () => 0) {
   let rows = (packs || []).map(p => ({ ...p }));
-  const hint = r => (r.qty > 1 && r.price > 0
-    ? `${fmtMoney(r.price / r.qty)} c/u · te quedan ${fmtMoney(netOf(r.price, getFeeMode()).net)}`
-    : '&nbsp;');
+  const hint = r => {
+    if (!(r.qty > 1 && r.price > 0)) return '&nbsp;';
+    const unit = getUnit();
+    // Un pack que no es más barato que las fotos sueltas no se usa (el carrito cobra lo más barato) ni se muestra.
+    if (unit > 0 && r.price >= unit * r.qty) return `<span style="color:var(--danger)">⚠️ Cuesta igual o más que ${r.qty} sueltas (${fmtMoney(unit * r.qty)}): no se va a mostrar ni usar.</span>`;
+    return `${fmtMoney(r.price / r.qty)} c/u · te quedan ${fmtMoney(netOf(r.price, getFeeMode()).net)}`;
+  };
   const draw = () => {
     el.innerHTML = `
       ${rows.length ? '' : '<p class="muted small" style="margin:0">Sin packs: cada foto se cobra al precio individual.</p>'}
@@ -786,7 +790,7 @@ function viewConfig() {
       <div class="row end" style="margin-top:14px"><button class="btn primary" type="submit">Guardar</button></div>
     </form>`;
   const feeMode = () => $('input[name=cf-fee]:checked').value;
-  const packs = packsEditor($('#cf-packs'), d.packs, feeMode);
+  const packs = packsEditor($('#cf-packs'), d.packs, feeMode, () => Number($('#cf-price').value) || 0);
   const drawNet = () => { $('#cf-net').innerHTML = breakdownHtml(Math.round(Number($('#cf-price').value) || 0), feeMode()); packs.refresh(); };
   $('#cf-price').addEventListener('input', drawNet);
   $$('input[name=cf-fee]').forEach(r => r.addEventListener('change', drawNet));
@@ -1418,7 +1422,7 @@ function renderSetEditor(ev, set, reload) {
     .catch(e => { $('#set-photos').innerHTML = `<div class="notice danger">${esc(errMsg(e))}</div>`; });
 
   const stFee = () => $('input[name=st-fee]:checked')?.value || 'absorb';
-  let packs = packsEditor($('#st-packs'), set.packs, stFee);
+  let packs = packsEditor($('#st-packs'), set.packs, stFee, () => Number($('#st-price').value) || 0);
   const drawNet = () => { $('#st-net').innerHTML = breakdownHtml(Math.round(Number($('#st-price').value) || 0), stFee()); packs.refresh(); };
   $('#st-price').addEventListener('input', drawNet);
   $('#st-fee').addEventListener('change', drawNet);
@@ -1449,7 +1453,7 @@ function renderSetEditor(ev, set, reload) {
   $('#use-def').onclick = () => {
     const d = S.profile.defaults || {};
     $('#st-price').value = d.price || '';
-    packs = packsEditor($('#st-packs'), d.packs, stFee);
+    packs = packsEditor($('#st-packs'), d.packs, stFee, () => Number($('#st-price').value) || 0);
     $('#st-fee').innerHTML = feeModeHtml('st-fee', d.feeMode);
     drawNet();
   };
