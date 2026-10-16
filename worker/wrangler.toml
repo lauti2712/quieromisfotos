@@ -18,7 +18,7 @@ API_URL = "https://api.quieromisfotos.com.ar"
 SITE_URL = "https://quieromisfotos.com.ar/"
 PANEL_URL = "https://quieromisfotos.com.ar/panel.html"
 FIREBASE_PROJECT_ID = "quieromisfotos-71629"
-ALLOWED_ORIGINS = "https://quieromisfotos.com.ar,https://solucionescotidianas.com.ar,https://www.quieromisfotos.com.ar,https://prueba.quieromisfotos.com.ar,http://localhost:5175"
+ALLOWED_ORIGINS = "https://quieromisfotos.com.ar,https://solucionescotidianas.com.ar,https://www.quieromisfotos.com.ar,https://prueba.quieromisfotos.com.ar"
 # Dominio público del bucket qmf-public (custom domain de R2). Si está vacío, el Worker sirve /public/*.
 PUBLIC_BASE_URL = "https://qmf-fotos.solucionescotidianas.com.ar"
 # Mercado Pago (aplicación "Quiero Mis Fotos", modo marketplace)

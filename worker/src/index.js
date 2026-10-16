@@ -181,14 +181,14 @@ async function uploadSession(req, env) {
     else throw httpError(403, 'No participás en este evento');
   }
   const exp = Math.floor(Date.now() / 1000) + SESSION_TTL;
-  const token = await signToken({ uid, eid, role, exp }, env.UPLOAD_SECRET);
+  const token = await signToken({ typ: 'up', uid, eid, role, exp }, env.UPLOAD_SECRET);
   return json({ token, exp, publicBase: publicBase(req, env) });
 }
 
 async function session(req, env) {
   const t = req.headers.get('X-Upload-Token');
   if (!t) throw httpError(401, 'Falta token de subida');
-  const s = await verifyToken(t, env.UPLOAD_SECRET);
+  const s = await verifyToken(t, env.UPLOAD_SECRET, 'up');
   if (!s || s.exp < Date.now() / 1000) throw httpError(401, 'Token de subida inválido o vencido');
   return s;
 }
@@ -295,7 +295,8 @@ function publicBase(req, env) {
 function corsHeaders(req, env) {
   const origin = req.headers.get('Origin') || '';
   const allowed = (env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim());
-  const ok = allowed.includes(origin) || /^http:\/\/localhost:\d+$/.test(origin);
+  // localhost solo en desarrollo (ALLOW_LOCALHOST=1 en .dev.vars).
+  const ok = allowed.includes(origin) || (env.ALLOW_LOCALHOST === '1' && /^http:\/\/localhost:\d+$/.test(origin));
   return ok ? {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',

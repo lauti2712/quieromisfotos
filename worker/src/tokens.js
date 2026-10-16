@@ -1,4 +1,5 @@
 // Tokens firmados con HMAC-SHA256: base64url(json).base64url(firma)
+// Cada token lleva su tipo (typ: 'up' subida, 'dl' descarga, 'mp' vinculación) y solo vale para eso.
 
 const enc = new TextEncoder();
 
@@ -29,12 +30,14 @@ export async function signToken(payload, secret) {
   return `${body}.${b64url(sig)}`;
 }
 
-export async function verifyToken(token, secret) {
+export async function verifyToken(token, secret, typ) {
   const [body, sig] = String(token).split('.');
   if (!body || !sig) return null;
   try {
     const ok = await crypto.subtle.verify('HMAC', await hmacKey(secret), b64urlDecode(sig), enc.encode(body));
-    return ok ? JSON.parse(new TextDecoder().decode(b64urlDecode(body))) : null;
+    if (!ok) return null;
+    const payload = JSON.parse(new TextDecoder().decode(b64urlDecode(body)));
+    return payload?.typ === typ ? payload : null;
   } catch {
     return null;
   }

@@ -16,7 +16,7 @@ export async function connectUrl(req, env) {
   const claims = await requireUser(req, env);
   const user = await adminGet(env, `users/${claims.sub}`);
   if (!user || user.role !== 'photographer') throw httpError(403, 'Solo fotógrafos pueden vincular Mercado Pago');
-  const state = await signToken({ uid: claims.sub, exp: Math.floor(Date.now() / 1000) + 900, n: crypto.randomUUID().slice(0, 8) }, env.UPLOAD_SECRET);
+  const state = await signToken({ typ: 'mp', uid: claims.sub, exp: Math.floor(Date.now() / 1000) + 900, n: crypto.randomUUID().slice(0, 8) }, env.UPLOAD_SECRET);
   const url = new URL('https://auth.mercadopago.com.ar/authorization');
   url.search = new URLSearchParams({
     client_id: env.MP_CLIENT_ID, response_type: 'code', platform_id: 'mp', state, redirect_uri: env.MP_REDIRECT_URI,
@@ -28,7 +28,7 @@ export async function connectUrl(req, env) {
 export async function callback(req, env) {
   const url = new URL(req.url);
   const back = (status, msg = '') => new Response(null, { status: 302, headers: { Location: `${panelUrl(env)}#/mp?mp=${status}${msg ? `&m=${encodeURIComponent(msg)}` : ''}` } });
-  const st = await verifyToken(url.searchParams.get('state') || '', env.UPLOAD_SECRET);
+  const st = await verifyToken(url.searchParams.get('state') || '', env.UPLOAD_SECRET, 'mp');
   if (!st || st.exp < Date.now() / 1000) return back('error', 'El enlace venció. Probá de nuevo.');
   const code = url.searchParams.get('code');
   if (!code) return back('error', url.searchParams.get('error_description') || 'Autorización cancelada');

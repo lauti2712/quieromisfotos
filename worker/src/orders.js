@@ -262,14 +262,14 @@ export async function downloadLinks(req, env, orderId) {
   const exp = Math.floor(Date.now() / 1000) + LINK_TTL;
   const links = await Promise.all(order.items.map(async (it, i) => ({
     photoId: it.photoId,
-    url: `${api}/dl/${await signToken({ o: orderId, e: order.eventId, u: order.photographerUid, p: it.photoId, n: i + 1, exp }, env.UPLOAD_SECRET)}`,
+    url: `${api}/dl/${await signToken({ typ: 'dl', o: orderId, e: order.eventId, u: order.photographerUid, p: it.photoId, n: i + 1, exp }, env.UPLOAD_SECRET)}`,
   })));
   return json({ links, exp });
 }
 
 // GET /dl/{token} -> el original, como descarga
 export async function download(req, env, token) {
-  const t = await verifyToken(token, env.UPLOAD_SECRET);
+  const t = await verifyToken(token, env.UPLOAD_SECRET, 'dl');
   if (!t || !t.o || t.exp < Date.now() / 1000) throw httpError(401, 'El link de descarga venció. Volvé a tu pedido para generar uno nuevo.');
   const obj = await env.PRIVATE.get(`e/${t.e}/${t.u}/${t.p}`);
   if (!obj) throw httpError(410, 'El original ya no está disponible');
