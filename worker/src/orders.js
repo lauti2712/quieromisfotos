@@ -7,7 +7,7 @@ import { signToken, verifyToken } from './tokens.js';
 import { json, httpError, apiUrl } from './http.js';
 import { extensionWebhook } from './extensions.js';
 import { notifyUser } from './push.js';
-import { feePercentFor } from './plans.js';
+import { feePercentFor, GRACE_DAYS } from './plans.js';
 import { subscriptionWebhook } from './subscriptions.js';
 import { addAlert } from './alerts.js';
 
@@ -22,6 +22,12 @@ const newId = () => crypto.randomUUID().replace(/-/g, '').slice(0, 20);
 export function setAvailableUntil(set) {
   const a = set?.expiresAt?.getTime?.() || 0, b = set?.extendedUntil?.getTime?.() || 0;
   return Math.max(a, b) || null;
+}
+
+// El comprador descarga mientras exista el original (venta + gracia, con las extensiones), y como mínimo 7 días.
+function downloadUntil(paidAt, set) {
+  const until = setAvailableUntil(set);
+  return Math.max(paidAt + DOWNLOAD_DAYS * 86400_000, until ? until + GRACE_DAYS * 86400_000 : 0);
 }
 
 // ------------------------------------------------------------------ POST /checkout
@@ -104,7 +110,8 @@ async function applyPayment(env, orderId, order, payment) {
     if (Number(payment.transaction_amount) + 1 < order.total) throw httpError(400, 'El monto pagado no coincide');
     if (order.status !== 'approved') {
       const paidAt = payment.date_approved ? new Date(payment.date_approved) : new Date();
-      Object.assign(upd, { status: 'approved', paidAt, downloadExpiresAt: new Date(paidAt.getTime() + DOWNLOAD_DAYS * 86400_000) });
+      const set = await adminGet(env, `events/${order.eventId}/sets/${order.photographerUid}`).catch(() => null);
+      Object.assign(upd, { status: 'approved', paidAt, downloadExpiresAt: new Date(downloadUntil(paidAt.getTime(), set)) });
     }
   } else if (status === 'refunded') {
     upd.status = 'refunded';
@@ -207,7 +214,13 @@ export async function downloadLinks(req, env, orderId) {
   const order = await adminGet(env, `orders/${orderId}`);
   if (!order || order.buyerUid !== claims.sub) throw httpError(404, 'Pedido no encontrado');
   if (order.status !== 'approved') throw httpError(409, 'El pedido todavía no está pagado');
-  if (order.downloadExpiresAt && order.downloadExpiresAt.getTime() < Date.now()) throw httpError(410, 'El plazo de descarga venció');
+  if (order.downloadExpiresAt && order.downloadExpiresAt.getTime() < Date.now()) {
+    // Si el fotógrafo extendió el álbum después de la compra, el plazo se corre con él.
+    const set = await adminGet(env, `events/${order.eventId}/sets/${order.photographerUid}`).catch(() => null);
+    const until = downloadUntil(order.paidAt?.getTime?.() || 0, set);
+    if (until < Date.now()) throw httpError(410, 'El plazo de descarga venció');
+    await adminUpdate(env, `orders/${orderId}`, { downloadExpiresAt: new Date(until) }).catch(() => {});
+  }
   const api = apiUrl(env, req);
   const exp = Math.floor(Date.now() / 1000) + LINK_TTL;
   const links = await Promise.all(order.items.map(async (it, i) => ({
