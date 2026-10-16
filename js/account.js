@@ -165,7 +165,9 @@ export async function renderAccount(app) {
     const snap = await getDocs(query(collection(db, 'orders'), where('buyerUid', '==', u.uid), orderBy('createdAt', 'desc'), limit(100)));
     const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     $('#orders').innerHTML = orders.length ? orders.map(o => {
-      const [label, cls] = STATUS[o.status] || [o.status, ''];
+      // Pendiente hace más de un día: el pago no se hizo (se puede reintentar desde el pedido).
+      const stale = o.status === 'pending' && Date.now() - (o.createdAt?.toMillis?.() || 0) > 86400_000;
+      const [label, cls] = stale ? ['Sin pagar', ''] : STATUS[o.status] || [o.status, ''];
       return `
         <a class="card order-row" href="#/pedido/${o.id}" style="display:flex;gap:12px;align-items:center;text-decoration:none">
           <div style="flex:1;min-width:0">
