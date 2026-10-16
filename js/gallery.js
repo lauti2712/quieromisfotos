@@ -33,8 +33,11 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
   }
 
   // Álbumes vencidos: se pueden ver, pero ya no se venden.
-  const forSale = uid => setForSale(sets.get(uid));
-  const expired = withPhotos.filter(p => !forSale(p.uid) && setUntil(sets.get(p.uid)));
+  // Sin Mercado Pago vinculado no se puede cobrar: se ven las fotos pero no se agregan al carrito (el ejemplo sí, para mostrar).
+  const canCharge = uid => !!ev.demo || !!byUid.get(uid)?.mpConnected;
+  const forSale = uid => setForSale(sets.get(uid)) && canCharge(uid);
+  const expired = withPhotos.filter(p => !setForSale(sets.get(p.uid)) && setUntil(sets.get(p.uid)));
+  const noPay = withPhotos.filter(p => setForSale(sets.get(p.uid)) && !canCharge(p.uid));
   box.innerHTML = `
     ${expired.length ? `<div class="notice warn">${expired.length === withPhotos.length ? 'Las fotos de este evento' : `Las fotos de ${expired.map(p => esc(p.displayName)).join(', ')}`} ya no están a la venta (venció el plazo de disponibilidad).</div>` : ''}
     ${hasBibs ? `<form class="g-bib" id="g-bib" role="search">
@@ -42,6 +45,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
       <div class="row"><input id="g-bib-in" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="Ej: 1234" autocomplete="off" value="${esc(state.bib)}">
       <button class="btn primary">Buscar</button><button type="button" class="btn hidden" id="g-bib-x">Ver todas</button></div>
     </form>` : ''}
+    ${noPay.length ? `<div class="notice">⏳ ${noPay.length === withPhotos.length ? 'Las fotos de este evento todavía no están a la venta' : `Las fotos de ${noPay.map(p => esc(p.displayName)).join(', ')} todavía no están a la venta`}: el fotógrafo está terminando de configurar los pagos. Tocá <strong>🔔 Avisarme</strong> arriba y te avisamos.</div>` : ''}
     <div class="g-price" id="g-price"></div>
     <div class="filter-row" id="g-ph"></div>
     <div class="filter-row" id="g-sub"></div>

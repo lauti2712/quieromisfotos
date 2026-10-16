@@ -380,6 +380,7 @@ async function viewHome() {
   $('#view').innerHTML = `
     <h1>Hola, ${esc(p.displayName)}</h1>
     <div id="home-alerts"></div>
+    ${approved && !p.mpConnected && totalPhotos > 0 ? `<div class="notice danger"><strong>💳 Tus fotos se ven pero no se pueden comprar.</strong><br>Falta vincular Mercado Pago: los compradores ven "todavía no está a la venta". <a href="#/mp">Vincular ahora</a></div>` : ''}
     ${installCardHtml()}
     ${p.status === 'pending' ? `<div class="notice warn"><strong>Tu cuenta está pendiente de aprobación.</strong><br>Mientras tanto podés completar tu perfil, subir tu foto y tu portfolio, y configurar precios y marca de agua.</div>` : ''}
     ${done < steps.length ? `<div class="card stack">
@@ -1363,7 +1364,7 @@ function renderSetEditor(ev, set, reload) {
   box.innerHTML = `
     <div class="card stack">
       <h2>Mi set en este evento</h2>
-      ${S.profile.mpConnected ? '' : '<div class="notice warn">Para que puedan comprar tus fotos tenés que <a href="#/mp">vincular Mercado Pago</a>.</div>'}
+      ${S.profile.mpConnected ? '' : '<div class="notice danger"><strong>Tus fotos todavía no se pueden comprar:</strong> los compradores ven "todavía no está a la venta" hasta que <a href="#/mp">vincules Mercado Pago</a>.</div>'}
       <div class="row">
         <span class="pill">📷 ${set.photoCount || 0} fotos</span>
         ${(c => c.photos ? `<span class="pill">🗂️ ${c.max ? `${c.used} de ${c.fmt(c.max)}` : 'Sin tope de fotos'}</span>` : `<span class="pill">💾 ${fmtBytes(c.used)}${c.max ? ` de ${fmtBytes(c.max)}` : ''}</span>`)(capOf(set))}
@@ -1485,7 +1486,7 @@ async function viewAdminPhotographers() {
       <div class="grow">
         <strong>${esc(u.displayName)}</strong> <span class="muted small">/${esc(u.slug)}</span><br>
         <span class="muted small">${esc(privs[i].email || '')}${u.zone ? ' · ' + esc(u.zone) : ''} · alta ${esc(fmtTs(u.createdAt))}</span><br>
-        ${u.mpConnected ? '<span class="pill ok">MP vinculado</span>' : '<span class="pill">MP sin vincular</span>'}
+        ${u.mpConnected ? '<span class="pill ok">MP vinculado</span>' : `<span class="pill ${u.status === 'approved' ? 'danger' : ''}">MP sin vincular</span>`}
         ${planOf(u) !== 'free' ? `<span class="pill accent">⭐ ${esc(PLANS[planOf(u)].label)} ${u.courtesy ? '· cortesía, sin vencimiento' : `hasta ${esc(fmtTs(u.proUntil))}`}</span>` : '<span class="pill">Gratis</span>'}
         ${reqs[i] && reqs[i].plan !== planOf(u) ? `<span class="pill warn">Pidió: ${esc(PLANS[reqs[i].plan]?.label || reqs[i].plan)}</span>` : ''}
         ${u.site?.requestedDomain && !u.domainActive ? `<span class="pill warn">Dominio pedido: ${esc(u.site.requestedDomain)}</span>` : ''}
