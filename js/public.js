@@ -47,15 +47,21 @@ function route() {
   const { parts } = parseHash();
   document.title = 'Quiero Mis Fotos';
   window.scrollTo(0, 0);
-  if (parts[0] === 'evento' && parts[1]) return renderEvent(parts[1]);
-  if (parts[0] === 'f' && parts[1]) return renderProfile(parts[1]);
-  if (parts[0] === 'carrito') return renderCart(app);
-  if (parts[0] === 'cuenta') return renderAccount(app);
-  if (parts[0] === 'pedido' && parts[1]) return renderOrder(app, parts[1], parseHash().query);
-  if (parts[0] === 'fotografos') return renderDirectory();
-  if (parts[0] === 'calendario') return renderCalendar(app);
-  if (parts[0] === 'soy-fotografo') return renderPhotographerLanding(app);
-  return renderHome();
+  // Si una pantalla falla (sin conexión, Firestore caído), se avisa con "Reintentar" en vez de quedar cargando.
+  const run = fn => Promise.resolve().then(fn).catch(e => {
+    console.error(e);
+    app.innerHTML = `<div class="empty"><h2>No pudimos cargar esta página</h2><p class="muted">Revisá tu conexión y probá de nuevo.</p><button class="btn primary" id="retry-route">Reintentar</button></div>`;
+    $('#retry-route').onclick = route;
+  });
+  if (parts[0] === 'evento' && parts[1]) return run(() => renderEvent(parts[1]));
+  if (parts[0] === 'f' && parts[1]) return run(() => renderProfile(parts[1]));
+  if (parts[0] === 'carrito') return run(() => renderCart(app));
+  if (parts[0] === 'cuenta') return run(() => renderAccount(app));
+  if (parts[0] === 'pedido' && parts[1]) return run(() => renderOrder(app, parts[1], parseHash().query));
+  if (parts[0] === 'fotografos') return run(renderDirectory);
+  if (parts[0] === 'calendario') return run(() => renderCalendar(app));
+  if (parts[0] === 'soy-fotografo') return run(() => renderPhotographerLanding(app));
+  return run(renderHome);
 }
 
 // ---------------------------------------------------------------- inicio
@@ -183,7 +189,9 @@ async function renderEvent(id) {
     const snap = await getDoc(doc(db, 'events', id));
     if (!snap.exists()) throw new Error('not-found');
     ev = { id, ...snap.data() };
-  } catch {
+  } catch (e) {
+    // Sin permiso = borrador o inexistente. Otro error (conexión) lo muestra route() con "Reintentar".
+    if (e.message !== 'not-found' && e.code !== 'permission-denied') throw e;
     app.innerHTML = `<div class="empty"><h2>Evento no encontrado</h2><p>Puede que todavía no esté publicado.</p><a class="btn" href="#/">Volver al inicio</a></div>`;
     return;
   }
