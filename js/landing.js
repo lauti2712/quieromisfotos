@@ -32,24 +32,16 @@ const FEATURES = [
 export async function renderPhotographerLanding(app) {
   document.title = 'Vendé tus fotos de eventos · Quiero Mis Fotos';
   const st = await loadSettings();
-  const v2 = !!st.plansV2;
-  const free = rulesFor({}, st).fee; // comisión del plan Gratis (la de hoy si los planes nuevos están apagados)
-  const fee = st.feePercent ?? 3;
+  const free = rulesFor({}, st).fee; // comisión del plan Gratis
   const mpPlans = st.mpFeePlans?.length ? st.mpFeePlans : DEFAULT_SETTINGS.mpFeePlans;
 
-  // Planes: sin v2, Gratis + Web; con v2, Gratis + Profesional + Profesional + Dominio.
   const sp = id => planSpec(id, st);
-  const plans = v2 ? [
+  const plans = [
     { id: 'free', name: 'Gratis', price: 0, cta: 'Empezar gratis', items: planFeatures('free', st) },
     { id: 'lite', name: 'Profesional Lite', price: sp('lite').price, year: sp('lite').year, cta: 'Quiero este plan', items: planFeatures('lite', st) },
     { id: 'web', name: 'Profesional', price: sp('web').price, year: sp('web').year, hot: true, cta: 'Quiero este plan', items: planFeatures('web', st) },
     { id: 'webdomain', name: 'Profesional Premium', price: sp('webdomain').price, year: sp('webdomain').year, cta: 'Quiero este plan',
       first: sp('webdomain').first > sp('webdomain').price ? sp('webdomain').first : 0, items: planFeatures('webdomain', st) },
-  ] : [
-    { name: 'Gratis', price: 0, cta: 'Empezar gratis', items: ['Vendé tus fotos en eventos', '1 álbum activo a la vez', 'Marca de agua, galería y cobro incluidos',
-      `Portfolio de ${st.freePortfolioLimit ?? 12} fotos`, `Comisión ${fee}% por venta`] },
-    { name: 'Profesional', price: st.webPrice, hot: true, cta: 'Quiero este plan', items: ['Álbumes ilimitados', `Portfolio de ${st.proPortfolioLimit ?? 80} fotos`,
-      'Tu web: tunombre.quieromisfotos.com.ar', 'Fotos de tu web sin marca de agua', 'Destacado en el directorio', `Comisión ${fee}% por venta`] },
   ];
   const planCard = (p, i) => `
         <div class="lp-plan ${p.hot ? 'hot' : ''} reveal" style="--d:${i * 120}ms">
@@ -120,7 +112,7 @@ export async function renderPhotographerLanding(app) {
 
     <section id="planes" class="lp-sec">
       <h2 class="reveal">Planes</h2>
-      <div class="lp-plans ${plans.length === 2 ? 'two' : plans.length === 4 ? 'four' : ''}">${plans.map(planCard).join('')}
+      <div class="lp-plans four">${plans.map(planCard).join('')}
       </div>
       <p class="muted small lp-note reveal">En todos los planes elegís quién paga la comisión: la absorbés vos o se le suma al comprador como costo de servicio. Los planes pagos se cobran por Mercado Pago y los cancelás cuando quieras.</p>
     </section>
@@ -135,8 +127,8 @@ export async function renderPhotographerLanding(app) {
             <select id="lc-mode"><option value="buyer">El comprador (costo de servicio)</option><option value="absorb">La absorbo yo</option></select></label>
           <label class="field">¿Cuándo cobrás en Mercado Pago?
             <select id="lc-mp">${mpPlans.map(p => `<option value="${esc(String(p.percent))}">${esc(p.label)} · ${esc(String(p.percent).replace('.', ','))}%</option>`).join('')}</select></label>
-          ${v2 ? `<label class="field">Plan
-            <select id="lc-plan">${plans.map(p => `<option value="${esc(String(sp(p.id).fee))}">${esc(p.name)} · ${esc(String(sp(p.id).fee).replace('.', ','))}%</option>`).join('')}</select></label>` : ''}
+          <label class="field">Plan
+            <select id="lc-plan">${plans.map(p => `<option value="${esc(String(sp(p.id).fee))}">${esc(p.name)} · ${esc(String(sp(p.id).fee).replace('.', ','))}%</option>`).join('')}</select></label>
         </div>
         <div class="lp-calc-out">
           <div class="lp-calc-row"><span>El comprador paga</span><strong id="lc-total"></strong></div>
@@ -152,7 +144,7 @@ export async function renderPhotographerLanding(app) {
       <h2 class="reveal">Preguntas frecuentes</h2>
       <details class="reveal"><summary>¿Cuándo cobro?</summary><p>Cada venta se paga con Mercado Pago y entra directo a tu cuenta. El plazo de acreditación lo elegís vos en Mercado Pago (al instante o más adelante, con menos comisión de MP).</p></details>
       <details class="reveal"><summary>¿Las fotos pierden calidad?</summary><p>No. El comprador descarga la foto en alta resolución y sin marca de agua. Las muestras de la galería son livianas y llevan la marca para que nadie se las lleve sin pagar.</p></details>
-      <details class="reveal"><summary>¿Cuánto tiempo quedan las fotos?</summary><p>Cada álbum se vende ${v2 ? `entre ${planSpec('free', st).days} y ${planSpec('webdomain', st).days} días según tu plan` : `${st.retentionDays || 14} días`} desde que subís la primera foto. Si querés seguir vendiendo, lo extendés desde el panel.</p></details>
+      <details class="reveal"><summary>¿Cuánto tiempo quedan las fotos?</summary><p>Cada álbum se vende entre ${planSpec('free', st).days} y ${planSpec('webdomain', st).days} días, según tu plan, desde que subís la primera foto. Si querés seguir vendiendo, lo extendés desde el panel.</p></details>
       <details class="reveal"><summary>¿Puedo subir desde el celular?</summary><p>Sí. La marca de agua se aplica en tu dispositivo y la subida se retoma sola si se corta la conexión.</p></details>
       <details class="reveal"><summary>¿Y si en el evento hay más fotógrafos?</summary><p>Pueden estar todos en el mismo evento: cada uno con su álbum, sus precios y sus ventas.</p></details>
     </section>
@@ -180,7 +172,7 @@ export async function renderPhotographerLanding(app) {
   const calc = () => {
     const price = Math.max(0, Math.round(Number($('#lc-price', app).value) || 0));
     const count = Math.max(0, Math.floor(Number($('#lc-count', app).value) || 0));
-    const pct = $('#lc-plan', app) ? Number($('#lc-plan', app).value) : fee;
+    const pct = Number($('#lc-plan', app).value);
     const r = sellerNet(price * count, { feeMode: $('#lc-mode', app).value, feePercent: pct, mpPercent: Number($('#lc-mp', app).value) });
     $('#lc-total', app).textContent = fmtMoney(r.total);
     $('#lc-fee-l', app).textContent = `Comisión Quiero Mis Fotos (${String(pct).replace('.', ',')}%)`;

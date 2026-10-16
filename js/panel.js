@@ -10,7 +10,7 @@ import {
   $, $$, esc, slugify, SLUG_RE, searchTokens, fmtMoney, fmtDate, fmtTs, todayIso, parseHash,
   toast, errMsg, avatarHtml, coverHtml, SOCIALS, newId, normalize, fmtBytes, setBytes,
 } from './util.js';
-import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, ACTIVITY_TYPE, USER_TAG_TYPES, tagPills, SERVICES, isPro, mpPlanOf, GEAR_TYPES, PLANS, planOf, siteUrlOf, setUntil, setDeleteAt, GRACE_DAYS, albumLimit, albumPhotoLimit, feePercentFor, freeLimited, setActive, planSpec, rulesFor } from './data.js';
+import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, ACTIVITY_TYPE, USER_TAG_TYPES, tagPills, SERVICES, isPro, mpPlanOf, GEAR_TYPES, PLANS, planOf, siteUrlOf, setUntil, setDeleteAt, GRACE_DAYS, albumPhotoLimit, feePercentFor, isFreePlan, setActive, planSpec, rulesFor } from './data.js';
 import { viewWeb } from './panel-web.js';
 import { sellerNet } from './pricing.js';
 import { viewPortfolio } from './panel-portfolio.js';
@@ -479,14 +479,13 @@ function viewProfile() {
       <div class="field"><span>Tipos de trabajo</span>
         <div class="pills" id="pf-services">${SERVICES.map(v => `<button type="button" class="chip ${(p.services || []).includes(v) ? 'on' : ''}" data-v="${esc(v)}">${esc(v)}</button>`).join('')}</div></div>
       <h3 style="margin-top:6px">Personalización del perfil</h3>
-      ${myRules().profileCustom ? `<p class="muted small" style="margin:0">Una foto de portada arriba de tu perfil y tu color en los botones.</p>
+      ${myRules().profileCustom ? `<p class="muted small" style="margin:0">Una foto de portada arriba de tu perfil público.</p>
         <input type="hidden" id="pf-pcover" value="${esc(p.profileCoverUrl || '')}">
         <div class="pf-cover-prev" id="pf-pcover-prev" style="${p.profileCoverUrl ? `background-image:url('${esc(p.profileCoverUrl)}')` : ''}">${p.profileCoverUrl ? '' : '<span class="muted small">Sin portada</span>'}</div>
         <div class="row">
           <label class="btn sm">Subir portada<input type="file" id="pf-pcover-file" accept="image/*" hidden></label>
           <button type="button" class="btn sm ghost" id="pf-pcover-rm">Quitar portada</button>
-          <label class="row small" style="gap:6px">Color <input type="color" id="pf-accent" value="${esc(p.profileAccent || '#ff5a1f')}" style="width:44px;height:32px;padding:2px"></label>
-        </div>` : `<p class="muted small" style="margin:0">🔒 Foto de portada y tu color en el perfil: con el plan <a href="#/web">Profesional Lite</a> o superior.</p>`}
+        </div>` : `<p class="muted small" style="margin:0">🔒 Foto de portada en tu perfil: con el plan <a href="#/web">Profesional Lite</a> o superior.</p>`}
       <h3 style="margin-top:6px">Cámaras</h3>
       <p class="muted small" style="margin:0">Contá con qué equipo trabajás: cámaras, lentes, drone, iluminación…</p>
       <div id="pf-gear" class="stack"></div>
@@ -577,7 +576,7 @@ function viewProfile() {
       specialties: $$('#pf-sports .chip.on').map(c => c.dataset.v),
       services: $$('#pf-services .chip.on').map(c => c.dataset.v),
       gear: gear.map(g => ({ type: GEAR_TYPES.includes(g.type) ? g.type : 'Otro', name: String(g.name || '').trim().slice(0, 60) })).filter(g => g.name),
-      ...($('#pf-pcover') ? { profileCoverUrl: $('#pf-pcover').value, profileAccent: $('#pf-accent').value } : {}),
+      ...($('#pf-pcover') ? { profileCoverUrl: $('#pf-pcover').value } : {}),
     };
     try {
       const b = writeBatch(db);
@@ -915,13 +914,10 @@ function retentionHtml(set) {
       <span>⛔ Este álbum dejó de venderse el ${fmtMs(r.until)}. <strong>Los originales se borran el ${fmtMs(r.deleteAt)}</strong>: extendé el plazo para volver a venderlo.</span>${btn}</div>`;
 }
 
-// Tope del álbum: con planes nuevos, cantidad de fotos; con el esquema anterior, espacio en bytes.
+// Tope del álbum en cantidad de fotos (según el plan + packs comprados).
 function capOf(set) {
-  if (S.settings.plansV2) {
-    const max = albumPhotoLimit(set, S.settings, S.profile);
-    return { max, used: set?.photoCount || 0, fmt: n => `${Number(n).toLocaleString('es-AR')} fotos`, photos: true };
-  }
-  return { max: albumLimit(set, S.settings, S.profile), used: setBytes(set), fmt: fmtBytes, photos: false };
+  const max = albumPhotoLimit(set, S.settings, S.profile);
+  return { max, used: set?.photoCount || 0, fmt: n => `${Number(n).toLocaleString('es-AR')} fotos`, photos: true };
 }
 
 // Elegir plan y pagar con Mercado Pago (a la plataforma): kind 'time' = más días de venta, 'space' = más fotos (o GB) en el álbum.
@@ -1202,9 +1198,9 @@ async function viewEvent(id) {
   $('#ext-btn')?.addEventListener('click', () => extensionDialog(ev, mySet));
   $('#space-btn')?.addEventListener('click', () => extensionDialog(ev, mySet, 'space'));
   // La subida avisa cuando el álbum se llenó.
-  window.onqmfAlbumFull = () => (freeLimited(S.profile, S.settings) ? (location.hash = '#/web') : extensionDialog(ev, mySet, 'space'));
+  window.onqmfAlbumFull = () => (isFreePlan(S.profile) ? (location.hash = '#/web') : extensionDialog(ev, mySet, 'space'));
   // Plan Gratis: 1 álbum activo a la vez. Si ya tiene otro, no puede subir acá.
-  if (freeLimited(S.profile, S.settings) && !setActive(mySet)) {
+  if (isFreePlan(S.profile) && !setActive(mySet)) {
     getDocs(query(collection(db, 'events'), where('photographerUids', 'array-contains', me), limit(300))).then(async snap => {
       const others = snap.docs.filter(d => d.id !== id);
       const sets = await Promise.all(others.map(d => getDoc(doc(db, 'events', d.id, 'sets', me)).then(x => x.data() || null).catch(() => null)));
@@ -1309,7 +1305,7 @@ function renderSetEditor(ev, set, reload) {
       <div class="row">
         <span class="pill">📷 ${set.photoCount || 0} fotos</span>
         ${(c => c.photos ? `<span class="pill">🗂️ ${c.max ? `${c.used} de ${c.fmt(c.max)}` : 'Sin tope de fotos'}</span>` : `<span class="pill">💾 ${fmtBytes(c.used)}${c.max ? ` de ${fmtBytes(c.max)}` : ''}</span>`)(capOf(set))}
-        ${freeLimited(S.profile, S.settings) ? '<a class="btn sm" href="#/web">⭐ Más fotos por álbum con un plan pago</a>' : capOf(set).max ? `<button class="btn sm" id="space-btn">➕ ${capOf(set).photos ? 'Más fotos' : 'Más espacio'}</button>` : ''}
+        ${isFreePlan(S.profile) ? '<a class="btn sm" href="#/web">⭐ Más fotos por álbum con un plan pago</a>' : capOf(set).max ? `<button class="btn sm" id="space-btn">➕ ${capOf(set).photos ? 'Más fotos' : 'Más espacio'}</button>` : ''}
       </div>
       ${(c => c.max ? `<div class="meter"><span class="${c.used >= c.max ? 'danger' : c.used >= c.max * 0.9 ? 'warn' : ''}" style="width:${Math.min(100, (c.used / c.max) * 100).toFixed(1)}%"></span></div>` : '')(capOf(set))}
       ${retentionHtml(set)}
@@ -1477,7 +1473,7 @@ async function viewAdminPhotographers() {
       // Prueba gratis del plan Profesional al aprobar (una sola vez por fotógrafo, con planes nuevos).
       const u = users.find(x => x.uid === b.dataset.uid);
       const trialDays = Number(S.settings.trialDays ?? 30);
-      const gaveTrial = b.dataset.st === 'approved' && S.settings.plansV2 && trialDays > 0 && u && !u.trialUsed && planOf(u) === 'free';
+      const gaveTrial = b.dataset.st === 'approved' && trialDays > 0 && u && !u.trialUsed && planOf(u) === 'free';
       if (gaveTrial) Object.assign(upd, { plan: 'web', proUntil: Timestamp.fromMillis(Date.now() + trialDays * 86400000), trial: true, trialUsed: true });
       await updateDoc(doc(db, 'users', b.dataset.uid), upd);
       toast(b.dataset.st === 'approved' ? `Fotógrafo aprobado${gaveTrial ? ` con ${trialDays} días de Profesional gratis` : ''}` : 'Estado actualizado');
@@ -1710,13 +1706,12 @@ async function viewAdminStorage() {
       <p class="muted small" style="margin:0">Espacio que cada fotógrafo puede usar por álbum (originales + muestras). Al llegar al límite no puede subir más fotos hasta comprar espacio adicional, que se paga con Mercado Pago a tu cuenta. 0 = sin límite.
         Referencia: una foto ocupa ~${fmtBytes(top.length ? top.reduce((a, t) => a + t.bytes, 0) / Math.max(1, top.reduce((a, t) => a + (t.photos || 0), 0)) : 12e6)} (sin optimizar).</p>
       <div class="grid2">
-        <label class="field">Límite por álbum — esquema anterior (GB)<input type="number" id="lim-gb" min="0" step="0.5" value="${S.settings.albumLimitGB || 0}"><span class="hint">0 = sin límite. Pueden comprar packs.</span></label>
         <p class="muted small" style="margin:0">Con los planes nuevos, el espacio de cada plan se define en Plataforma → Planes.</p>
       </div>
       <label class="check"><input type="checkbox" id="lim-opt" ${S.settings.optimizeOriginals !== false ? 'checked' : ''}> Optimizar los originales al subir (todos los fotógrafos)</label>
       <p class="muted small" style="margin:0">Se guardan a la misma resolución con calidad JPEG 92%: no se nota a simple vista ni impresa, ocupan ~40-50% y la subida es más rápida. Si lo destildás, se guarda el archivo exacto de la cámara.</p>
       <h3 style="margin:4px 0 0">Packs adicionales para un álbum</h3>
-      <p class="muted small" style="margin:0">Fotos extra (planes nuevos) o GB extra (esquema anterior). Solo planes pagos.</p>
+      <p class="muted small" style="margin:0">Fotos extra para un álbum. Solo planes pagos (el Gratis tiene tope fijo).</p>
       <div id="lim-plans" class="stack"></div>
       <div class="row"><button type="button" class="btn sm" id="lim-add">+ Agregar pack</button><span class="spacer" style="flex:1"></span><button class="btn primary">Guardar</button></div>
     </form>
@@ -1765,7 +1760,6 @@ async function viewAdminStorage() {
       <div class="row">
         <input type="text" data-i="${i}" data-k="label" value="${esc(p.label || '')}" placeholder="Nombre (ej: +5 GB)" style="flex:2;min-width:140px">
         <input type="number" data-i="${i}" data-k="photos" value="${p.photos || ''}" placeholder="Fotos" min="50" step="50" style="flex:1;min-width:80px" title="Fotos extra (planes nuevos)">
-        <input type="number" data-i="${i}" data-k="gb" value="${p.gb || ''}" placeholder="GB" min="0.5" step="0.5" style="flex:1;min-width:70px" title="GB extra (esquema anterior)">
         <input type="number" data-i="${i}" data-k="price" value="${p.price || ''}" placeholder="Precio ARS" min="1" style="flex:1;min-width:100px">
         <button type="button" class="btn sm danger" data-rm="${i}">✕</button>
       </div>`).join('') : '<p class="muted small" style="margin:0">Sin packs: si un álbum se llena, el fotógrafo no puede comprar más.</p>';
@@ -1773,14 +1767,14 @@ async function viewAdminStorage() {
     $$('#lim-plans [data-rm]').forEach(b => b.onclick = () => { sp.splice(+b.dataset.rm, 1); drawPlans(); });
   };
   drawPlans();
-  $('#lim-add').onclick = () => { sp.push({ id: newId(), label: '', photos: 500, gb: 3, price: 0 }); drawPlans(); };
+  $('#lim-add').onclick = () => { sp.push({ id: newId(), label: '', photos: 500, price: 0 }); drawPlans(); };
   $('#lim-form').onsubmit = async e => {
     e.preventDefault();
-    const clean = sp.filter(p => p.label || p.price).map(p => ({ id: p.id || newId(), label: (p.label || '').trim() || (p.photos ? `+${p.photos} fotos` : `+${p.gb} GB`),
-      photos: Math.round(Number(p.photos) || 0), gb: Number(p.gb) || 0, price: Math.round(p.price) }));
-    if (clean.some(p => !(p.photos > 0 || p.gb > 0) || !(p.price > 0))) return toast('Cada pack necesita fotos (o GB) y precio.', 'error');
+    const clean = sp.filter(p => p.label || p.price).map(p => ({ id: p.id || newId(), label: (p.label || '').trim() || `+${p.photos} fotos`,
+      photos: Math.round(Number(p.photos) || 0), price: Math.round(p.price) }));
+    if (clean.some(p => !(p.photos > 0) || !(p.price > 0))) return toast('Cada pack necesita cantidad de fotos y precio.', 'error');
     try {
-      await setDoc(doc(db, 'settings', 'platform'), { albumLimitGB: Math.max(0, Number($('#lim-gb').value) || 0), optimizeOriginals: $('#lim-opt').checked, storagePlans: clean, updatedAt: serverTimestamp() }, { merge: true });
+      await setDoc(doc(db, 'settings', 'platform'), { optimizeOriginals: $('#lim-opt').checked, storagePlans: clean, updatedAt: serverTimestamp() }, { merge: true });
       S.settings = await loadSettings();
       toast('Límite guardado');
     } catch (err) { toast(errMsg(err), 'error'); }
@@ -1933,8 +1927,6 @@ async function viewAdminConfig() {
       </div>
       <div class="card stack">
         <div class="grid2">
-          <label class="field">Comisión de la plataforma (%)<input type="number" id="a-fee" min="0" max="50" step="0.1" value="${st.feePercent}" required>
-            <span class="hint">Esquema anterior. Con los planes nuevos, la comisión es la de cada plan (abajo).</span></label>
           <label class="field">Días de retención de originales<input type="number" id="a-ret" min="1" max="365" step="1" value="${st.retentionDays}" required>
             <span class="hint">Desde que el fotógrafo sube las fotos de un evento.</span></label>
         </div>
@@ -1949,8 +1941,7 @@ async function viewAdminConfig() {
       </div>
       <div class="card stack">
         <h2>Planes</h2>
-        <label class="check"><input type="checkbox" id="a-v2" ${st.plansV2 ? 'checked' : ''}> <strong>Planes nuevos activados</strong></label>
-        <p class="muted small" style="margin:0">Gratis: 1 álbum activo a la vez y tope de ${st.freeAlbumLimitGB ?? 3} GB por álbum (se cambia en Almacenamiento). Los planes pagos tienen álbumes ilimitados y packs de espacio. Mientras esté apagado, todos los fotógrafos usan las reglas anteriores (una sola comisión y un solo límite de portfolio para los planes pagos).</p>
+        <p class="muted small" style="margin:0">Gratis: 1 álbum activo a la vez y sin packs. Los planes pagos tienen álbumes ilimitados y pueden comprar packs de fotos (en Almacenamiento).</p>
         <div class="table-wrap"><table class="list plan-cfg">
           <tr><th>Plan</th><th>Precio</th><th>Comisión %</th><th>Portfolio</th><th>Fotos por álbum</th><th>Días de venta</th><th>Destacado</th></tr>
           ${[['free', 'Gratis'], ['lite', 'Profesional Lite'], ['web', 'Profesional'], ['webdomain', 'Profesional Premium']].map(([id, label]) => {
@@ -1969,7 +1960,6 @@ async function viewAdminConfig() {
         </table></div>
         <label class="field" style="max-width:320px">Prueba gratis de Profesional para fotógrafos nuevos (días)<input type="number" id="a-trial" min="0" max="90" step="1" value="${st.trialDays ?? 30}">
           <span class="hint">Se da al aprobar al fotógrafo, una sola vez. 0 = sin prueba. Rige con los planes nuevos.</span></label>
-        <label class="field" style="max-width:320px">Fotos de portfolio — planes pagos (esquema anterior)<input type="number" id="a-pro-lim" min="1" max="2000" step="1" value="${st.proPortfolioLimit}" required></label>
         </div>
       </div>
       <div class="card stack">
@@ -2004,11 +1994,10 @@ async function viewAdminConfig() {
     if (clean.some(p => !p.label || !(p.days > 0) || !(p.price > 0))) return toast('Cada plan necesita nombre, días y precio.', 'error');
     try {
       await setDoc(doc(db, 'settings', 'platform'), {
-        feePercent: Number($('#a-fee').value), plansV2: $('#a-v2').checked, showDirectory: $('#a-dir').checked, trialDays: Math.round(Number($('#a-trial').value) || 0), ...readPlanCfg(),
+        showDirectory: $('#a-dir').checked, trialDays: Math.round(Number($('#a-trial').value) || 0), ...readPlanCfg(),
         retentionDays: Math.round(Number($('#a-ret').value)),
         extensionPlans: clean,
         mpFeePlans: $$('#a-mp [data-mp]').map(i => ({ id: i.dataset.mp, label: i.dataset.label, percent: Math.round(Number(i.value) * 100) / 100 })),
-        proPortfolioLimit: Math.round(Number($('#a-pro-lim').value) || 1),
         updatedAt: serverTimestamp(),
       }, { merge: true });
       S.settings = await loadSettings();

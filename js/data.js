@@ -1,28 +1,18 @@
 // Lecturas compartidas (taxonomía de etiquetas, settings).
 import { db, doc, getDoc } from './fb.js';
-import { planOf as corePlanOf, planSpec as corePlanSpec, rulesFor, albumLimitBytes, albumPhotoLimit } from './plans-core.js';
+import { planOf as corePlanOf, planSpec as corePlanSpec, rulesFor, albumPhotoLimit } from './plans-core.js';
 export { albumPhotoLimit };
 export { rulesFor };
 
+// Las condiciones de cada plan (precios, comisiones, topes) están en js/plans-core.js con sus valores por defecto.
 export const DEFAULT_SETTINGS = {
-  feePercent: 3,       // comisión de los planes pagos
-  freeFeePercent: 7,   // comisión del plan Gratis (planes nuevos)
-  freeAlbumLimitGB: 3, // tope de espacio por álbum en el plan Gratis (sin packs)
-  freeActiveAlbums: 1, // álbumes activos a la vez en el plan Gratis
   retentionDays: 14,
   extensionPlans: [],
-  // Límite de espacio por álbum en GB (0 = sin límite) y packs de espacio adicional que compra el fotógrafo.
-  albumLimitGB: 0,
   // Recomprimir los originales al subir (JPEG 92%, misma resolución). Lo decide el superadmin.
   optimizeOriginals: true,
   // Mostrar "Fotógrafos" (directorio) en el menú del sitio.
   showDirectory: false,
-  storagePlans: [],
-  proPrice: 4500,
-  webPrice: 9000,
-  webDomainPrice: 12000,
-  freePortfolioLimit: 12,
-  proPortfolioLimit: 80,
+  storagePlans: [], // packs de fotos extra para un álbum (planes pagos)
   // Comisión de Mercado Pago por plazo de acreditación (tarjeta de crédito, IVA incluido). Editable por el superadmin.
   mpFeePlans: [
     { id: '0', label: 'Al instante', percent: 7.85 },
@@ -46,11 +36,9 @@ export const GEAR_PLURAL = { 'Cámara': 'Cámaras', 'Lente': 'Lentes', 'Drone': 
 export const SERVICES = ['Deportes', 'Eventos sociales', 'Retratos / books', 'Institucional', 'Producto', 'Video'];
 
 // Planes pagos. `proUntil` es la fecha hasta la que está pago el plan (cualquiera de los pagos).
-// Desde oct-2026: Gratis (1 álbum activo, tope de GB, comisión mayor) · Profesional (id 'web') · Profesional + Dominio.
-// 'pro' (Portfolio Pro) queda solo por compatibilidad con planes dados antes: no se ofrece.
+// Planes: Gratis · Profesional Lite · Profesional (id 'web') · Profesional Premium (id 'webdomain'). Condiciones: js/plans-core.js.
 export const PLANS = {
   free: { label: 'Gratis' },
-  pro: { label: 'Portfolio Pro (anterior)', priceKey: 'proPrice', legacy: true },
   lite: { label: 'Profesional Lite', priceKey: 'litePrice' },
   web: { label: 'Profesional', priceKey: 'webPrice', web: true },
   webdomain: { label: 'Profesional Premium', priceKey: 'webDomainPrice', web: true, domain: true },
@@ -130,12 +118,8 @@ export const setDeleteAt = set => (setUntil(set) ? setUntil(set) + GRACE_DAYS * 
 export const setForSale = set => !!set && set.price > 0 && !set.originalsDeleted && (!setUntil(set) || setUntil(set) > Date.now());
 
 // Límite de espacio del álbum en bytes (0 = sin límite): el general + lo que compró el fotógrafo.
-// Plan Gratis: tope fijo (freeAlbumLimitGB), sin packs. Planes pagos: albumLimitGB + lo comprado (0 = sin límite).
-// Las reglas nuevas del plan Gratis rigen solo con settings.plansV2 (interruptor en Plataforma).
-export const freeLimited = (user, settings) => !!settings?.plansV2 && planOf(user) === 'free';
-export const albumLimit = (set, settings, user) => albumLimitBytes(set, settings, user);
+export const isFreePlan = user => planOf(user) === 'free';
 
-// Comisión de la plataforma según el plan del fotógrafo.
 export const feePercentFor = (user, settings) => rulesFor(user, settings).fee;
 
 // Álbum activo: tiene fotos y todavía guarda los originales (en venta o en los días de gracia).
@@ -148,7 +132,7 @@ export function planFeatures(id, st) {
   const gb = `${p.albumPhotos.toLocaleString('es-AR')} fotos por álbum`;
   const days = `Cada álbum se vende ${p.days} días`;
   if (id === 'free') return ['Vendé tus fotos en eventos', '1 álbum activo a la vez', `Hasta ${gb}`, days, `Portfolio de ${p.portfolio} fotos`, 'Estadísticas básicas', fee];
-  if (id === 'lite') return ['Álbumes ilimitados', `${gb} (ampliable)`, days, `Portfolio de ${p.portfolio} fotos`, 'Estadísticas por evento', 'Portada y color en tu perfil',
+  if (id === 'lite') return ['Álbumes ilimitados', `${gb} (ampliable)`, days, `Portfolio de ${p.portfolio} fotos`, 'Estadísticas por evento', 'Foto de portada en tu perfil',
     ...(p.featured ? ['Destacado en el directorio'] : []), fee];
   if (id === 'web') return ['Todo lo de Lite', `${gb} (ampliable)`, days, `Portfolio de ${p.portfolio} fotos`, 'Tu web: tunombre.quieromisfotos.com.ar',
     'Fotos de tu web sin marca de agua', 'Links cortos para tus eventos', 'Estadísticas completas', ...(p.featured ? ['Destacado en el directorio'] : []), fee];

@@ -32,9 +32,8 @@ service cloud.firestore {
       let base = st.get('retentionDays', 14);
       let u = get(userPath(uid())).data;
       let plan = u.get('plan', 'free');
-      let paid = plan in ['pro', 'lite', 'web', 'webdomain'] && u.get('proUntil', null) != null && u.proUntil > request.time;
-      return !st.get('plansV2', false) ? base
-        : !paid ? st.get('freeRetentionDays', base)
+      let paid = plan in ['lite', 'web', 'webdomain'] && u.get('proUntil', null) != null && u.proUntil > request.time;
+      return !paid ? st.get('freeRetentionDays', base)
         : plan == 'lite' ? st.get('liteRetentionDays', base)
         : plan == 'web' ? st.get('webRetentionDays', 21)
         : plan == 'webdomain' ? st.get('webDomainRetentionDays', 30)
@@ -166,14 +165,11 @@ service cloud.firestore {
       let sp = /databases/$(database)/documents/settings/platform;
       let st = exists(sp) ? get(sp).data : {};
       let plan = u.get('plan', 'free');
-      let paid = plan in ['pro', 'lite', 'web', 'webdomain'] && u.get('proUntil', null) != null && u.proUntil > request.time;
-      // Planes nuevos (plansV2): límite por plan. Antes: uno para todos los pagos.
+      let paid = plan in ['lite', 'web', 'webdomain'] && u.get('proUntil', null) != null && u.proUntil > request.time;
       return !paid ? st.get('freePortfolioLimit', 12)
-        : !st.get('plansV2', false) ? st.get('proPortfolioLimit', 80)
         : plan == 'lite' ? st.get('litePortfolioLimit', 30)
         : plan == 'web' ? st.get('webPortfolioLimit', 60)
-        : plan == 'webdomain' ? st.get('webDomainPortfolioLimit', 100)
-        : st.get('proPortfolioLimit', 80);
+        : st.get('webDomainPortfolioLimit', 100);
     }
     match /portfolio/{id} {
       allow read: if true;
@@ -190,12 +186,12 @@ service cloud.firestore {
       allow delete: if isSuper() || (signedIn() && resource.data.photographerUid == uid());
     }
 
-    // ---------- pedidos de plan (el fotógrafo pide Pro / Web; el superadmin lo activa)
+    // ---------- pedidos de plan (el fotógrafo pide un plan; el superadmin lo activa)
     match /planRequests/{userId} {
       allow read: if isSuper() || (signedIn() && uid() == userId);
       allow create, update: if signedIn() && uid() == userId && isActivePhotographer()
         && request.resource.data.keys().hasOnly(['plan', 'domain', 'createdAt', 'displayName'])
-        && request.resource.data.plan in ['pro', 'web', 'webdomain'];
+        && request.resource.data.plan in ['lite', 'web', 'webdomain'];
       allow delete: if isSuper() || (signedIn() && uid() == userId);
     }
 
@@ -213,12 +209,10 @@ service cloud.firestore {
     // ---------- órdenes y extensiones: solo las escribe el Worker ----------
     // Links cortos de los fotógrafos: quieromisfotos.com.ar/{alias} -> su álbum en un evento (Profesional y Premium).
     function canShortLink() {
-      let sp = /databases/$(database)/documents/settings/platform;
-      let st = exists(sp) ? get(sp).data : {};
       let u = get(userPath(uid())).data;
       let plan = u.get('plan', 'free');
-      let paid = plan in ['pro', 'lite', 'web', 'webdomain'] && u.get('proUntil', null) != null && u.proUntil > request.time;
-      return isSuper() || (paid && (!st.get('plansV2', false) || plan in ['web', 'webdomain']));
+      let paid = plan in ['web', 'webdomain'] && u.get('proUntil', null) != null && u.proUntil > request.time;
+      return isSuper() || paid;
     }
     match /aliases/{alias} {
       allow read: if true;

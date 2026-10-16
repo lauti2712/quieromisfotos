@@ -199,7 +199,7 @@ test('set: vencimiento inicial solo una vez y con los días configurados', async
 
 // ---------- portfolio
 test('portfolio: slot dentro del límite del plan', async () => {
-  await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'settings/platform'), { freePortfolioLimit: 12, proPortfolioLimit: 200 }));
+  await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'settings/platform'), { freePortfolioLimit: 12, webDomainPortfolioLimit: 100 }));
   const pf = (uid, slot) => ({ photographerUid: uid, slot, url: `https://x/u/${uid}/a_p.jpg`, thumbUrl: `https://x/u/${uid}/a_t.jpg` });
   await assertSucceeds(setDoc(doc(user('ana'), 'portfolio/ana_11'), pf('ana', 11)));
   await assertFails(setDoc(doc(user('ana'), 'portfolio/ana_12'), pf('ana', 12)));       // gratis: máximo 12
@@ -208,10 +208,11 @@ test('portfolio: slot dentro del límite del plan', async () => {
   await assertSucceeds(setDoc(doc(user('pepe'), 'portfolio/pepe_0'), pf('pepe', 0)));   // pendiente: puede armar su portfolio
   await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'users/susi'), photographer('suspended', { slug: 'susi' })));
   await assertFails(setDoc(doc(user('susi'), 'portfolio/susi_0'), pf('susi', 0)));      // suspendido
-  await assertFails(updateDoc(doc(user('ana'), 'users/ana'), { plan: 'pro' }));         // no se da Pro solo
-  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users/ana'), { plan: 'pro', proUntil: new Date(Date.now() + 86400000) }));
-  await assertSucceeds(setDoc(doc(user('ana'), 'portfolio/ana_150'), pf('ana', 150)));
-  await assertSucceeds(getDoc(doc(as(), 'portfolio/ana_150')));
+  await assertFails(updateDoc(doc(user('ana'), 'users/ana'), { plan: 'webdomain' }));   // no se da un plan sola
+  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users/ana'), { plan: 'webdomain', proUntil: new Date(Date.now() + 86400000) }));
+  await assertSucceeds(setDoc(doc(user('ana'), 'portfolio/ana_99'), pf('ana', 99)));   // Premium: hasta 100
+  await assertFails(setDoc(doc(user('ana'), 'portfolio/ana_100'), pf('ana', 100)));
+  await assertSucceeds(getDoc(doc(as(), 'portfolio/ana_99')));
 });
 
 // ---------- compradores
@@ -230,16 +231,17 @@ test('comprador lee sus pedidos y no los ajenos', async () => {
 });
 
 // ---------- planes web
-test('plan Web también amplía el portfolio; pedidos de plan solo propios', async () => {
+test('plan Profesional amplía el portfolio; pedidos de plan solo propios', async () => {
   await env.withSecurityRulesDisabled(async ctx => {
     const db = ctx.firestore();
-    await setDoc(doc(db, 'settings/platform'), { freePortfolioLimit: 12, proPortfolioLimit: 200 });
+    await setDoc(doc(db, 'settings/platform'), { freePortfolioLimit: 12, webPortfolioLimit: 60 });
     await updateDoc(doc(db, 'users/beto'), { plan: 'web', proUntil: new Date(Date.now() + 86400000) });
   });
   const pf = (uid, slot) => ({ photographerUid: uid, slot, url: `https://x/u/${uid}/a.jpg`, thumbUrl: `https://x/u/${uid}/a_t.jpg`, cleanUrl: `https://x/u/${uid}/c.jpg` });
-  await assertSucceeds(setDoc(doc(user('beto'), 'portfolio/beto_100'), pf('beto', 100)));
-  await assertFails(setDoc(doc(user('beto'), 'portfolio/beto_101'), { ...pf('beto', 101), cleanUrl: 'https://x/u/ana/c.jpg' }));
-  await assertSucceeds(updateDoc(doc(user('beto'), 'portfolio/beto_100'), { album: 'Rugby' }));
+  await assertSucceeds(setDoc(doc(user('beto'), 'portfolio/beto_59'), pf('beto', 59)));
+  await assertFails(setDoc(doc(user('beto'), 'portfolio/beto_60'), pf('beto', 60)));
+  await assertFails(setDoc(doc(user('beto'), 'portfolio/beto_58'), { ...pf('beto', 58), cleanUrl: 'https://x/u/ana/c.jpg' }));
+  await assertSucceeds(updateDoc(doc(user('beto'), 'portfolio/beto_59'), { album: 'Rugby' }));
   await assertSucceeds(setDoc(doc(user('pepe'), 'planRequests/pepe'), { plan: 'web', displayName: 'Pepe' }));
   await assertFails(setDoc(doc(user('pepe'), 'planRequests/ana'), { plan: 'web' }));
   await assertFails(setDoc(doc(user('pepe'), 'planRequests/pepe'), { plan: 'gratis-para-siempre' }));

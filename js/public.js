@@ -45,7 +45,6 @@ function route() {
   const { parts } = parseHash();
   document.title = 'Quiero Mis Fotos';
   window.scrollTo(0, 0);
-  app.style.removeProperty('--accent'); // color propio del perfil de un fotógrafo
   if (parts[0] === 'evento' && parts[1]) return renderEvent(parts[1]);
   if (parts[0] === 'f' && parts[1]) return renderProfile(parts[1]);
   if (parts[0] === 'carrito') return renderCart(app);
@@ -336,7 +335,6 @@ async function renderProfile(slug) {
   document.title = `${user.displayName} · Quiero Mis Fotos`;
   if (!user.demo) trackProfileView(user.uid);
   const [tax, settings] = await Promise.all([loadTaxonomy(), loadSettings()]);
-  if (rulesFor(user, settings).profileCustom && /^#[0-9a-f]{6}$/i.test(user.profileAccent || '')) app.style.setProperty('--accent', user.profileAccent);
   const socials = SOCIALS.filter(s => user.socials?.[s.key] && s.key !== 'whatsapp');
   const sports = (user.specialties || []).map(id => tax.tagById.get(id)).filter(Boolean);
   const wa = user.socials?.whatsapp;

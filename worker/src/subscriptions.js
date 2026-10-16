@@ -7,12 +7,9 @@ import { mpFetch, panelUrl } from './mp.js';
 import { json, httpError } from './http.js';
 import { planSpec } from '../../js/plans-core.js';
 
-// 'pro' (Portfolio Pro) solo por compatibilidad: el panel ya no lo ofrece.
-// 'pro' (Portfolio Pro) queda por compatibilidad. Premium cobra más el primer pago para cubrir el registro del dominio.
-const PLANS = { pro: { label: 'Portfolio Pro', priceKey: 'proPrice' }, lite: { label: 'Profesional Lite', priceKey: 'litePrice' },
+// Premium cobra más el primer pago para cubrir el registro del dominio.
+const PLANS = { lite: { label: 'Profesional Lite', priceKey: 'litePrice' },
   web: { label: 'Profesional', priceKey: 'webPrice' }, webdomain: { label: 'Profesional Premium', priceKey: 'webDomainPrice', firstKey: 'webDomainFirstPrice' } };
-// Precios por defecto (iguales a planSpec de js/data.js) si todavía no se guardaron en Plataforma.
-const DEFAULT_PRICE = { lite: 4900, web: 9900, webdomain: 12900 };
 const DAY = 86400_000;
 const GRACE = 3 * DAY; // margen por si el débito del mes se demora
 
@@ -26,17 +23,15 @@ export async function subscribe(req, env) {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw httpError(400, 'Ingresá el email de tu cuenta de Mercado Pago');
   const [user, settings] = await Promise.all([adminGet(env, `users/${claims.sub}`), adminGet(env, 'settings/platform')]);
   if (!user || user.role !== 'photographer') throw httpError(403, 'Solo fotógrafos');
-  const v2 = !!settings?.plansV2;
   const spec = planSpec(plan, settings || {});
   const yearly = period === 'year';
-  if (yearly && !(v2 && spec.year > 0)) throw httpError(400, 'Este plan no tiene abono anual');
-  // Abono del período (con planes nuevos sale de la tabla de Plataforma).
-  const amount = yearly ? spec.year : v2 ? spec.price : Number(settings?.[PLANS[plan].priceKey]) || DEFAULT_PRICE[plan] || 0;
+  if (yearly && !(spec.year > 0)) throw httpError(400, 'Este plan no tiene abono anual');
+  // Abono del período (tabla de Plataforma).
+  const amount = yearly ? spec.year : spec.price;
   if (!(amount > 0)) throw httpError(409, 'Precio del plan no configurado');
   // Premium: el primer cobro suma el registro del dominio (primer mes − mensual). MP no admite un primer cobro distinto:
   // la suscripción arranca con ese monto y, cuando se cobra, syncSubscription la baja al abono normal.
-  const firstMonth = v2 ? (spec.first || 0) : 0; // sin planes nuevos no hay primer mes distinto (las tarjetas no lo muestran)
-  const domainExtra = PLANS[plan].firstKey ? Math.max(0, firstMonth - (v2 ? spec.price : amount)) : 0;
+  const domainExtra = PLANS[plan].firstKey ? Math.max(0, (spec.first || 0) - spec.price) : 0;
   const first = amount + domainExtra;
 
   const fromStaging = req.headers.get('Origin') === 'https://prueba.quieromisfotos.com.ar';
