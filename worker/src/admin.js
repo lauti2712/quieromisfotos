@@ -107,6 +107,30 @@ export async function adminIncrement(env, path, fields) {
   });
 }
 
+// Escritura atómica de varias operaciones (commit de Firestore). ops:
+//   { set: path, data, mustNotExist? }  · { update: path, data }  · { del: path, mustExist? }  · { inc: path, fields: {campo: n} }
+// Devuelve false si falló una precondición (el documento ya existía / ya no existía).
+export async function adminCommit(env, ops) {
+  const writes = ops.map(o => {
+    if (o.set) return { update: { name: docName(env, o.set), fields: encodeFields(o.data) }, ...(o.mustNotExist ? { currentDocument: { exists: false } } : {}) };
+    if (o.update) return { update: { name: docName(env, o.update), fields: encodeFields(o.data) }, updateMask: { fieldPaths: Object.keys(o.data).map(fieldPath) }, currentDocument: { exists: true } };
+    if (o.del) return { delete: docName(env, o.del), ...(o.mustExist ? { currentDocument: { exists: true } } : {}) };
+    if (o.inc) return { transform: { document: docName(env, o.inc), fieldTransforms: Object.entries(o.fields).map(([f, n]) => ({ fieldPath: fieldPath(f), increment: encodeValue(n) })) } };
+    throw new Error('Operación desconocida');
+  });
+  const res = await fetch(`${root(env)}:commit`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${await accessToken(env)}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ writes }),
+  });
+  if (res.ok) return true;
+  const t = await res.text();
+  if ((res.status === 400 || res.status === 404 || res.status === 409) && /ALREADY_EXISTS|NOT_FOUND|FAILED_PRECONDITION/.test(t)) return false;
+  throw httpError(502, `Firestore ${res.status}: ${t.slice(0, 200)}`);
+}
+// Ruta de campo con segmentos que no son identificadores simples (ej. hourCounts.1792000000000).
+const fieldPath = f => f.split('.').map(seg => (/^[A-Za-z_][A-Za-z0-9_]*$/.test(seg) ? seg : `\`${seg}\``)).join('.');
+
 // Consulta simple: filters [[campo, op, valor]] con op '==' | 'array-contains'; orderBy [[campo, 'asc'|'desc']].
 export async function adminQuery(env, collectionId, { filters = [], orderBy = [], limit = 100 } = {}) {
   const ops = { '==': 'EQUAL', 'array-contains': 'ARRAY_CONTAINS' };

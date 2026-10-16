@@ -1,12 +1,12 @@
 // Panel: subida masiva y gestión de fotos del set de un fotógrafo en un evento.
 import {
-  db, collection, doc, getDocs, query, where, orderBy, limit, startAfter, writeBatch, updateDoc, increment, Timestamp,
+  db, collection, doc, getDocs, query, where, orderBy, limit, startAfter, writeBatch, Timestamp,
 } from './fb.js';
 import { $, $$, esc, toast, errMsg, fmtBytes, setBytes } from './util.js';
 import { createUploader, fileKey } from './uploader.js';
-import { uploadSession, apiDelete, loadLogoBitmap } from './api.js';
+import { uploadSession, postWithToken, loadLogoBitmap } from './api.js';
 import { DEFAULT_WATERMARK, wantsLogo } from './watermark.js';
-import { rulesFor, albumPhotoLimit } from './data.js';
+import { albumPhotoLimit } from './data.js';
 
 const PAGE = 120;
 let activeUploader = null;
@@ -157,25 +157,33 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
     const ids = [...selected];
     if (!confirm(`¿Borrar ${ids.length} foto${ids.length > 1 ? 's' : ''}? Se eliminan también los originales.`)) return;
     const btn = $('#ph-del'); btn.disabled = true; btn.textContent = 'Borrando…';
+    let gone = 0, kept = 0;
     try {
       const s = await uploadSession(ev.id);
-      let bytes = 0, pubBytes = 0, n = 0;
-      for (const id of ids) {
-        const p = photos.find(x => x.id === id);
-        await apiDelete(`/photo/${ev.id}/${id}`, s.token);
-        const b = writeBatch(db);
-        b.delete(doc(db, 'photos', id));
-        b.update(doc(db, 'events', ev.id, 'sets', uid), { photoCount: increment(-1), bytesOriginal: increment(-(p?.bytes || 0)), bytesPublic: increment(-(p?.bytesPublic || 0)) });
-        await b.commit();
-        if (p) uploadedKeys?.delete(`${p.fileName}|${p.fileBytes || p.bytes}`);
-        bytes += p?.bytes || 0; pubBytes += p?.bytesPublic || 0; n++;
-        photos = photos.filter(x => x.id !== id);
-        selected.delete(id);
+      for (let i = 0; i < ids.length; i += 100) {
+        // El Worker borra y descuenta del álbum; las fotos vendidas con descarga vigente solo se ocultan.
+        const r = await postWithToken(`/photos/${ev.id}/delete`, { ids: ids.slice(i, i + 100) }, s.token);
+        for (const id of r.deleted || []) {
+          const p = photos.find(x => x.id === id);
+          if (p) {
+            uploadedKeys?.delete(`${p.fileName}|${p.fileBytes || p.bytes}`);
+            set.photoCount = Math.max(0, (set.photoCount || 0) - 1);
+            set.bytesOriginal = Math.max(0, (set.bytesOriginal || 0) - (p.bytes || 0));
+            set.bytesPublic = Math.max(0, (set.bytesPublic || 0) - (p.bytesPublic || 0));
+          }
+          photos = photos.filter(x => x.id !== id);
+          selected.delete(id);
+          gone++;
+        }
+        for (const id of r.hidden || []) {
+          const p = photos.find(x => x.id === id);
+          if (p) p.hidden = true;
+          selected.delete(id);
+          kept++;
+        }
       }
-      set.photoCount = Math.max(0, (set.photoCount || 0) - n);
-      set.bytesOriginal = Math.max(0, (set.bytesOriginal || 0) - bytes);
-      set.bytesPublic = Math.max(0, (set.bytesPublic || 0) - pubBytes);
-      toast(`${n} foto${n > 1 ? 's' : ''} borrada${n > 1 ? 's' : ''}`);
+      if (gone) toast(`${gone} foto${gone > 1 ? 's' : ''} borrada${gone > 1 ? 's' : ''}`);
+      if (kept) toast(`${kept} foto${kept > 1 ? 's' : ''} ya ${kept > 1 ? 'fueron vendidas' : 'fue vendida'}: quedan ocultas y se borran cuando vence la descarga del comprador.`);
     } catch (e) { toast(errMsg(e), 'error'); }
     btn.textContent = 'Borrar';
     draw();
@@ -193,11 +201,12 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
   // Si volvió al evento mientras se sigue subiendo, se reutiliza la misma cola (no se arma otra).
   const handlers = {
     onChange: renderQueue,
-    onPhoto: p => {
+    onPhoto: (p, expiresAt) => {
       set.photoCount = (set.photoCount || 0) + 1;
       set.bytesOriginal = (set.bytesOriginal || 0) + (p.bytes || 0);
       set.bytesPublic = (set.bytesPublic || 0) + (p.bytesPublic || 0);
-      startExpiry();
+      // El vencimiento lo fija el Worker con la primera foto.
+      if (expiresAt && !set.expiresAt) set.expiresAt = Timestamp.fromMillis(expiresAt);
       const f = $('#ph-filter')?.value;
       if ((f === '*' || f === p.subalbumId) && !photos.some(x => x.id === p.id)) { photos.push(p); photos.sort((a, b) => a.takenAt.toMillis() - b.takenAt.toMillis()); }
       scheduleDraw();
@@ -211,17 +220,6 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
   let up;
   if (activeUploader?.busy() && activeUploader.eventId === ev.id) { up = activeUploader; up.setHandlers(handlers); }
   else up = activeUploader = createUploader({ eventId: ev.id, uid, wm, logo, optimize: settings.optimizeOriginals !== false, bibs: bibs && settings.bibsEnabled !== false, ...handlers });
-  // El vencimiento de los originales arranca con la primera subida (una sola vez).
-  let expiryStarted = !!set.expiresAt;
-  function startExpiry() {
-    if (expiryStarted) return;
-    expiryStarted = true;
-    const expiresAt = Timestamp.fromMillis(Date.now() + rulesFor(profile, settings).days * 86400000);
-    updateDoc(doc(db, 'events', ev.id, 'sets', uid), { expiresAt })
-      .then(() => { set.expiresAt = expiresAt; })
-      .catch(e => { expiryStarted = false; console.warn('expiresAt', e); });
-  }
-
   let drawT;
   const scheduleDraw = () => { clearTimeout(drawT); drawT = setTimeout(() => document.body.contains(box) && draw(), 400); };
 

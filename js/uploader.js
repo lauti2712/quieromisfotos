@@ -1,6 +1,6 @@
 // Cola de subida masiva: procesa (Web Worker) y sube muestra, miniatura y original; crea el doc en `photos`.
-import { db, doc, collection, writeBatch, increment, serverTimestamp, Timestamp, getDoc } from './fb.js';
-import { uploadSession, invalidateSession, putBlob } from './api.js';
+import { db, doc, collection, Timestamp, getDoc } from './fb.js';
+import { uploadSession, invalidateSession, putBlob, postWithToken } from './api.js';
 import { processFile } from './image-proc.js';
 
 const ACCEPT = /^image\/(jpeg|png|webp)$/;
@@ -104,23 +104,18 @@ export function createUploader({ eventId, uid, wm, logo = null, optimize = false
     const extra = r.preview.size + r.thumb.size;
     const orig = r.original || it.file; // optimizado si achicó; si no, el archivo tal cual
     const progress = (base) => (l) => { it.loaded = Math.min(it.file.size, ((base + l) / (extra + orig.size)) * it.file.size); emit(); };
-    const p = await putBlob(`/upload/preview/${eventId}/${pid}`, r.preview, s.token, progress(0));
-    const t = await putBlob(`/upload/thumb/${eventId}/${pid}`, r.thumb, s.token, progress(r.preview.size));
+    await putBlob(`/upload/preview/${eventId}/${pid}`, r.preview, s.token, progress(0));
+    await putBlob(`/upload/thumb/${eventId}/${pid}`, r.thumb, s.token, progress(r.preview.size));
     await putBlob(`/upload/original/${eventId}/${pid}`, orig, s.token, progress(extra));
 
-    const photo = {
-      eventId, photographerUid: uid, subalbumId: it.subalbumId || '',
-      previewUrl: p.url, thumbUrl: t.url,
-      width: r.width, height: r.height, bytes: orig.size, fileBytes: it.file.size, bytesPublic: extra,
-      takenAt: Timestamp.fromMillis(r.takenAt), fileName: it.file.name.slice(0, 120),
-      bibs: [], hidden: false, originalDeleted: false, createdAt: serverTimestamp(),
-    };
-    const b = writeBatch(db);
-    b.set(doc(db, 'photos', pid), photo);
-    b.update(doc(db, 'events', eventId, 'sets', uid), { photoCount: increment(1), bytesOriginal: increment(orig.size), bytesPublic: increment(extra) });
-    await b.commit();
+    // El Worker registra la foto: suma al álbum, fija el vencimiento con la primera y controla el tope del plan.
+    const c = await postWithToken(`/photos/${eventId}/${pid}`, {
+      subalbumId: it.subalbumId || '', width: r.width, height: r.height, takenAt: r.takenAt,
+      fileName: it.file.name.slice(0, 120), fileBytes: it.file.size,
+    }, s.token);
+    const photo = c.photo ? { ...c.photo, takenAt: Timestamp.fromMillis(c.photo.takenAt) } : null;
     it.status = 'done'; it.loaded = it.file.size;
-    onPhoto?.({ id: pid, ...photo, takenAt: photo.takenAt });
+    if (photo) onPhoto?.({ id: pid, ...photo }, c.expiresAt);
     // Dorsales: en segundo plano; si falla, la foto queda igual (se pueden cargar a mano).
     if (r.scan) putBlob(`/bibs/${eventId}/${pid}`, r.scan, s.token).then(res => onBibs?.(pid, res.bibs || [])).catch(e => console.warn('dorsales', e));
   }

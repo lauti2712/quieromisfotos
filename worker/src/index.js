@@ -5,7 +5,9 @@
 //   PUT    /upload/{kind}/{eid}/{pid}  X-Upload-Token                         kind: preview|thumb|original
 //   PUT    /asset/{kind}               X-Upload-Token                         kind: avatar|logo|cover|portfolio
 //   DELETE /asset?key=u/{uid}/...      X-Upload-Token                         borra un asset propio
-//   DELETE /photo/{eid}/{pid}          X-Upload-Token                         borra muestra, miniatura y original
+//   POST   /photos/{eid}/{pid}         X-Upload-Token                         registra la foto subida (contador, vencimiento)
+//   POST   /photos/{eid}/delete        X-Upload-Token  {ids}                  borra fotos (las vendidas solo se ocultan)
+//   DELETE /photo/{eid}/{pid}          X-Upload-Token                         (versión anterior del panel) borra los archivos
 //   PUT    /bibs/{eid}/{pid}           X-Upload-Token  (jpeg sin marca)       lee los dorsales con IA -> { bibs }
 //   GET    /public/{key}                                                      sirve qmf-public (si no hay dominio público)
 //
@@ -40,6 +42,7 @@ import { connectUrl, callback, disconnect } from './mp.js';
 import { checkout, webhook, syncOrder, retryCheckout, downloadLinks, download } from './orders.js';
 import { createTag } from './tags.js';
 import { scanBibsRequest } from './bibs.js';
+import { commitPhoto, deletePhotos, orderDownloadUntil } from './photos.js';
 import { renderSite } from './site.js';
 import { scanRequest, scanStorage } from './storage.js';
 import { runBackup, backupRequest } from './backup.js';
@@ -104,6 +107,11 @@ async function route(req, env, ctx) {
   if (m === 'GET' && url.pathname === '/') return json({ ok: true, service: 'qmf-api' });
   if (m === 'POST' && url.pathname === '/upload-session') return uploadSession(req, env);
   if (m === 'PUT' && parts[0] === 'upload' && parts.length === 4) return uploadPhotoPart(req, env, parts[1], parts[2], parts[3], ctx);
+  if (m === 'POST' && parts[0] === 'photos' && parts.length === 3 && ID_RE.test(parts[1])) {
+    const s = await session(req, env);
+    if (parts[2] === 'delete') return deletePhotos(req, env, s, parts[1]);
+    if (ID_RE.test(parts[2])) return commitPhoto(req, env, s, parts[1], parts[2], publicBase(req, env));
+  }
   if (m === 'PUT' && parts[0] === 'bibs' && parts.length === 3 && ID_RE.test(parts[1]) && ID_RE.test(parts[2])) {
     return scanBibsRequest(req, env, await session(req, env), parts[1], parts[2]);
   }
@@ -224,6 +232,11 @@ async function deletePhoto(req, env, eid, pid) {
   if (!ID_RE.test(eid) || !ID_RE.test(pid)) throw httpError(400, 'Id inválido');
   const s = await session(req, env);
   if (s.eid !== eid || s.role !== 'member') throw httpError(403, 'Token no válido para este evento');
+  // Una foto vendida con descarga vigente no se borra: el comprador la tiene que poder bajar.
+  const orders = await adminQuery(env, 'orders', { filters: [['photographerUid', '==', s.uid], ['eventId', '==', eid], ['status', '==', 'approved']], limit: 2000 });
+  if (orders.some(o => orderDownloadUntil(o) > Date.now() && (o.items || []).some(i => i.photoId === pid))) {
+    throw httpError(409, 'Esta foto ya fue vendida: no se puede borrar hasta que venza la descarga del comprador. Podés ocultarla.');
+  }
   const base = `e/${eid}/${s.uid}/${pid}`;
   await Promise.all([env.PUBLIC.delete([`${base}_p.jpg`, `${base}_t.jpg`]), env.PRIVATE.delete(base)]);
   return json({ ok: true });

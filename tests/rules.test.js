@@ -172,12 +172,10 @@ const photo = (uid, pid, extra = {}) => ({
   previewUrl: `https://x/e/pub/${uid}/${pid}_p.jpg`, thumbUrl: `https://x/e/pub/${uid}/${pid}_t.jpg`, ...extra,
 });
 
-test('fotos: miembro crea con URLs propias; no ajenas ni con originalKey', async () => {
-  await assertSucceeds(setDoc(doc(user('ana'), 'photos/p1'), photo('ana', 'p1')));
-  await assertFails(setDoc(doc(user('ana'), 'photos/p2'), photo('ana', 'p2', { thumbUrl: 'https://x/e/pub/beto/p2_t.jpg' })));
-  await assertFails(setDoc(doc(user('ana'), 'photos/p3'), photo('ana', 'p3', { originalKey: 'e/pub/ana/p3' })));
-  await assertFails(setDoc(doc(user('beto'), 'photos/p4'), photo('beto', 'p4'))); // beto no es miembro
-  await assertFails(setDoc(doc(user('ana'), 'photos/p5'), photo('ana', 'p5', { hidden: true })));
+test('fotos: las crea y las borra solo el Worker (ni el fotógrafo dueño)', async () => {
+  await assertFails(setDoc(doc(user('ana'), 'photos/p1'), photo('ana', 'p1')));
+  await assertFails(setDoc(doc(user('beto'), 'photos/p4'), photo('beto', 'p4')));
+  await assertSucceeds(setDoc(doc(as(SUPER), 'photos/p5'), photo('ana', 'p5')));
 });
 
 test('fotos: ocultas no son públicas; dueño mueve/oculta; otro no', async () => {
@@ -194,15 +192,26 @@ test('fotos: ocultas no son públicas; dueño mueve/oculta; otro no', async () =
   await assertFails(updateDoc(doc(user('ana'), 'photos/v'), { previewUrl: 'https://evil' }));
   await assertFails(updateDoc(doc(user('beto'), 'photos/v'), { hidden: true }));
   await assertFails(deleteDoc(doc(user('beto'), 'photos/v')));
-  await assertSucceeds(deleteDoc(doc(user('ana'), 'photos/v')));
+  await assertFails(deleteDoc(doc(user('ana'), 'photos/v'))); // se borra por el Worker (controla ventas)
+  await assertSucceeds(updateDoc(doc(user('ana'), 'photos/v'), { bibs: ['123', '45'] }));
+  await assertFails(updateDoc(doc(user('ana'), 'photos/v'), { bibs: Array.from({ length: 21 }, (_, i) => String(i)) }));
 });
 
-test('set: vencimiento inicial solo una vez y con los días configurados', async () => {
-  await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'settings/platform'), { retentionDays: 14 }));
+test('set: contador, bytes, conteo por hora y vencimiento solo los escribe el Worker', async () => {
   const ref = doc(user('ana'), 'events/pub/sets/ana');
-  await assertFails(updateDoc(ref, { expiresAt: new Date(Date.now() + 90 * 86400000) }));
-  await assertSucceeds(updateDoc(ref, { expiresAt: new Date(Date.now() + 14 * 86400000) }));
-  await assertFails(updateDoc(ref, { expiresAt: new Date(Date.now() + 14 * 86400000 + 60000) }));
+  await assertFails(updateDoc(ref, { expiresAt: new Date(Date.now() + 14 * 86400000) }));
+  await assertFails(updateDoc(ref, { photoCount: 7 }));
+  await assertFails(updateDoc(ref, { bytesOriginal: 0 }));
+  await assertFails(updateDoc(ref, { hourCounts: {} }));
+  await assertFails(updateDoc(ref, { bibPhotos: 99 }));
+  // crear el set con contador en cero sí; con fotos o vencimiento, no
+  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'events/pub'), { photographerUids: ['ana', 'beto'] }));
+  await assertFails(setDoc(doc(user('beto'), 'events/pub/sets/beto'), { price: 1, photoCount: 5 }));
+  await assertFails(setDoc(doc(user('beto'), 'events/pub/sets/beto'), { price: 1, photoCount: 0, expiresAt: new Date() }));
+  await assertSucceeds(setDoc(doc(user('beto'), 'events/pub/sets/beto'), { price: 1, photoCount: 0, bytesOriginal: 0 }));
+  // no se borra un set con fotos (así no se reinicia el vencimiento)
+  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'events/pub/sets/ana'), { photoCount: 3 }));
+  await assertFails(deleteDoc(ref));
 });
 
 // ---------- portfolio

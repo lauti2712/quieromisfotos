@@ -46,6 +46,18 @@ export function putBlob(path, blob, token, onProgress) {
   });
 }
 
+// POST JSON con el token de subida (registrar o borrar fotos de un álbum).
+export async function postWithToken(path, body, token) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'X-Upload-Token': token, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(data.error || `Error ${res.status}`), { status: res.status });
+  return data;
+}
+
 export async function apiDelete(path, token) {
   const res = await fetch(`${API_BASE}${path}`, { method: 'DELETE', headers: { 'X-Upload-Token': token } });
   if (!res.ok) {

@@ -9,7 +9,8 @@ export function planOf(user, now = Date.now()) {
   return PAID_PLANS.includes(user?.plan) && t > now ? user.plan : 'free';
 }
 
-export function planSpec(planId, st = {}) {
+export function planSpec(planId, st) {
+  st = st || {};
   const base = st.retentionDays ?? 14;
   switch (planId) {
     case 'lite': return { price: st.litePrice ?? 4900, year: st.liteYearPrice ?? 49000, fee: st.liteFeePercent ?? 5, portfolio: st.litePortfolioLimit ?? 30,

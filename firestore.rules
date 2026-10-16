@@ -24,29 +24,6 @@ service cloud.firestore {
     }
     function eventAfter(eid) { return getAfter(/databases/$(database)/documents/events/$(eid)).data; }
     function eventData(eid) { return get(/databases/$(database)/documents/events/$(eid)).data; }
-    // El vencimiento del set lo fija el fotógrafo una sola vez (primera subida): ahora + retentionDays.
-    // Días de venta del plan del fotógrafo (mismos valores por defecto que js/plans-core.js).
-    function planDays() {
-      let sp = /databases/$(database)/documents/settings/platform;
-      let st = exists(sp) ? get(sp).data : {};
-      let base = st.get('retentionDays', 14);
-      let u = get(userPath(uid())).data;
-      let plan = u.get('plan', 'free');
-      let paid = plan in ['lite', 'web', 'webdomain'] && u.get('proUntil', null) != null && u.proUntil > request.time;
-      return !paid ? st.get('freeRetentionDays', base)
-        : plan == 'lite' ? st.get('liteRetentionDays', base)
-        : plan == 'web' ? st.get('webRetentionDays', 21)
-        : plan == 'webdomain' ? st.get('webDomainRetentionDays', 30)
-        : base;
-    }
-    function initialExpiry() {
-      let days = planDays();
-      return resource.data.get('expiresAt', null) == null
-        && request.resource.data.expiresAt is timestamp
-        && request.resource.data.expiresAt > request.time + duration.value(days, 'd') - duration.value(1, 'h')
-        && request.resource.data.expiresAt < request.time + duration.value(days, 'd') + duration.value(1, 'h');
-    }
-
     // ---------- configuración y etiquetas ----------
     match /settings/{id} {
       allow read: if true;
@@ -133,13 +110,15 @@ service cloud.firestore {
       // Set de cada fotógrafo dentro del evento (id = uid del fotógrafo)
       match /sets/{pid} {
         allow read: if true;
+        // Contador de fotos, bytes, conteo por hora, vencimiento y ventas los escribe solo el Worker (tope del plan y retención).
         allow create: if isApproved() && uid() == pid
           && uid() in eventAfter(eid).photographerUids
-          && !request.resource.data.keys().hasAny(['expiresAt', 'extendedUntil', 'originalsDeleted', 'extraPhotos', 'soldPhotos', 'soldOrders']);
+          && request.resource.data.get('photoCount', 0) == 0
+          && request.resource.data.get('bytesOriginal', 0) == 0
+          && !request.resource.data.keys().hasAny(['bytesPublic', 'hourCounts', 'expiresAt', 'extendedUntil', 'originalsDeleted', 'extraPhotos', 'soldPhotos', 'soldOrders', 'bibScans', 'bibPhotos']);
         allow update: if isSuper() || (isApproved() && uid() == pid
-          && !changed().hasAny(['extendedUntil', 'originalsDeleted', 'soldPhotos', 'soldOrders', 'storageAt', 'originalsDeletedAt', 'extraPhotos'])
-          && (!changed().hasAny(['expiresAt']) || initialExpiry()));
-        allow delete: if isSuper() || (signedIn() && uid() == pid && resource.data.photoCount == 0);
+          && !changed().hasAny(['photoCount', 'bytesOriginal', 'bytesPublic', 'hourCounts', 'expiresAt', 'extendedUntil', 'originalsDeleted', 'soldPhotos', 'soldOrders', 'storageAt', 'originalsDeletedAt', 'extraPhotos', 'bibScans', 'bibPhotos']));
+        allow delete: if isSuper() || (signedIn() && uid() == pid && resource.data.get('photoCount', 0) == 0);
       }
     }
 
@@ -148,18 +127,12 @@ service cloud.firestore {
       allow read: if resource.data.hidden == false
         || (signedIn() && resource.data.photographerUid == uid())
         || isSuper();
-      allow create: if isApproved()
-        && request.resource.data.photographerUid == uid()
-        && uid() in eventData(request.resource.data.eventId).photographerUids
-        && request.resource.data.hidden == false
-        && request.resource.data.originalDeleted == false
-        && request.resource.data.thumbUrl.matches('.*/e/' + request.resource.data.eventId + '/' + uid() + '/' + pid + '_t[.]jpg$')
-        && request.resource.data.previewUrl.matches('.*/e/' + request.resource.data.eventId + '/' + uid() + '/' + pid + '_p[.]jpg$')
-        && !request.resource.data.keys().hasAny(['originalKey']);
+      // Las crea y las borra el Worker (registra la subida y no deja borrar fotos vendidas).
+      allow create: if isSuper();
       allow update: if isSuper()
         || (signedIn() && resource.data.photographerUid == uid() && changed().hasOnly(['subalbumId', 'hidden', 'bibs'])
             && (!changed().hasAny(['bibs']) || (request.resource.data.bibs is list && request.resource.data.bibs.size() <= 20)));
-      allow delete: if isSuper() || (signedIn() && resource.data.photographerUid == uid());
+      allow delete: if isSuper();
     }
 
     // ---------- portfolio (fotos de muestra, no se venden)
