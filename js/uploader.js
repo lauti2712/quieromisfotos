@@ -7,7 +7,8 @@ const ACCEPT = /^image\/(jpeg|png|webp)$/;
 const MAX_ATTEMPTS = 5;
 export const fileKey = f => `${f.name}|${f.size}`;
 
-export function createUploader({ eventId, uid, wm, logo = null, optimize = false, onChange, onPhoto }) {
+// bibs: además manda una copia sin marca para leer los dorsales (onBibs avisa lo que encontró).
+export function createUploader({ eventId, uid, wm, logo = null, optimize = false, bibs = false, onChange, onPhoto, onBibs }) {
   // Se pueden reemplazar (setHandlers) si el fotógrafo sale y vuelve al evento mientras sube.
   const lowEnd = (navigator.deviceMemory && navigator.deviceMemory <= 4) || (navigator.hardwareConcurrency || 4) <= 4;
   const concurrency = lowEnd ? 2 : 3;
@@ -42,17 +43,17 @@ export function createUploader({ eventId, uid, wm, logo = null, optimize = false
 
   function process(file) {
     const w = pool().find(x => !x.busy);
-    if (!w) return processFile(file, wm, logo, { optimize });
+    if (!w) return processFile(file, wm, logo, { optimize, scan: bibs });
     w.busy = true;
     const id = ++seq;
     w.current = id;
     return new Promise((resolve, reject) => {
       waiting.set(id, data => {
         if (data.ok) resolve(data);
-        else if (data.fallback) processFile(file, wm, logo, { optimize }).then(resolve, reject);
+        else if (data.fallback) processFile(file, wm, logo, { optimize, scan: bibs }).then(resolve, reject);
         else reject(new Error(data.error));
       });
-      w.postMessage({ id, file, wm, logo, optimize });
+      w.postMessage({ id, file, wm, logo, optimize, scan: bibs });
     });
   }
 
@@ -120,6 +121,8 @@ export function createUploader({ eventId, uid, wm, logo = null, optimize = false
     await b.commit();
     it.status = 'done'; it.loaded = it.file.size;
     onPhoto?.({ id: pid, ...photo, takenAt: photo.takenAt });
+    // Dorsales: en segundo plano; si falla, la foto queda igual (se pueden cargar a mano).
+    if (r.scan) putBlob(`/bibs/${eventId}/${pid}`, r.scan, s.token).then(res => onBibs?.(pid, res.bibs || [])).catch(e => console.warn('dorsales', e));
   }
 
   function pump() {
@@ -153,7 +156,7 @@ export function createUploader({ eventId, uid, wm, logo = null, optimize = false
 
   return {
     eventId,
-    setHandlers(h) { ({ onChange, onPhoto } = { onChange, onPhoto, ...h }); emit(); },
+    setHandlers(h) { ({ onChange, onPhoto, onBibs } = { onChange, onPhoto, onBibs, ...h }); emit(); },
     // Devuelve cuántos archivos se saltearon por estar ya en la cola.
     add(files, subalbumId = '') {
       const inQueue = new Set(items.filter(i => i.status !== 'error').map(i => fileKey(i.file)));

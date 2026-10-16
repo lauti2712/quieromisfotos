@@ -3,7 +3,7 @@
 #   python3 tools/seed-demo.py prod     -> producción (usa `gcloud auth print-access-token`)
 #   python3 tools/seed-demo.py prod --delete
 # Todos los documentos llevan demo: true.
-import json, subprocess, sys, urllib.request, urllib.error, datetime, re
+import json, os, subprocess, sys, urllib.request, urllib.error, datetime, re
 
 P = 'quieromisfotos-71629'
 target = sys.argv[1] if len(sys.argv) > 1 else 'emu'
@@ -11,13 +11,13 @@ delete = '--delete' in sys.argv
 if target == 'prod':
     BASE = f'https://firestore.googleapis.com/v1/projects/{P}/databases/(default)/documents'
     TOKEN = subprocess.check_output(['gcloud', 'auth', 'print-access-token']).decode().strip()
-    IMG = 'https://quieromisfotos.com.ar/demo'
+    IMG = os.environ.get('DEMO_IMG', 'https://quieromisfotos.com.ar/demo')  # DEMO_IMG=https://prueba.../demo mientras no se publica
 else:
     BASE = f'http://127.0.0.1:8085/v1/projects/{P}/databases/(default)/documents'
     TOKEN = 'owner'
     IMG = 'http://localhost:5175/demo'
 
-V = '?v=3'  # cache-busting cuando se regeneran las imágenes
+V = '?v=4'  # cache-busting cuando se regeneran las imágenes
 UID = 'demo-fotografo'
 SLUG = 'fotografo-ejemplo'
 EID = 'demo-evento'
@@ -94,7 +94,7 @@ existing = [plain(d['fields']) | {'id': d['name'].split('/')[-1]} for d in (req(
 futbol = None
 sport_ids = {}
 if deporte:
-    for name in ['Fútbol', 'Hockey', 'Básquet', 'Rugby', 'Vóley']:
+    for name in ['Fútbol', 'Hockey', 'Básquet', 'Rugby', 'Vóley', 'Running']:
         t = next((x for x in existing if x['typeId'] == deporte and x['name'].lower() == name.lower()), None)
         if not t:
             slug = re.sub(r'[^a-z0-9]+', '-', name.lower().replace('ú', 'u').replace('á', 'a').replace('ó', 'o'))
@@ -124,7 +124,7 @@ put(f'users/{UID}', {
     'zone': 'Rosario, Santa Fe',
     'workZones': 'Rosario, Funes, Roldán, Granadero Baigorria y Villa Gobernador Gálvez',
     'socials': {'instagram': '@tomasaguirre.foto', 'facebook': 'tomasaguirrefoto', 'whatsapp': '341 555-0100', 'web': 'www.tomasaguirrefoto.com.ar'},
-    'specialties': [sport_ids[n] for n in ('Fútbol', 'Hockey', 'Rugby') if n in sport_ids],
+    'specialties': [sport_ids[n] for n in ('Running', 'Fútbol', 'Hockey', 'Rugby') if n in sport_ids],
     'services': ['Deportes', 'Eventos sociales', 'Retratos / books', 'Producto', 'Institucional'],
     'gear': [{'type': 'Cámara', 'name': 'Sony A1'}, {'type': 'Cámara', 'name': 'Sony A7 IV'},
              {'type': 'Lente', 'name': 'Sony FE 70-200mm f/2.8 GM II'}, {'type': 'Lente', 'name': 'Sony FE 24-70mm f/2.8 GM II'},
@@ -153,25 +153,34 @@ for i, (cap, album, w, h) in enumerate(PF):
                                  'order': i, 'demo': True, 'createdAt': NOW})
 
 # ---------------------------------------------------------------- evento + set + fotos
-name, loc = 'Torneo Apertura Infantil — Fecha 1', 'Club Atlético Ejemplo, Rosario'
+# Carrera 10K con fotos reales (Pexels) y dorsales leídos (tools/make-demo-run.py): sirve para probar la búsqueda por dorsal.
+running = sport_ids.get('Running')
+name, loc = '10K Ciudad de Rosario (ejemplo)', 'Parque de la Independencia, Rosario'
 put(f'events/{EID}', {
-    'name': name, 'date': '2026-10-11', 'location': loc, 'tagIds': [futbol] if futbol else [],
-    'coverUrl': f'{IMG}/cover.jpg{V}', 'status': 'published', 'kind': 'own', 'createdBy': UID,
+    'name': name, 'date': '2026-10-11', 'location': loc, 'tagIds': [running] if running else [],
+    'coverUrl': f'{IMG}/run-cover.jpg{V}', 'status': 'published', 'kind': 'own', 'createdBy': UID,
     'photographerUids': [UID], 'openToJoin': False, 'demo': True,
-    'searchTokens': tokens(name, loc, 'Fútbol', 'ejemplo demo'), 'createdAt': NOW, 'updatedAt': NOW,
+    'searchTokens': tokens(name, loc, 'Running 10k carrera maraton', 'ejemplo demo'), 'createdAt': NOW, 'updatedAt': NOW,
 })
-subs = [{'id': 'pt', 'name': 'Primer tiempo', 'order': 0}, {'id': 'st', 'name': 'Segundo tiempo', 'order': 1}]
+RUN = [  # (sub-álbum, ancho, alto, dorsales)
+    ('lar', 1600, 1067, ['560', '561']), ('lar', 1600, 1067, ['451', '7999', '18']), ('lar', 1600, 1067, ['7999', '12']),
+    ('lar', 1600, 1067, ['65']), ('rec', 1600, 1067, ['890', '174', '2018', '711', '3009', '710']), ('rec', 1600, 900, ['4745', '1178']),
+    ('rec', 1600, 900, ['537', '278']), ('rec', 1600, 900, ['2', '294', '289']), ('lle', 1600, 1067, ['56224', '34101']),
+    ('lle', 1600, 1067, ['62956', '64938', '15249']), ('lle', 1600, 1067, ['3028']), ('lle', 1600, 1067, ['692', '684', '654', '66']),
+]
+subs = [{'id': 'lar', 'name': 'Largada', 'order': 0}, {'id': 'rec', 'name': 'Recorrido', 'order': 1}, {'id': 'lle', 'name': 'Llegada', 'order': 2}]
 put(f'events/{EID}/sets/{UID}', {
-    'price': 2500, 'packs': [{'qty': 3, 'price': 6000}, {'qty': 5, 'price': 9000}], 'feeMode': 'buyer',
-    'subalbums': subs, 'photoCount': 12, 'bytesOriginal': 12 * 8_000_000,
+    'price': 3000, 'packs': [{'qty': 3, 'price': 7500}, {'qty': 5, 'price': 11000}], 'feeMode': 'buyer',
+    'subalbums': subs, 'photoCount': len(RUN), 'bytesOriginal': len(RUN) * 8_000_000, 'showHours': True,
+    'detectBibs': True, 'bibScans': len(RUN), 'bibPhotos': sum(1 for r in RUN if r[3]),
     'expiresAt': datetime.datetime(2099, 1, 1, tzinfo=datetime.timezone.utc), 'demo': True, 'createdAt': NOW,
 })
-start = datetime.datetime(2026, 10, 11, 15, 0, tzinfo=datetime.timezone.utc)
-for i in range(12):
+start = datetime.datetime(2026, 10, 11, 10, 0, tzinfo=datetime.timezone.utc)  # 7:00 en Argentina
+for i, (sub, w, h, bibs) in enumerate(RUN):
     put(f'photos/demo-{i:02d}', {
-        'eventId': EID, 'photographerUid': UID, 'subalbumId': 'pt' if i < 6 else 'st',
-        'previewUrl': f'{IMG}/ev-{i:02d}_p.jpg{V}', 'thumbUrl': f'{IMG}/ev-{i:02d}_t.jpg{V}',
-        'width': 1600, 'height': 1067, 'bytes': 8_000_000, 'takenAt': start + datetime.timedelta(minutes=7 * i),
-        'fileName': f'DEMO_{i + 1:04d}.jpg', 'bibs': [], 'hidden': False, 'originalDeleted': False, 'demo': True, 'createdAt': NOW,
+        'eventId': EID, 'photographerUid': UID, 'subalbumId': sub,
+        'previewUrl': f'{IMG}/run-{i:02d}_p.jpg{V}', 'thumbUrl': f'{IMG}/run-{i:02d}_t.jpg{V}',
+        'width': w, 'height': h, 'bytes': 8_000_000, 'takenAt': start + datetime.timedelta(minutes=6 * i),
+        'fileName': f'DEMO_{i + 1:04d}.jpg', 'bibs': bibs, 'bibScanAt': NOW, 'hidden': False, 'originalDeleted': False, 'demo': True, 'createdAt': NOW,
     })
 print(f'Ejemplo cargado en {target}: /#/f/{SLUG}  /#/evento/{EID}')

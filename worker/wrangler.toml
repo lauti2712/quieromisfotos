@@ -33,6 +33,10 @@ RETENTION_DELETE = "1"
 # Limpieza de archivos sueltos en R2: "1" = borra; vacío = solo informa en Almacenamiento.
 CLEANUP_DELETE = "1"
 
+# Workers AI: lectura de dorsales (bibs.js)
+[ai]
+binding = "AI"
+
 [[r2_buckets]]
 binding = "PUBLIC"
 bucket_name = "qmf-public"

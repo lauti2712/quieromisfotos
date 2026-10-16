@@ -19,7 +19,7 @@ export function uploadsInProgress() {
   return !!activeUploader?.busy();
 }
 
-export async function mountPhotos(box, { ev, set, uid, profile, settings }) {
+export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs = false }) {
   const subs = (set.subalbums || []).slice().sort((a, b) => a.order - b.order);
   const subName = id => subs.find(s => s.id === id)?.name || 'Sin sub-álbum';
   const subOptions = (sel = '') => `<option value="">Sin sub-álbum</option>${subs.map(s => `<option value="${s.id}" ${s.id === sel ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}`;
@@ -55,13 +55,21 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings }) {
         <span class="muted small" id="ph-sel"></span>
         <span class="spacer" style="flex:1"></span>
         <select id="ph-move" style="width:auto" disabled><option value="-">Mover a…</option>${subOptions().replace('value=""', 'value="__none"')}</select>
+        <button class="btn sm" id="ph-bibs" disabled title="Corregir los dorsales de la foto seleccionada">🔢 Dorsales</button>
         <button class="btn sm" id="ph-hide" disabled>Ocultar</button>
         <button class="btn sm" id="ph-show" disabled>Mostrar</button>
         <button class="btn sm danger" id="ph-del" disabled>Borrar</button>
       </div>
       <div id="ph-grid" class="photo-grid"></div>
       <div class="row" style="justify-content:center"><button class="btn hidden" id="ph-more">Cargar más</button></div>
-    </div>`;
+    </div>
+    <button type="button" class="up-fab hidden" id="up-fab">📤 Subir fotos</button>`;
+  // Celular: botón fijo para subir mientras la zona de subida no está a la vista.
+  $('#up-fab', box).onclick = () => $('#up-files').click();
+  new IntersectionObserver(([en], obs) => {
+    if (!document.body.contains(box)) return obs.disconnect();
+    $('#up-fab', box).classList.toggle('hidden', en.isIntersecting);
+  }).observe($('#dz', box));
 
   // ------------------------------------------------ listado
   let photos = [];
@@ -90,7 +98,7 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings }) {
       <label class="ph ${p.hidden ? 'is-hidden' : ''} ${selected.has(p.id) ? 'sel' : ''}" data-id="${p.id}">
         <img src="${esc(p.thumbUrl)}" alt="" loading="lazy">
         <input type="checkbox" ${selected.has(p.id) ? 'checked' : ''}>
-        <span class="ph-meta">${p.hidden ? '<span class="pill warn">Oculta</span>' : ''}${subs.length ? `<span class="pill">${esc(subName(p.subalbumId))}</span>` : ''}</span>
+        <span class="ph-meta">${p.hidden ? '<span class="pill warn">Oculta</span>' : ''}${subs.length ? `<span class="pill">${esc(subName(p.subalbumId))}</span>` : ''}${(p.bibs || []).length ? `<span class="pill ok" title="Dorsales">#${p.bibs.map(esc).join(' #')}</span>` : ''}</span>
       </label>`).join('') : '<div class="empty" style="grid-column:1/-1">Todavía no subiste fotos a este evento.</div>';
     $$('#ph-grid .ph input').forEach(cb => cb.onchange = () => {
       const id = cb.closest('.ph').dataset.id;
@@ -105,6 +113,7 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings }) {
     const n = selected.size;
     $('#ph-sel').textContent = n ? `${n} seleccionada${n > 1 ? 's' : ''}` : '';
     ['ph-move', 'ph-hide', 'ph-show', 'ph-del'].forEach(id => { $('#' + id).disabled = !n; });
+    $('#ph-bibs').disabled = n !== 1;
     $('#ph-all').checked = n > 0 && n === photos.length;
   }
 
@@ -132,6 +141,15 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings }) {
     e.target.value = '-';
     if (v === '-') return;
     bulkUpdate({ subalbumId: v === '__none' ? '' : v }, 'Fotos movidas');
+  };
+  // Corregir dorsales a mano (la lectura automática puede fallar si el número está tapado o movido).
+  $('#ph-bibs').onclick = () => {
+    const p = photos.find(x => selected.has(x.id));
+    if (!p) return;
+    const v = prompt('Dorsales de esta foto, separados por coma (vacío = ninguno):', (p.bibs || []).join(', '));
+    if (v === null) return;
+    const list = [...new Set((v.match(/\d{1,6}/g) || []).map(n => String(parseInt(n, 10))).filter(n => n !== '0'))].slice(0, 20);
+    bulkUpdate({ bibs: list }, list.length ? `Dorsales: ${list.join(', ')}` : 'Dorsales borrados');
   };
   $('#ph-hide').onclick = () => bulkUpdate({ hidden: true }, 'Fotos ocultas');
   $('#ph-show').onclick = () => bulkUpdate({ hidden: false }, 'Fotos visibles');
@@ -184,10 +202,15 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings }) {
       if ((f === '*' || f === p.subalbumId) && !photos.some(x => x.id === p.id)) { photos.push(p); photos.sort((a, b) => a.takenAt.toMillis() - b.takenAt.toMillis()); }
       scheduleDraw();
     },
+    onBibs: (id, list) => {
+      const p = photos.find(x => x.id === id);
+      if (p) { p.bibs = list; scheduleDraw(); }
+      if (list.length) set.bibPhotos = (set.bibPhotos || 0) + 1;
+    },
   };
   let up;
   if (activeUploader?.busy() && activeUploader.eventId === ev.id) { up = activeUploader; up.setHandlers(handlers); }
-  else up = activeUploader = createUploader({ eventId: ev.id, uid, wm, logo, optimize: settings.optimizeOriginals !== false, ...handlers });
+  else up = activeUploader = createUploader({ eventId: ev.id, uid, wm, logo, optimize: settings.optimizeOriginals !== false, bibs: bibs && settings.bibsEnabled !== false, ...handlers });
   // El vencimiento de los originales arranca con la primera subida (una sola vez).
   let expiryStarted = !!set.expiresAt;
   function startExpiry() {

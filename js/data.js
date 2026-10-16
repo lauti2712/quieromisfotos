@@ -139,3 +139,10 @@ export function planFeatures(id, st) {
   return ['Todo lo de Profesional', 'Tu propio dominio (tunombre.com.ar)', `${gb} (ampliable)`, days, `Portfolio de ${p.portfolio} fotos`,
     ...(p.featured ? ['Destacado en el directorio'] : []), 'Estadísticas avanzadas', 'Atención prioritaria', fee];
 }
+
+// Dorsales: se leen solos en carreras (running, ciclismo, triatlón…). El fotógrafo lo puede cambiar en su álbum.
+const ENDURANCE = /run|marat|carrera|calle|ciclis|bici|mtb|rural|triat|duat|trail|aventura|aguas abiertas|nataci|cross/i;
+export function bibsDefault(ev, tax) {
+  return (ev?.tagIds || []).some(id => ENDURANCE.test((tax?.tags || []).find(t => t.id === id)?.name || id));
+}
+export const bibsOn = (set, ev, tax) => set?.detectBibs ?? bibsDefault(ev, tax);

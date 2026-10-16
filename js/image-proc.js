@@ -4,6 +4,7 @@ import { drawWatermark } from './watermark.js';
 
 export const PREVIEW_SIDE = 1600;
 export const THUMB_SIDE = 400;
+export const SCAN_SIDE = 1280; // copia sin marca para leer dorsales (no se guarda)
 
 function canvas(w, h) {
   if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h);
@@ -33,7 +34,7 @@ function scaled(src, sw, sh, maxSide) {
 export const OPTIMIZE_QUALITY = 0.92;
 const OPTIMIZE_MIN_BYTES = 3e6;
 
-export async function processFile(file, wm, logo = null, { optimize = false } = {}) {
+export async function processFile(file, wm, logo = null, { optimize = false, scan = false } = {}) {
   const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
   const width = bmp.width, height = bmp.height;
   try {
@@ -48,13 +49,14 @@ export async function processFile(file, wm, logo = null, { optimize = false } = 
     // Base sin marca a 1600px; de ahí sale la miniatura (mejor calidad que escalar directo desde el original).
     const base = scaled(bmp, width, height, PREVIEW_SIDE);
     const thumbC = scaled(base, base.width, base.height, THUMB_SIDE);
+    const scanBlob = scan ? await toBlob(scaled(base, base.width, base.height, SCAN_SIDE), 0.82) : null;
     if (wm) {
       drawWatermark(base.getContext('2d'), base.width, base.height, wm, logo);
       drawWatermark(thumbC.getContext('2d'), thumbC.width, thumbC.height, wm, logo);
     }
     const [preview, thumb] = await Promise.all([toBlob(base, 0.8), toBlob(thumbC, 0.7)]);
     const takenAt = await exifDate(file).catch(() => null);
-    return { preview, thumb, original, width, height, takenAt: takenAt || file.lastModified || Date.now() };
+    return { preview, thumb, original, scan: scanBlob, width, height, takenAt: takenAt || file.lastModified || Date.now() };
   } finally {
     bmp.close?.();
   }

@@ -10,10 +10,15 @@ import { trackPhotoView, trackCartAdd } from './stats.js';
 
 const PAGE = 60;
 
-export function mountGallery(box, { ev, photographers, sets, initialUid = '', initialPhoto = '' }) {
+export function mountGallery(box, { ev, photographers, sets, initialUid = '', initialPhoto = '', initialBib = '' }) {
   const byUid = new Map(photographers.map(p => [p.uid, p]));
   const withPhotos = photographers.filter(p => (sets.get(p.uid)?.photoCount || 0) > 0);
-  const state = { uid: '', sub: '', hour: 0, fav: false, photos: [], cursor: null, done: false, loading: false };
+  const state = { uid: '', sub: '', hour: 0, fav: false, bib: '', photos: [], cursor: null, done: false, loading: false };
+  // Búsqueda por dorsal: aparece si algún fotógrafo tiene fotos con dorsales leídos.
+  const hasBibs = withPhotos.some(p => (sets.get(p.uid)?.bibPhotos || 0) > 0);
+  const cleanBib = v => { const n = (String(v || '').match(/\d{1,6}/) || [''])[0]; return n ? String(parseInt(n, 10)) : ''; };
+  // Link con dorsal (#/evento/{id}?dorsal=123): abre directo con la búsqueda hecha.
+  if (hasBibs && cleanBib(initialBib) && cleanBib(initialBib) !== '0') state.bib = cleanBib(initialBib);
   let hours = []; // inicio (ms) de cada hora que tiene fotos
   let hourCount = new Map();
 
@@ -32,6 +37,11 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
   const expired = withPhotos.filter(p => !forSale(p.uid) && setUntil(sets.get(p.uid)));
   box.innerHTML = `
     ${expired.length ? `<div class="notice warn">${expired.length === withPhotos.length ? 'Las fotos de este evento' : `Las fotos de ${expired.map(p => esc(p.displayName)).join(', ')}`} ya no están a la venta (venció el plazo de disponibilidad).</div>` : ''}
+    ${hasBibs ? `<form class="g-bib" id="g-bib" role="search">
+      <label for="g-bib-in">🔢 Buscá tus fotos por número de dorsal</label>
+      <div class="row"><input id="g-bib-in" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="Ej: 1234" autocomplete="off" value="${esc(state.bib)}">
+      <button class="btn primary">Buscar</button><button type="button" class="btn hidden" id="g-bib-x">Ver todas</button></div>
+    </form>` : ''}
     <div class="g-price" id="g-price"></div>
     <div class="filter-row" id="g-ph"></div>
     <div class="filter-row" id="g-sub"></div>
@@ -39,9 +49,12 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
     <div class="filter-row" id="g-fav"></div>
     <div class="gallery" id="g-grid"></div>
     <div id="g-sentinel" style="height:1px"></div>
-    <div class="row" style="justify-content:center;margin-top:14px" id="g-more"></div>`;
+    <div class="row" style="justify-content:center;margin-top:14px" id="g-more"></div>
+    <a class="g-cartbar hidden" id="g-cartbar" href="#/carrito"></a>`;
 
   function drawFilters() {
+    ['g-ph', 'g-sub', 'g-hour', 'g-fav'].forEach(id => $('#' + id, box).classList.toggle('hidden', !!state.bib));
+    $('#g-bib-x', box)?.classList.toggle('hidden', !state.bib);
     $('#g-ph', box).innerHTML = withPhotos.length > 1
       ? [`<button class="chip ${!state.uid ? 'on' : ''}" data-uid="">Todos</button>`,
         ...withPhotos.map(p => `<button class="chip ${state.uid === p.uid ? 'on' : ''}" data-uid="${p.uid}">${esc(p.displayName)}</button>`)].join('')
@@ -108,9 +121,10 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
     state.loading = true;
     $('#g-more', box).innerHTML = '<div class="spinner" style="margin:6px auto"></div>';
     const cons = [where('eventId', '==', ev.id), where('hidden', '==', false)];
-    if (state.uid) cons.push(where('photographerUid', '==', state.uid));
-    if (state.uid && state.sub) cons.push(where('subalbumId', '==', state.sub));
-    if (state.hour) cons.push(where('takenAt', '>=', Timestamp.fromMillis(state.hour)), where('takenAt', '<', Timestamp.fromMillis(state.hour + 3600000)));
+    if (state.bib) cons.push(where('bibs', 'array-contains', state.bib));
+    else if (state.uid) cons.push(where('photographerUid', '==', state.uid));
+    if (!state.bib && state.uid && state.sub) cons.push(where('subalbumId', '==', state.sub));
+    if (!state.bib && state.hour) cons.push(where('takenAt', '>=', Timestamp.fromMillis(state.hour)), where('takenAt', '<', Timestamp.fromMillis(state.hour + 3600000)));
     cons.push(orderBy('takenAt'), limit(PAGE));
     if (state.cursor) cons.push(startAfter(state.cursor));
     try {
@@ -121,7 +135,18 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
       const start = state.photos.length;
       state.photos.push(...fresh);
       $('#g-grid', box).insertAdjacentHTML('beforeend', fresh.map((p, i) => itemHtml(p, start + i)).join(''));
-      if (!state.photos.length) $('#g-grid', box).innerHTML = '<div class="empty" style="grid-column:1/-1">No hay fotos con este filtro.</div>';
+      if (!state.photos.length) $('#g-grid', box).innerHTML = state.bib
+        ? `<div class="empty" style="grid-column:1/-1">No encontramos fotos con el dorsal <strong>${esc(state.bib)}</strong>.<br>Puede que el número haya quedado tapado en la foto: probá buscando por horario.</div>`
+        : '<div class="empty" style="grid-column:1/-1">No hay fotos con este filtro.</div>';
+      else if (state.bib && !start) {
+        $('#g-grid', box).insertAdjacentHTML('afterbegin', `<div class="g-bib-found"><span>${state.done ? state.photos.length : `${state.photos.length}+`} foto${state.photos.length === 1 ? '' : 's'} con el dorsal <strong>${esc(state.bib)}</strong></span>
+          <button type="button" class="btn sm" id="g-bib-share">🔗 Compartir</button></div>`);
+        const bib = state.bib;
+        $('#g-bib-share', box).onclick = () => shareLink({
+          title: `Fotos del dorsal ${bib} · ${ev.name}`, text: `📸 Mirá las fotos del dorsal ${bib} en ${ev.name}:`,
+          url: `${eventUrl(ev.id)}${eventUrl(ev.id).includes('?') ? '&' : '?'}dorsal=${bib}`,
+        });
+      }
       $('#g-more', box).innerHTML = state.done ? '' : '<button class="btn">Ver más fotos</button>';
       $('#g-more button', box)?.addEventListener('click', loadMore);
     } catch (e) {
@@ -170,7 +195,15 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
     toast(added ? 'Foto agregada al carrito' : 'Foto quitada del carrito');
     syncCartMarks();
   }
+  // Barra fija abajo con lo que lleva en el carrito (en el celular el botón del carrito queda lejos).
+  function syncCartBar() {
+    const n = cart.count();
+    const bar = $('#g-cartbar', box);
+    bar.classList.toggle('hidden', !n);
+    bar.innerHTML = `<span>🛒 <strong>${n}</strong> foto${n === 1 ? '' : 's'} en el carrito</span><span class="g-cartbar-go">Ver carrito y pagar</span>`;
+  }
   function syncCartMarks() {
+    syncCartBar();
     $$('.g-item', box).forEach(el => {
       const inCart = cart.has(el.dataset.id);
       el.classList.toggle('in-cart', inCart);
@@ -257,6 +290,20 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
     }).catch(() => {});
   }
 
+  const bibForm = $('#g-bib', box);
+  if (bibForm) {
+    bibForm.onsubmit = e => {
+      e.preventDefault();
+      const n = cleanBib($('#g-bib-in', box).value);
+      state.bib = n === '0' ? '' : n;
+      Object.assign(state, { fav: false, hour: 0 });
+      $('#g-bib-in', box).blur();
+      reset();
+    };
+    $('#g-bib-x', box).onclick = () => { state.bib = ''; $('#g-bib-in', box).value = ''; reset(); };
+  }
+
+  syncCartBar();
   drawFilters();
   loadMore();
 }
