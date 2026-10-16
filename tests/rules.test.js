@@ -75,6 +75,14 @@ test('alta de fotógrafo: solo pending, con slug propio', async () => {
   b3.set(doc(db2, 'slugs/tramposo'), { uid: 'tramposo' });
   b3.set(doc(db2, 'users/tramposo'), { ...photographer('pending', { slug: 'tramposo' }), role: 'superadmin' });
   await assertFails(b3.commit());
+
+  // el alta no puede traer plan, cortesía, dominio ni cuenta de MP
+  for (const extra of [{ plan: 'webdomain', proUntil: new Date('2099-01-01') }, { courtesy: true }, { domainActive: true, siteDomain: 'x.com' }, { trial: true }, { mpUserId: '123' }]) {
+    const b4 = writeBatch(db2);
+    b4.set(doc(db2, 'slugs/tramposo'), { uid: 'tramposo' });
+    b4.set(doc(db2, 'users/tramposo'), { ...photographer('pending', { slug: 'tramposo' }), ...extra });
+    await assertFails(b4.commit());
+  }
 });
 
 test('no se puede usar el slug de otro', async () => {

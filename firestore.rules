@@ -77,7 +77,10 @@ service cloud.firestore {
       allow create: if signedIn() && uid() == userId && slugOwnedAfter(userId) && (
           (request.resource.data.role == 'photographer'
             && request.resource.data.status == 'pending'
-            && request.resource.data.mpConnected == false)
+            && request.resource.data.mpConnected == false
+            // el plan, la cortesía, el dominio y MP los asignan el superadmin o el Worker, nunca el alta
+            && !request.resource.data.keys().hasAny(['plan', 'proUntil', 'domainActive', 'siteDomain', 'trial', 'trialUsed', 'courtesy', 'demo'])
+            && request.resource.data.get('mpUserId', null) == null)
           || (isSuper() && request.resource.data.role == 'superadmin'));
       allow update: if isSuper() || (signedIn() && uid() == userId
           && !changed().hasAny(['role', 'status', 'mpConnected', 'mpUserId', 'createdAt', 'plan', 'proUntil', 'domainActive', 'siteDomain', 'trial', 'trialUsed', 'courtesy'])
