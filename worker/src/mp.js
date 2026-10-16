@@ -1,6 +1,6 @@
 // Mercado Pago: vinculación OAuth del fotógrafo (marketplace) y manejo de sus tokens.
 // Los tokens se guardan en Firestore `mpTokens/{uid}` (sin reglas de cliente: nadie los lee desde el navegador).
-import { adminGet, adminSet, adminUpdate, adminDelete } from './admin.js';
+import { adminGet, adminSet, adminUpdate, adminDelete, adminQuery } from './admin.js';
 import { requireUser } from './firebase.js';
 import { signToken, verifyToken } from './tokens.js';
 import { json, httpError } from './http.js';
@@ -65,6 +65,11 @@ async function saveTokens(env, uid, d) {
 // POST /mp/disconnect (Bearer)
 export async function disconnect(req, env) {
   const claims = await requireUser(req, env);
+  // Con pagos en curso (la preferencia de MP dura 2 horas) no se desvincula: el pago no se podría registrar.
+  const pend = await adminQuery(env, 'orders', { filters: [['photographerUid', '==', claims.sub], ['status', '==', 'pending']], limit: 200 });
+  if (pend.some(o => (o.createdAt?.getTime?.() || 0) > Date.now() - 3 * 3600_000)) {
+    throw httpError(409, 'Hay compras en curso de tus fotos. Probá de nuevo en unas horas para no perder esos pagos.');
+  }
   await adminDelete(env, `mpTokens/${claims.sub}`);
   await adminUpdate(env, `users/${claims.sub}`, { mpConnected: false, mpUserId: null });
   return json({ ok: true });

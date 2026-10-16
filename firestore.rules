@@ -179,6 +179,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Alertas para el superadmin (las escribe el Worker)
+    match /alerts/{id} {
+      allow read, delete: if isSuper();
+    }
+
     match /domains/{host} {
       allow read, write: if isSuper();
     }

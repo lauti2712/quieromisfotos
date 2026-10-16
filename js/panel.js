@@ -278,11 +278,27 @@ function renderShell() {
     root.innerHTML = `<div class="container"><div class="auth-box card"><h1>Cuenta suspendida</h1><p class="muted">Tu cuenta de fotógrafo está suspendida. Si creés que es un error, contactá al administrador.</p></div></div>`;
     return;
   }
-  root.innerHTML = `<div class="panel ${S.isSuper ? '' : 'has-tabs'}"><nav class="sidenav" id="nav"></nav><main id="view"></main></div>
+  root.innerHTML = `${S.isSuper ? '<div id="alerts" class="alerts-bar"></div>' : ''}<div class="panel ${S.isSuper ? '' : 'has-tabs'}"><nav class="sidenav" id="nav"></nav><main id="view"></main></div>
     ${S.isSuper ? '' : '<nav class="tabbar" id="tabbar" aria-label="Secciones"></nav>'}`;
   document.body.classList.toggle('with-tabbar', !S.isSuper);
   window.onhashchange = route;
   route();
+  if (S.isSuper) drawAlerts();
+}
+
+// Superadmin: alertas del Worker (pagos que no se pudieron registrar, cobros duplicados).
+async function drawAlerts() {
+  const box = $('#alerts');
+  if (!box) return;
+  const snap = await getDocs(query(collection(db, 'alerts'), orderBy('createdAt', 'desc'), limit(20))).catch(() => null);
+  const list = (snap?.docs || []).map(d => ({ id: d.id, ...d.data() }));
+  box.innerHTML = list.length ? `<div class="notice danger stack" style="max-width:1200px;margin:12px auto 0">
+    <strong>⚠️ ${list.length} alerta${list.length > 1 ? 's' : ''} para revisar</strong>
+    ${list.map(a => `<div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px"><span class="small">${esc(fmtTs(a.createdAt))} · ${esc(a.text)}</span><button class="btn sm" data-alert="${esc(a.id)}">Resuelta</button></div>`).join('')}
+  </div>` : '';
+  $$('[data-alert]', box).forEach(b => b.onclick = async () => {
+    try { await deleteDoc(doc(db, 'alerts', b.dataset.alert)); drawAlerts(); } catch (e) { toast(errMsg(e), 'error'); }
+  });
 }
 
 function route() {

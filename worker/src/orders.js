@@ -9,6 +9,7 @@ import { extensionWebhook } from './extensions.js';
 import { notifyUser } from './push.js';
 import { feePercentFor } from './plans.js';
 import { subscriptionWebhook } from './subscriptions.js';
+import { addAlert } from './alerts.js';
 
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
 const MAX_ITEMS = 300;
@@ -155,7 +156,14 @@ export async function webhook(req, env) {
   if (type !== 'payment' || !paymentId || !ID_RE.test(orderId || '')) return json({ ok: true, ignored: true });
   const order = await adminGet(env, `orders/${orderId}`);
   if (!order) return json({ ok: true, ignored: true });
-  const payment = await mpFetch(await sellerToken(env, order.photographerUid), `/v1/payments/${encodeURIComponent(paymentId)}`);
+  let token;
+  try { token = await sellerToken(env, order.photographerUid); }
+  catch (e) {
+    // El fotógrafo desvinculó MP: el pago existe pero no lo podemos consultar. Queda para revisar a mano.
+    await addAlert(env, { type: 'pago-sin-token', ref: orderId, text: `Aviso de pago ${paymentId} del pedido ${orderId} (${order.photographerName || order.photographerUid}, ${order.eventName || ''}): el fotógrafo no tiene Mercado Pago vinculado. Revisar el pago y aprobar el pedido a mano.` });
+    return json({ ok: true, alert: true });
+  }
+  const payment = await mpFetch(token, `/v1/payments/${encodeURIComponent(paymentId)}`);
   await applyPayment(env, orderId, order, payment);
   return json({ ok: true });
 }

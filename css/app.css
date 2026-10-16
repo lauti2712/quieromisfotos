@@ -645,3 +645,6 @@ footer.site .foot-links { display: flex; flex-wrap: wrap; justify-content: cente
 @media (max-width: 800px) { .up-fab { display: flex; } }
 body:not(.with-tabbar) .up-fab { bottom: calc(16px + env(safe-area-inset-bottom)); }
 .install-card .row { gap: 8px; }
+
+/* alertas del superadmin */
+.alerts-bar { padding: 0 16px; }
