@@ -146,3 +146,20 @@ export function waNumber(v) {
 export function waLink(number, text) {
   return `https://wa.me/${waNumber(number)}${text ? `?text=${encodeURIComponent(text)}` : ''}`;
 }
+
+// Navegador interno de Instagram, Facebook, TikTok, etc.: Google no deja ingresar desde ahí.
+export const inAppBrowser = () => /Instagram|FBAN|FBAV|FB_IAB|FBIOS|Line\/|TikTok|musical_ly|Snapchat|Twitter/i.test(navigator.userAgent || '');
+
+// Aviso para el login: ingresar con email o abrir la página en el navegador del teléfono.
+export function inAppNotice() {
+  if (!inAppBrowser()) return '';
+  return `<div class="notice warn small" style="margin:0">Estás en el navegador de una app (Instagram, Facebook…): <strong>Google no deja ingresar desde acá</strong>.
+    Ingresá con tu email abajo, o abrí esta página en Chrome o Safari (menú <strong>⋯</strong> → <em>Abrir en el navegador</em>).
+    <button type="button" class="btn sm" data-copy-link style="margin-top:6px">📋 Copiar el link</button></div>`;
+}
+export function bindInAppNotice(root = document) {
+  root.querySelector('[data-copy-link]')?.addEventListener('click', async e => {
+    try { await navigator.clipboard.writeText(location.href); e.target.textContent = '✓ Link copiado: pegalo en Chrome o Safari'; }
+    catch { e.target.textContent = location.href; }
+  });
+}
