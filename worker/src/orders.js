@@ -1,6 +1,6 @@
 // Compras: checkout (preferencia de MP con comisión), aviso de pago (webhook), sincronización y descargas.
 import { computeTotals } from '../../js/pricing.js';
-import { adminGet, adminGetMany, adminSet, adminUpdate, adminIncrement } from './admin.js';
+import { adminGet, adminGetMany, adminSet, adminUpdate, adminIncrement, adminQuery } from './admin.js';
 import { requireUser } from './firebase.js';
 import { sellerToken, mpFetch, siteUrl } from './mp.js';
 import { signToken, verifyToken } from './tokens.js';
@@ -55,6 +55,16 @@ export async function checkout(req, env) {
   if (bad >= 0) throw httpError(409, 'Alguna foto del carrito ya no está disponible. Quitala y probá de nuevo.');
 
   const t = computeTotals({ count: ids.length, price: set.price, packs: set.packs, feeMode: set.feeMode, feePercent: feePercentFor(ph, settings) });
+  // Mismo comprador, mismas fotos y mismo total con un pago todavía abierto: se reusa (evita pagar dos veces lo mismo).
+  const key = [...ids].sort().join(',');
+  const open = (await adminQuery(env, 'orders', { filters: [['buyerUid', '==', claims.sub], ['status', '==', 'pending']], limit: 30 }))
+    .find(o => o.photographerUid === photographerUid && o.eventId === eventId && o.total === t.total && o.mpPreferenceId
+      && (o.items || []).map(i => i.photoId).sort().join(',') === key
+      && Date.now() - (o.mpPreferenceAt?.getTime?.() || o.createdAt?.getTime?.() || 0) < PREF_TTL - 10 * 60_000);
+  if (open) {
+    const pref = await mpFetch(await sellerToken(env, photographerUid), `/checkout/preferences/${open.mpPreferenceId}`);
+    return json({ orderId: open.id, initPoint: pref.init_point, reused: true });
+  }
   const orderId = newId();
   const order = {
     // Sin nombre ni email del comprador: el fotógrafo lee el pedido. Esos datos van a orderPrivate (superadmin y comprador).
@@ -67,35 +77,43 @@ export async function checkout(req, env) {
   await adminSet(env, `orders/${orderId}`, order, { mustNotExist: true });
   await adminSet(env, `orderPrivate/${orderId}`, { buyerUid: claims.sub, buyerEmail: claims.email, buyerName: claims.name || '', createdAt: order.createdAt });
 
+  const pref = await createPreference(req, env, orderId, order, claims.email, 0);
+  return json({ orderId, initPoint: pref.init_point });
+}
+
+const PREF_TTL = 2 * 3600_000;
+
+// Preferencia de pago de MP (cuenta del fotógrafo, con la comisión de la plataforma). Vence a las 2 horas.
+async function createPreference(req, env, orderId, order, buyerEmail, attempt) {
   const api = apiUrl(env, req);
   // Si se compró desde el sitio de prueba, MP vuelve ahí.
   const fromStaging = req.headers.get('Origin') === 'https://prueba.quieromisfotos.com.ar';
   const back = `${fromStaging ? 'https://prueba.quieromisfotos.com.ar/' : siteUrl(env)}#/pedido/${orderId}`;
-  const items = [{ id: orderId, title: `Fotos — ${ev.name}`.slice(0, 250), description: `${ids.length} foto(s) digitales`, quantity: 1, unit_price: t.subtotal, currency_id: 'ARS', category_id: 'art' }];
-  if (t.serviceFee) items.push({ id: 'servicio', title: 'Costo de servicio', quantity: 1, unit_price: t.serviceFee, currency_id: 'ARS' });
-  const pref = await mpFetch(await sellerToken(env, photographerUid), '/checkout/preferences', {
+  const items = [{ id: orderId, title: `Fotos — ${order.eventName}`.slice(0, 250), description: `${order.count} foto(s) digitales`, quantity: 1, unit_price: order.subtotal, currency_id: 'ARS', category_id: 'art' }];
+  if (order.serviceFee) items.push({ id: 'servicio', title: 'Costo de servicio', quantity: 1, unit_price: order.serviceFee, currency_id: 'ARS' });
+  const pref = await mpFetch(await sellerToken(env, order.photographerUid), '/checkout/preferences', {
     method: 'POST',
-    headers: { 'X-Idempotency-Key': orderId },
+    headers: { 'X-Idempotency-Key': attempt ? `${orderId}-${attempt}` : orderId },
     body: JSON.stringify({
       items,
       // MP_TEST_NO_FEE: solo para pruebas, cuando la app de MP es de una cuenta real y el vendedor es de prueba
       // (MP no permite mezclar). La comisión igual queda registrada en el pedido.
-      ...(env.MP_TEST_NO_FEE === '1' ? {} : { marketplace_fee: t.platformFee }),
+      ...(env.MP_TEST_NO_FEE === '1' ? {} : { marketplace_fee: order.platformFee }),
       external_reference: orderId,
       notification_url: `${api}/mp/webhook?o=${orderId}`,
       back_urls: { success: back, failure: back, pending: back },
       auto_return: 'approved',
       binary_mode: true,
       // En modo prueba no se manda el email: si es de una cuenta real, MP rechaza el pago por mezclar cuentas de prueba y reales.
-      ...(env.MP_TEST_MODE === '1' ? {} : { payer: { email: claims.email } }),
+      ...(env.MP_TEST_MODE === '1' || !buyerEmail ? {} : { payer: { email: buyerEmail } }),
       statement_descriptor: 'QUIEROMISFOTOS',
       metadata: { order_id: orderId },
       expires: true,
-      expiration_date_to: new Date(Date.now() + 2 * 3600_000).toISOString(),
+      expiration_date_to: new Date(Date.now() + PREF_TTL).toISOString(),
     }),
   });
-  await adminUpdate(env, `orders/${orderId}`, { mpPreferenceId: pref.id });
-  return json({ orderId, initPoint: pref.init_point });
+  await adminUpdate(env, `orders/${orderId}`, { mpPreferenceId: pref.id, mpPreferenceAt: new Date(), mpPreferenceAttempt: attempt });
+  return pref;
 }
 
 // ------------------------------------------------------------------ pago -> orden (idempotente)
@@ -105,6 +123,13 @@ const STATUS = { approved: 'approved', authorized: 'pending', pending: 'pending'
 async function applyPayment(env, orderId, order, payment) {
   if (String(payment.external_reference) !== orderId) throw httpError(400, 'El pago no corresponde a este pedido');
   const status = STATUS[payment.status] || 'pending';
+  // Ya pagado con otro pago: si este también se aprobó, es un cobro doble (se avisa para devolverlo; no se pisa el pedido).
+  if (order.status === 'approved' && order.mpPaymentId && String(payment.id) !== order.mpPaymentId) {
+    if (status === 'approved') {
+      await addAlert(env, { type: 'pago-duplicado', ref: `${orderId}_${payment.id}`, text: `Cobro duplicado: el pedido ${orderId} (${order.eventName || ''}, ${order.photographerName || ''}) ya estaba pagado con el pago ${order.mpPaymentId} y entró otro pago aprobado ${payment.id} por $${payment.transaction_amount}. Devolverlo desde Mercado Pago (cuenta del fotógrafo).` });
+    }
+    return order;
+  }
   const upd = { mpPaymentId: String(payment.id), mpStatus: payment.status, mpStatusDetail: payment.status_detail || '' };
   if (status === 'approved') {
     if (Number(payment.transaction_amount) + 1 < order.total) throw httpError(400, 'El monto pagado no coincide');
@@ -203,7 +228,19 @@ export async function retryCheckout(req, env, orderId) {
   if (!order || order.buyerUid !== claims.sub) throw httpError(404, 'Pedido no encontrado');
   if (order.status === 'approved') throw httpError(409, 'Este pedido ya está pagado');
   if (!order.mpPreferenceId) throw httpError(409, 'No se puede reintentar este pedido');
-  const pref = await mpFetch(await sellerToken(env, order.photographerUid), `/checkout/preferences/${order.mpPreferenceId}`);
+  const age = Date.now() - (order.mpPreferenceAt?.getTime?.() || order.createdAt?.getTime?.() || 0);
+  if (age < PREF_TTL - 10 * 60_000) {
+    const pref = await mpFetch(await sellerToken(env, order.photographerUid), `/checkout/preferences/${order.mpPreferenceId}`);
+    return json({ initPoint: pref.init_point });
+  }
+  // La preferencia venció: se arma otra (si las fotos se siguen vendiendo), con el mismo pedido y el mismo total.
+  const [set, ph, ...photos] = await adminGetMany(env, [`events/${order.eventId}/sets/${order.photographerUid}`, `users/${order.photographerUid}`, ...(order.items || []).map(i => `photos/${i.photoId}`)]);
+  const until = setAvailableUntil(set);
+  if (!set || set.originalsDeleted || (until && until < Date.now())) throw httpError(409, 'Las fotos de este evento ya no están disponibles para compra');
+  if (!ph?.mpConnected) throw httpError(409, 'El fotógrafo todavía no puede recibir pagos');
+  if (photos.some(p => !p || p.hidden || p.originalDeleted)) throw httpError(409, 'Alguna foto de este pedido ya no está disponible. Armá el carrito de nuevo.');
+  const pref = await createPreference(req, env, orderId, order, claims.email, (order.mpPreferenceAttempt || 0) + 1);
+  if (order.status === 'rejected') await adminUpdate(env, `orders/${orderId}`, { status: 'pending' });
   return json({ initPoint: pref.init_point });
 }
 
