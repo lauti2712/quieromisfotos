@@ -26,6 +26,7 @@
 //   POST   /extensions/checkout        Bearer (fotógrafo) {eventId, planId}    extensión paga del plazo -> { initPoint }
 //   POST   /extensions/{id}/sync       Bearer (fotógrafo)                     consulta el pago a MP
 //   POST   /plans/subscribe · /plans/sync · /plans/cancel   Bearer (fotógrafo)   suscripción mensual a un plan (MP)
+//   POST   /team/invite · /team/join · /team/remove · /team/events   equipo del plan Empresas
 //   GET    /domains/check · POST /domains/request · POST /admin/domains/activate|status   dominio propio (Premium)
 //   POST   /tags                       Bearer (fotógrafo aprobado) {type, name}  alta de actividad/club/lugar sin duplicados
 //
@@ -44,6 +45,7 @@ import { checkout, webhook, syncOrder, retryCheckout, downloadLinks, download } 
 import { createTag } from './tags.js';
 import { scanBibsRequest } from './bibs.js';
 import { commitPhoto, deletePhotos, orderDownloadUntil } from './photos.js';
+import { teamInvite, teamJoin, teamRemove, teamEvents, canUploadForTeam } from './team.js';
 import { checkDomains, requestDomain, activateDomain, domainStatus, checkPendingDomains } from './domains.js';
 import { renderSite } from './site.js';
 import { scanRequest, scanStorage } from './storage.js';
@@ -131,6 +133,10 @@ async function route(req, env, ctx) {
   if (m === 'POST' && url.pathname === '/mp/webhook') return webhook(req, env);
   if (m === 'POST' && url.pathname === '/checkout') return checkout(req, env);
   if (m === 'POST' && url.pathname === '/tags') return createTag(req, env);
+  if (m === 'POST' && url.pathname === '/team/invite') return teamInvite(req, env);
+  if (m === 'POST' && url.pathname === '/team/join') return teamJoin(req, env);
+  if (m === 'POST' && url.pathname === '/team/remove') return teamRemove(req, env);
+  if (m === 'POST' && url.pathname === '/team/events') return teamEvents(req, env);
   if (m === 'GET' && url.pathname === '/domains/check') return checkDomains(req, env);
   if (m === 'POST' && url.pathname === '/domains/request') return requestDomain(req, env);
   if (m === 'POST' && url.pathname === '/admin/domains/activate') return activateDomain(req, env);
@@ -163,31 +169,40 @@ async function uploadSession(req, env) {
   const user = await getDocAsUser(env, idToken, `users/${uid}`);
   if (!user) throw httpError(403, 'Perfil inexistente');
   const isSuper = claims.email === 'lautarom87@gmail.com' && claims.email_verified === true;
-  // Pendientes pueden subir avatar, logo y portfolio; para eventos hay que estar aprobado.
+  // Pendientes pueden subir avatar, logo y portfolio; para eventos hay que estar aprobado
+  // (salvo como colaborador de una empresa: la empresa responde por su equipo).
+  const team = typeof body.team === 'string' && body.team !== uid ? body.team : '';
   if (!isSuper && user.status === 'suspended') throw httpError(403, 'Tu cuenta está suspendida');
-  if (!isSuper && eid && user.status !== 'approved') throw httpError(403, 'Tu cuenta no está aprobada');
+  if (!isSuper && eid && !team && user.status !== 'approved') throw httpError(403, 'Tu cuenta no está aprobada');
   if (!isSuper && !['approved', 'pending'].includes(user.status)) throw httpError(403, 'Tu cuenta no está habilitada');
 
   let role = 'profile';
+  let owner = uid; // dueño del álbum (la empresa, si sube un colaborador)
   if (eid) {
     if (!ID_RE.test(eid)) throw httpError(400, 'Evento inválido');
-    const ev = await getDocAsUser(env, idToken, `events/${eid}`);
+    const ev = team ? await adminGet(env, `events/${eid}`) : await getDocAsUser(env, idToken, `events/${eid}`);
     if (!ev) throw httpError(404, 'Evento no encontrado');
-    const member = (ev.photographerUids || []).includes(uid);
-    if (member) role = 'member';
-    // Plan Gratis: un solo álbum activo a la vez (con fotos y originales guardados).
-    if (member && !isSuper && isFree(user)) {
-      const evs = await adminQuery(env, 'events', { filters: [['photographerUids', 'array-contains', uid]], limit: 300 });
-      const others = evs.filter(e => e.id !== eid);
-      const sets = others.length ? await adminGetMany(env, others.map(e => `events/${e.id}/sets/${uid}`)) : [];
-      const busy = others.find((e, i) => setActive(sets[i]));
-      if (busy) throw httpError(403, `Con el plan Gratis podés tener 1 álbum activo a la vez y ya tenés "${busy.name}". Pasate al plan Profesional o esperá a que venza.`);
-    }
-    else if (isSuper || ev.createdBy === uid) role = 'editor';
+    if (team) {
+      // Colaborador del plan Empresas: sube al álbum de la empresa (los límites son los del plan de la empresa).
+      if (!ID_RE.test(team)) throw httpError(400, 'Empresa inválida');
+      await canUploadForTeam(env, uid, team, ev);
+      role = 'member';
+      owner = team;
+    } else if ((ev.photographerUids || []).includes(uid)) {
+      role = 'member';
+      // Plan Gratis: un solo álbum activo a la vez (con fotos y originales guardados).
+      if (!isSuper && isFree(user)) {
+        const evs = await adminQuery(env, 'events', { filters: [['photographerUids', 'array-contains', uid]], limit: 300 });
+        const others = evs.filter(e => e.id !== eid);
+        const sets = others.length ? await adminGetMany(env, others.map(e => `events/${e.id}/sets/${uid}`)) : [];
+        const busy = others.find((e, i) => setActive(sets[i]));
+        if (busy) throw httpError(403, `Con el plan Gratis podés tener 1 álbum activo a la vez y ya tenés "${busy.name}". Pasate al plan Profesional o esperá a que venza.`);
+      }
+    } else if (isSuper || ev.createdBy === uid) role = 'editor';
     else throw httpError(403, 'No participás en este evento');
   }
   const exp = Math.floor(Date.now() / 1000) + SESSION_TTL;
-  const token = await signToken({ typ: 'up', uid, eid, role, exp }, env.UPLOAD_SECRET);
+  const token = await signToken({ typ: 'up', uid: owner, ...(owner !== uid ? { by: uid } : {}), eid, role, exp }, env.UPLOAD_SECRET);
   return json({ token, exp, publicBase: publicBase(req, env) });
 }
 
@@ -241,7 +256,7 @@ async function uploadPhotoPart(req, env, kind, eid, pid, ctx) {
 async function deletePhoto(req, env, eid, pid) {
   if (!ID_RE.test(eid) || !ID_RE.test(pid)) throw httpError(400, 'Id inválido');
   const s = await session(req, env);
-  if (s.eid !== eid || s.role !== 'member') throw httpError(403, 'Token no válido para este evento');
+  if (s.eid !== eid || s.role !== 'member' || s.by) throw httpError(403, 'Token no válido para este evento');
   // Una foto vendida con descarga vigente no se borra: el comprador la tiene que poder bajar.
   const orders = await adminQuery(env, 'orders', { filters: [['photographerUid', '==', s.uid], ['eventId', '==', eid], ['status', '==', 'approved']], limit: 2000 });
   if (orders.some(o => orderDownloadUntil(o) > Date.now() && (o.items || []).some(i => i.photoId === pid))) {
