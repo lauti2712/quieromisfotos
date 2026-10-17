@@ -1525,7 +1525,7 @@ async function viewAdminPhotographers() {
         ${planOf(u) !== 'free' ? `<span class="pill accent">⭐ ${esc(PLANS[planOf(u)].label)} ${u.courtesy ? '· cortesía, sin vencimiento' : `hasta ${esc(fmtTs(u.proUntil))}`}</span>` : '<span class="pill">Gratis</span>'}
         ${reqs[i] && reqs[i].plan !== planOf(u) ? `<span class="pill warn">Pidió: ${esc(PLANS[reqs[i].plan]?.label || reqs[i].plan)}</span>` : ''}
         ${u.site?.requestedDomain && !u.domainActive ? `<span class="pill warn">Dominio pedido: ${esc(u.site.requestedDomain)}</span>` : ''}
-        ${u.domainActive ? `<span class="pill ok">🌐 ${esc(u.siteDomain)}</span>` : ''}
+        ${u.domainActive ? `<span class="pill ${u.domainSetup && u.domainSetup.status !== 'active' ? 'warn' : 'ok'}">🌐 ${esc(u.siteDomain)}${u.domainSetup && u.domainSetup.status !== 'active' ? ' · esperando NIC.ar' : ''}</span>` : ''}
       </div>
       <div class="row">
         <a class="btn sm" target="_blank" href="index.html#/f/${esc(u.slug)}">Perfil</a>
@@ -1537,6 +1537,7 @@ async function viewAdminPhotographers() {
           <button class="btn sm" data-courtesy="${u.uid}" title="Plan sin costo y sin vencimiento, hasta que lo quites">🎁 Cortesía</button>` : ''}
         ${isPro(u) ? `<button class="btn sm ghost" data-unpro="${u.uid}">Quitar plan</button>` : ''}
         ${planOf(u) === 'webdomain' && u.site?.requestedDomain && !u.domainActive ? `<button class="btn sm ok" data-dom="${u.uid}">Activar dominio</button>` : ''}
+        ${u.domainActive && u.domainSetup && u.domainSetup.status !== 'active' ? `<button class="btn sm" data-domst="${u.uid}">Revisar dominio</button>` : ''}
         ${planOf(u) !== 'free' && PLANS[planOf(u)].web ? `<a class="btn sm" target="_blank" href="${esc(siteUrlOf(u))}">Web</a>` : ''}
       </div>
     </div>`).join('') : '<div class="empty">No hay fotógrafos en esta lista.</div>';
@@ -1568,19 +1569,27 @@ async function viewAdminPhotographers() {
     try { await updateDoc(doc(db, 'users', b.dataset.unpro), { plan: 'free', proUntil: null, courtesy: false }); viewAdminPhotographers(); }
     catch (e) { toast(errMsg(e), 'error'); }
   });
+  // Dominio propio: el Worker lo agrega a Cloudflare, lo apunta a la web y devuelve los servidores de nombres para NIC.ar.
+  const nsHelp = (d, ns) => `${d}\n\nEn NIC.ar → tu dominio → Delegaciones, cargá estos servidores de nombres:\n\n${(ns || []).join('\n')}\n\nCuando NIC.ar lo delegue (unas horas), la web queda andando sola y se le avisa al fotógrafo.`;
   $$('[data-dom]').forEach(b => b.onclick = async () => {
     const u = users.find(x => x.uid === b.dataset.dom);
     const d = u.site.requestedDomain;
-    if (!confirm(`¿Activar ${d} para ${u.displayName}?\n\nAntes agregalo en Cloudflare (quieromisfotos.com.ar → SSL/TLS → Custom Hostnames) como ${d} y www.${d}, y verificá que el fotógrafo apuntó su DNS.`)) return;
+    if (!confirm(`¿Conectar ${d} para ${u.displayName}?\n\nAntes registralo en ${d.endsWith('.com.ar') ? 'NIC Argentina (con tu clave fiscal)' : 'Cloudflare → Registrar dominios'}. Después de esto te muestro los servidores de nombres.`)) return;
+    b.disabled = true; b.textContent = 'Conectando…';
     try {
-      const bt = writeBatch(db);
-      bt.set(doc(db, 'domains', d), { uid: u.uid, createdAt: serverTimestamp() });
-      bt.set(doc(db, 'domains', `www.${d}`), { uid: u.uid, createdAt: serverTimestamp() });
-      bt.update(doc(db, 'users', u.uid), { domainActive: true, siteDomain: d });
-      await bt.commit();
-      toast('Dominio activado');
+      const r = await apiPost('/admin/domains/activate', { uid: u.uid });
+      prompt(r.status === 'active' ? `✅ ${d} ya está activo.` : nsHelp(d, r.nameServers), (r.nameServers || []).join(' '));
       viewAdminPhotographers();
-    } catch (e) { toast(errMsg(e), 'error'); }
+    } catch (e) { b.disabled = false; b.textContent = 'Activar dominio'; toast(errMsg(e), 'error'); }
+  });
+  $$('[data-domst]').forEach(b => b.onclick = async () => {
+    const u = users.find(x => x.uid === b.dataset.domst);
+    b.disabled = true;
+    try {
+      const r = await apiPost('/admin/domains/status', { uid: u.uid });
+      if (r.status === 'active') { toast(`✅ ${u.siteDomain} ya está andando`); viewAdminPhotographers(); }
+      else { prompt(`Todavía esperando la delegación.\n\n${nsHelp(u.siteDomain, r.nameServers)}`, (r.nameServers || []).join(' ')); b.disabled = false; }
+    } catch (e) { b.disabled = false; toast(errMsg(e), 'error'); }
   });
   $$('[data-st]').forEach(b => b.onclick = async () => {
     try {

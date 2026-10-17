@@ -136,7 +136,7 @@ export function planFeatures(id, st) {
     ...(p.featured ? ['Destacado en el directorio'] : []), fee];
   if (id === 'web') return ['Todo lo de Lite', `${gb} (ampliable)`, days, `Portfolio de ${p.portfolio} fotos`, 'Tu web: tunombre.quieromisfotos.com.ar',
     'Fotos de tu web sin marca de agua', 'Links cortos para tus eventos', 'Estadísticas completas', ...(p.featured ? ['Destacado en el directorio'] : []), fee];
-  return ['Todo lo de Profesional', 'Tu propio dominio (tunombre.com.ar)', `${gb} (ampliable)`, days, `Portfolio de ${p.portfolio} fotos`,
+  return ['Todo lo de Profesional', 'Tu dominio .com.ar incluido (lo registramos y conectamos nosotros)', `${gb} (ampliable)`, days, `Portfolio de ${p.portfolio} fotos`,
     ...(p.featured ? ['Destacado en el directorio'] : []), 'Estadísticas avanzadas', 'Atención prioritaria', fee];
 }
 

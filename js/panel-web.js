@@ -1,7 +1,7 @@
 // Panel: planes (Gratis / Lite / Profesional / Premium) y configuración de la web personal del fotógrafo.
 import { db, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, serverTimestamp } from './fb.js';
 import { $, $$, esc, fmtMoney, fmtTs, toast, errMsg, parseHash } from './util.js';
-import { apiPost } from './api.js';
+import { apiPost, apiGet } from './api.js';
 import { auth } from './fb.js';
 import { PLANS, planOf, hasWeb, siteUrlOf, planSpec, planFeatures } from './data.js';
 import { shareLink } from './share.js';
@@ -196,36 +196,58 @@ async function drawConfig(box, { uid, profile }) {
     } catch (err) { toast(errMsg(err), 'error'); }
   };
 
+  // Dominio propio (Premium): buscar disponibilidad y pedirlo; lo registramos y lo conectamos nosotros.
   $('#dom-form')?.addEventListener('submit', async e => {
     e.preventDefault();
-    const d = $('#dom-input').value.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
-    if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(d)) return toast('Escribí un dominio válido, ej: tunombre.com.ar', 'error');
+    const name = $('#dom-input').value.trim();
+    if (!name) return;
+    const out = $('#dom-results');
+    out.innerHTML = '<div class="spinner" style="margin:6px 0"></div>';
     try {
-      const site2 = { ...(profile.site || {}), requestedDomain: d };
-      await updateDoc(doc(db, 'users', uid), { site: site2 });
-      profile.site = site2;
-      toast('Dominio guardado. Seguí los pasos para apuntarlo.');
-      drawConfig(box, { uid, profile });
-    } catch (err) { toast(errMsg(err), 'error'); }
+      const { results } = await apiGet(`/domains/check?name=${encodeURIComponent(name)}`);
+      out.innerHTML = results.map(r => {
+        const st = r.available === true ? '✅ Disponible' : r.available === 'probable' ? '✅ Parece disponible' : r.available === false ? '❌ Ya está registrado' : '❔ No pudimos consultarlo';
+        const extra = r.tld === 'com' ? ' <span class="muted small">(costo extra: la diferencia del registro .com, ~US$ 12/año)</span>' : ' <span class="muted small">(incluido)</span>';
+        return `<div class="row" style="justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+          <span><strong>${esc(r.domain)}</strong>${extra}<br><span class="small">${st}</span></span>
+          ${r.available !== false ? `<button type="button" class="btn sm ${r.tld === 'com.ar' ? 'primary' : ''}" data-ask="${esc(r.domain)}">Pedir este</button>` : ''}
+        </div>`;
+      }).join('') + '<p class="muted small" style="margin:6px 0 0">“Parece disponible”: no figura registrado; lo confirmamos al registrarlo en NIC Argentina.</p>';
+      $$('[data-ask]', out).forEach(b => b.onclick = async () => {
+        b.disabled = true;
+        try {
+          const { domain } = await apiPost('/domains/request', { domain: b.dataset.ask });
+          profile.site = { ...(profile.site || {}), requestedDomain: domain };
+          toast(`Pediste ${domain}. Te avisamos cuando esté andando.`);
+          drawConfig(box, { uid, profile });
+        } catch (err) { b.disabled = false; toast(errMsg(err), 'error'); }
+      });
+    } catch (err) { out.innerHTML = ''; toast(errMsg(err), 'error'); }
+  });
+  $('#dom-change')?.addEventListener('click', () => {
+    profile.site = { ...(profile.site || {}), requestedDomain: '' };
+    drawConfig(box, { uid, profile });
   });
 }
 
 function domainHtml(profile) {
   const req = profile.site?.requestedDomain || '';
   const active = profile.domainActive && profile.siteDomain;
+  const ready = active && (!profile.domainSetup || profile.domainSetup.status === 'active');
+  const note = '<p class="muted small" style="margin:0">El dominio lo registramos a nombre de Quiero Mis Fotos mientras tengas el plan Premium. Si das de baja el plan, te lo transferimos a tu nombre (desde ahí, las renovaciones van por tu cuenta).</p>';
+  if (ready) return `<div class="card stack"><h2 style="margin:0">Tu dominio propio</h2>
+    <div class="notice ok">✅ Tu web está en <a href="https://${esc(profile.siteDomain)}" target="_blank" rel="noopener">${esc(profile.siteDomain)}</a>.</div>${note}</div>`;
+  if (active) return `<div class="card stack"><h2 style="margin:0">Tu dominio propio</h2>
+    <div class="notice">⏳ Estamos conectando <strong>${esc(profile.siteDomain)}</strong>. Suele tardar unas horas (a veces hasta 24 h). Te avisamos cuando esté andando.</div>${note}</div>`;
+  if (req) return `<div class="card stack"><h2 style="margin:0">Tu dominio propio</h2>
+    <div class="notice">📝 Pediste <strong>${esc(req)}</strong>. Lo registramos y lo conectamos a tu web (24 a 48 h hábiles). Te avisamos cuando esté andando.</div>
+    <div class="row"><button type="button" class="btn sm ghost" id="dom-change">Elegir otro nombre</button></div>${note}</div>`;
   return `
     <form class="card stack" id="dom-form">
       <h2 style="margin:0">Tu dominio propio</h2>
-      ${active ? `<div class="notice ok">✅ Tu web está activa en <a href="https://${esc(profile.siteDomain)}" target="_blank">${esc(profile.siteDomain)}</a>.</div>` : ''}
-      <div class="row"><input type="text" id="dom-input" value="${esc(req)}" placeholder="tunombre.com.ar" style="max-width:300px"><button class="btn">Guardar</button></div>
-      ${req && !active ? `
-        <div class="notice">
-          <strong>Para conectar ${esc(req)}:</strong>
-          <ol style="margin:8px 0 0;padding-left:20px">
-            <li>Entrá a donde compraste el dominio (por ejemplo NIC Argentina o tu proveedor de DNS).</li>
-            <li>Creá un registro <strong>CNAME</strong> para <strong>www</strong> que apunte a <code>sites.quieromisfotos.com.ar</code>.</li>
-            <li>Avisanos por WhatsApp: nosotros terminamos la conexión y te confirmamos cuando esté activa.</li>
-          </ol>
-        </div>` : ''}
+      <p class="muted" style="margin:0">Elegí el nombre de tu web: el <strong>.com.ar</strong> está incluido en tu plan. Nosotros lo registramos y lo conectamos.</p>
+      <div class="row"><input type="text" id="dom-input" placeholder="tunombre" autocomplete="off" autocapitalize="none" style="max-width:260px"><button class="btn primary">Buscar</button></div>
+      <div id="dom-results"></div>
+      ${note}
     </form>`;
 }

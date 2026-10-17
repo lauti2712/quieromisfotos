@@ -90,6 +90,15 @@ export async function apiPost(path, body = {}) {
   return data;
 }
 
+// GET autenticado con el usuario actual.
+export async function apiGet(path) {
+  const idToken = await auth.currentUser.getIdToken();
+  const res = await fetch(`${API_BASE}${path}`, { headers: { Authorization: `Bearer ${idToken}` } });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(data.error || `Error ${res.status}`), { status: res.status });
+  return data;
+}
+
 // Carga el logo del fotógrafo como bitmap (vía la API, que agrega CORS).
 export async function loadLogoBitmap(key) {
   const res = await fetch(`${API_BASE}/public/${key}`);

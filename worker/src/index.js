@@ -26,6 +26,7 @@
 //   POST   /extensions/checkout        Bearer (fotógrafo) {eventId, planId}    extensión paga del plazo -> { initPoint }
 //   POST   /extensions/{id}/sync       Bearer (fotógrafo)                     consulta el pago a MP
 //   POST   /plans/subscribe · /plans/sync · /plans/cancel   Bearer (fotógrafo)   suscripción mensual a un plan (MP)
+//   GET    /domains/check · POST /domains/request · POST /admin/domains/activate|status   dominio propio (Premium)
 //   POST   /tags                       Bearer (fotógrafo aprobado) {type, name}  alta de actividad/club/lugar sin duplicados
 //
 // Claves en R2:
@@ -43,6 +44,7 @@ import { checkout, webhook, syncOrder, retryCheckout, downloadLinks, download } 
 import { createTag } from './tags.js';
 import { scanBibsRequest } from './bibs.js';
 import { commitPhoto, deletePhotos, orderDownloadUntil } from './photos.js';
+import { checkDomains, requestDomain, activateDomain, domainStatus, checkPendingDomains } from './domains.js';
 import { renderSite } from './site.js';
 import { scanRequest, scanStorage } from './storage.js';
 import { runBackup, backupRequest } from './backup.js';
@@ -82,7 +84,7 @@ export default {
         .then(sent => (sent > 5 ? null : syncDueSubscriptions(env))).catch(e => console.error('subs', e)));
       return;
     }
-    ctx.waitUntil(scanStorage(env));
+    ctx.waitUntil(scanStorage(env).finally(() => checkPendingDomains(env).catch(e => console.error('dominios', e))));
   },
 };
 
@@ -129,6 +131,10 @@ async function route(req, env, ctx) {
   if (m === 'POST' && url.pathname === '/mp/webhook') return webhook(req, env);
   if (m === 'POST' && url.pathname === '/checkout') return checkout(req, env);
   if (m === 'POST' && url.pathname === '/tags') return createTag(req, env);
+  if (m === 'GET' && url.pathname === '/domains/check') return checkDomains(req, env);
+  if (m === 'POST' && url.pathname === '/domains/request') return requestDomain(req, env);
+  if (m === 'POST' && url.pathname === '/admin/domains/activate') return activateDomain(req, env);
+  if (m === 'POST' && url.pathname === '/admin/domains/status') return domainStatus(req, env);
   if (m === 'POST' && url.pathname === '/admin/storage/scan') return scanRequest(req, env);
   if (m === 'POST' && url.pathname === '/admin/backup') return backupRequest(req, env);
   if (m === 'POST' && url.pathname === '/extensions/checkout') return extensionCheckout(req, env);

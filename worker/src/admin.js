@@ -108,12 +108,12 @@ export async function adminIncrement(env, path, fields) {
 }
 
 // Escritura atómica de varias operaciones (commit de Firestore). ops:
-//   { set: path, data, mustNotExist? }  · { update: path, data }  · { upsert: path, data } (crea o actualiza esos campos)  · { del: path, mustExist? }  · { inc: path, fields: {campo: n} }
+//   { set: path, data, mustNotExist? }  · { update: path, data, mask? } (mask: campos anidados, ej. 'site.requestedDomain')  · { upsert: path, data } (crea o actualiza esos campos)  · { del: path, mustExist? }  · { inc: path, fields: {campo: n} }
 // Devuelve false si falló una precondición (el documento ya existía / ya no existía).
 export async function adminCommit(env, ops) {
   const writes = ops.map(o => {
     if (o.set) return { update: { name: docName(env, o.set), fields: encodeFields(o.data) }, ...(o.mustNotExist ? { currentDocument: { exists: false } } : {}) };
-    if (o.update) return { update: { name: docName(env, o.update), fields: encodeFields(o.data) }, updateMask: { fieldPaths: Object.keys(o.data).map(fieldPath) }, currentDocument: { exists: true } };
+    if (o.update) return { update: { name: docName(env, o.update), fields: encodeFields(o.data) }, updateMask: { fieldPaths: (o.mask || Object.keys(o.data)).map(fieldPath) }, currentDocument: { exists: true } };
     if (o.upsert) return { update: { name: docName(env, o.upsert), fields: encodeFields(o.data) }, updateMask: { fieldPaths: Object.keys(o.data).map(fieldPath) } };
     if (o.del) return { delete: docName(env, o.del), ...(o.mustExist ? { currentDocument: { exists: true } } : {}) };
     if (o.inc) return { transform: { document: docName(env, o.inc), fieldTransforms: Object.entries(o.fields).map(([f, n]) => ({ fieldPath: fieldPath(f), increment: encodeValue(n) })) } };

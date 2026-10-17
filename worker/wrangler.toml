@@ -32,6 +32,9 @@ MP_TEST_NO_FEE = ""
 RETENTION_DELETE = "1"
 # Limpieza de archivos sueltos en R2: "1" = borra; vacío = solo informa en Almacenamiento.
 CLEANUP_DELETE = "1"
+# Cuenta de Cloudflare donde se agregan los dominios propios de Premium (token: wrangler secret put CF_API_TOKEN)
+CF_ACCOUNT_ID = "a37d68da055e590723b964faf91bff43"
+WORKER_NAME = "qmf-api"
 
 # Workers AI: lectura de dorsales (bibs.js)
 [ai]
