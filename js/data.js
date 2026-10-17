@@ -1,6 +1,7 @@
 // Lecturas compartidas (taxonomía de etiquetas, settings).
 import { db, doc, getDoc } from './fb.js';
 import { planOf as corePlanOf, planSpec as corePlanSpec, rulesFor, albumPhotoLimit } from './plans-core.js';
+export { teamSeats } from './plans-core.js';
 export { albumPhotoLimit };
 export { rulesFor };
 
@@ -36,12 +37,13 @@ export const GEAR_PLURAL = { 'Cámara': 'Cámaras', 'Lente': 'Lentes', 'Drone': 
 export const SERVICES = ['Deportes', 'Eventos sociales', 'Retratos / books', 'Institucional', 'Producto', 'Video'];
 
 // Planes pagos. `proUntil` es la fecha hasta la que está pago el plan (cualquiera de los pagos).
-// Planes: Gratis · Profesional Lite · Profesional (id 'web') · Profesional Premium (id 'webdomain'). Condiciones: js/plans-core.js.
+// Planes: Gratis · Profesional Lite · Profesional (id 'web') · Profesional Premium (id 'webdomain') · Empresas (id 'empresa'). Condiciones: js/plans-core.js.
 export const PLANS = {
   free: { label: 'Gratis' },
   lite: { label: 'Profesional Lite', priceKey: 'litePrice' },
   web: { label: 'Profesional', priceKey: 'webPrice', web: true },
   webdomain: { label: 'Profesional Premium', priceKey: 'webDomainPrice', web: true, domain: true },
+  empresa: { label: 'Empresas', priceKey: 'empresaPrice', web: true, domain: true, team: true },
 };
 
 // Plan vigente (si venció, vuelve a gratis).
@@ -136,6 +138,8 @@ export function planFeatures(id, st) {
     ...(p.featured ? ['Destacado en el directorio'] : []), fee];
   if (id === 'web') return ['Todo lo de Lite', `${gb} (ampliable)`, days, `Portfolio de ${p.portfolio} fotos`, 'Tu web: tunombre.quieromisfotos.com.ar',
     'Fotos de tu web sin marca de agua', 'Links cortos para tus eventos', 'Estadísticas completas', ...(p.featured ? ['Destacado en el directorio'] : []), fee];
+  if (id === 'empresa') return ['Todo lo de Premium', `Equipo de ${p.team} fotógrafos (cada uno con su cuenta)`, 'Suben a tus álbumes; vos cobrás todo', 'Ventas por fotógrafo para liquidarles',
+    `${gb} (ampliable)`, days, `Lugar extra: ${'$'}${Number(p.seatPrice).toLocaleString('es-AR')}/mes`, fee];
   return ['Todo lo de Profesional', 'Tu dominio .com.ar incluido (lo registramos y conectamos nosotros)', `${gb} (ampliable)`, days, `Portfolio de ${p.portfolio} fotos`,
     ...(p.featured ? ['Destacado en el directorio'] : []), 'Estadísticas avanzadas', 'Atención prioritaria', fee];
 }

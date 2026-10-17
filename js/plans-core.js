@@ -1,8 +1,9 @@
-// Planes de Quiero Mis Fotos: Gratis, Profesional Lite, Profesional y Profesional Premium.
+// Planes de Quiero Mis Fotos: Gratis, Profesional Lite, Profesional, Profesional Premium y Empresas (equipo de fotógrafos).
 // Módulo puro: lo usan el sitio, el panel y el Worker. Los valores se editan en Plataforma; acá están los de por defecto.
 //   price: abono mensual · first: primer mes (Premium: incluye el dominio) · year: abono anual
 //   fee: comisión % · portfolio: fotos · albumPhotos: tope de fotos por álbum · days: días de venta · stats: nivel de estadísticas (1-4)
-export const PAID_PLANS = ['lite', 'web', 'webdomain'];
+//   web: web propia · domain: dominio propio · team: colaboradores incluidos (pueden subir a los álbumes de la cuenta)
+export const PAID_PLANS = ['lite', 'web', 'webdomain', 'empresa'];
 
 export function planOf(user, now = Date.now()) {
   const t = user?.proUntil?.toMillis?.() ?? user?.proUntil?.getTime?.() ?? 0;
@@ -20,6 +21,10 @@ export function planSpec(planId, st) {
     case 'webdomain': return { price: st.webDomainPrice ?? 12900, first: st.webDomainFirstPrice ?? 21900, year: st.webDomainYearPrice ?? 129000,
       fee: st.webDomainFeePercent ?? 3, portfolio: st.webDomainPortfolioLimit ?? 100, albumPhotos: st.webDomainAlbumPhotos ?? 3000, days: st.webDomainRetentionDays ?? 30,
       featured: !!(st.webDomainFeatured ?? true), stats: 4, profileCustom: true, shortLinks: true, web: true, domain: true, priority: true };
+    case 'empresa': return { price: st.empresaPrice ?? 24900, first: st.empresaFirstPrice ?? 33900, year: st.empresaYearPrice ?? 249000,
+      fee: st.empresaFeePercent ?? 3, portfolio: st.empresaPortfolioLimit ?? 100, albumPhotos: st.empresaAlbumPhotos ?? 5000, days: st.empresaRetentionDays ?? 30,
+      featured: !!(st.empresaFeatured ?? true), stats: 4, profileCustom: true, shortLinks: true, web: true, domain: true, priority: true,
+      team: st.empresaSeats ?? 5, seatPrice: st.empresaSeatPrice ?? 3000 };
     default: return { price: 0, fee: st.freeFeePercent ?? 7, portfolio: st.freePortfolioLimit ?? 12, albumPhotos: st.freeAlbumPhotos ?? 300,
       days: st.freeRetentionDays ?? base, featured: false, stats: 1, albums: 1 };
   }
@@ -36,4 +41,10 @@ export function albumPhotoLimit(set, st, user) {
   const r = rulesFor(user, st);
   if (!(r.albumPhotos > 0)) return 0;
   return r.albumPhotos + (r.plan === 'free' ? 0 : (set?.extraPhotos || 0));
+}
+
+// Colaboradores que puede tener la cuenta (0 si su plan no es Empresas). teamExtraSeats: lugares extra que da el superadmin.
+export function teamSeats(user, st) {
+  const r = rulesFor(user, st);
+  return r.team ? r.team + (user?.teamExtraSeats || 0) : 0;
 }

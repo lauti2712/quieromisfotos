@@ -1536,7 +1536,7 @@ async function viewAdminPhotographers() {
           <button class="btn sm" data-pro="${u.uid}">+30 días</button>
           <button class="btn sm" data-courtesy="${u.uid}" title="Plan sin costo y sin vencimiento, hasta que lo quites">🎁 Cortesía</button>` : ''}
         ${isPro(u) ? `<button class="btn sm ghost" data-unpro="${u.uid}">Quitar plan</button>` : ''}
-        ${planOf(u) === 'webdomain' && u.site?.requestedDomain && !u.domainActive ? `<button class="btn sm ok" data-dom="${u.uid}">Activar dominio</button>` : ''}
+        ${PLANS[planOf(u)]?.domain && u.site?.requestedDomain && !u.domainActive ? `<button class="btn sm ok" data-dom="${u.uid}">Activar dominio</button>` : ''}
         ${u.domainActive && u.domainSetup && u.domainSetup.status !== 'active' ? `<button class="btn sm" data-domst="${u.uid}">Revisar dominio</button>` : ''}
         ${planOf(u) !== 'free' && PLANS[planOf(u)].web ? `<a class="btn sm" target="_blank" href="${esc(siteUrlOf(u))}">Web</a>` : ''}
       </div>
@@ -2019,6 +2019,8 @@ const PLAN_KEYS = {
   web: { price: 'webPrice', year: 'webYearPrice', fee: 'webFeePercent', portfolio: 'webPortfolioLimit', albumPhotos: 'webAlbumPhotos', days: 'webRetentionDays', featured: 'webFeatured' },
   webdomain: { price: 'webDomainPrice', first: 'webDomainFirstPrice', year: 'webDomainYearPrice', fee: 'webDomainFeePercent', portfolio: 'webDomainPortfolioLimit',
     albumPhotos: 'webDomainAlbumPhotos', days: 'webDomainRetentionDays', featured: 'webDomainFeatured' },
+  empresa: { price: 'empresaPrice', first: 'empresaFirstPrice', year: 'empresaYearPrice', fee: 'empresaFeePercent', portfolio: 'empresaPortfolioLimit',
+    albumPhotos: 'empresaAlbumPhotos', days: 'empresaRetentionDays', featured: 'empresaFeatured', team: 'empresaSeats', seatPrice: 'empresaSeatPrice' },
 };
 function readPlanCfg() {
   const out = {};
@@ -2066,12 +2068,12 @@ async function viewAdminConfig() {
         <p class="muted small" style="margin:0">Gratis: 1 álbum activo a la vez y sin packs. Los planes pagos tienen álbumes ilimitados y pueden comprar packs de fotos (en Almacenamiento).</p>
         <div class="table-wrap"><table class="list plan-cfg">
           <tr><th>Plan</th><th>Precio</th><th>Comisión %</th><th>Portfolio</th><th>Fotos por álbum</th><th>Días de venta</th><th>Destacado</th></tr>
-          ${[['free', 'Gratis'], ['lite', 'Profesional Lite'], ['web', 'Profesional'], ['webdomain', 'Profesional Premium']].map(([id, label]) => {
+          ${[['free', 'Gratis'], ['lite', 'Profesional Lite'], ['web', 'Profesional'], ['webdomain', 'Profesional Premium'], ['empresa', 'Empresas']].map(([id, label]) => {
             const p = planSpec(id, st);
             const num = (k, v, step = 1) => `<input type="number" data-k="${k}" min="0" step="${step}" value="${v ?? ''}">`;
-            return `<tr data-plan="${id}"><td><strong>${label}</strong>${id === 'free' ? '<br><span class="muted small">1 álbum activo</span>' : id === 'web' ? '<br><span class="muted small">con web</span>' : id === 'webdomain' ? '<br><span class="muted small">web + dominio</span>' : ''}</td>
+            return `<tr data-plan="${id}"><td><strong>${label}</strong>${id === 'free' ? '<br><span class="muted small">1 álbum activo</span>' : id === 'web' ? '<br><span class="muted small">con web</span>' : id === 'webdomain' ? '<br><span class="muted small">web + dominio</span>' : id === 'empresa' ? `<br><span class="muted small">web + dominio + equipo</span><span class="hint">Colaboradores incluidos</span>${num('team', p.team)}<span class="hint">Lugar extra ($/mes)</span>${num('seatPrice', p.seatPrice)}` : ''}</td>
               <td>${id === 'free' ? '—' : `<span class="hint">Mensual</span>${num('price', p.price)}
-                ${id === 'webdomain' ? `<span class="hint">Primer mes</span>${num('first', p.first)}` : ''}
+                ${PLANS[id]?.domain ? `<span class="hint">Primer mes</span>${num('first', p.first)}` : ''}
                 <span class="hint">Anual</span>${num('year', p.year)}`}</td>
               <td>${num('fee', p.fee, 0.1)}</td>
               <td>${num('portfolio', p.portfolio)}</td>

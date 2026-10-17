@@ -290,3 +290,35 @@ test('botón de arrepentimiento: cualquiera envía, solo el superadmin lee', asy
   await assertFails(getDoc(doc(as(), 'cancelRequests/c1')));
   await assertSucceeds(getDoc(doc(as(SUPER), 'cancelRequests/c1')));
 });
+
+test('plan Empresas: el equipo lo maneja el Worker; el colaborador ve eventos de la empresa y sus fotos', async () => {
+  await env.withSecurityRulesDisabled(async ctx => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'teams/ana'), { members: ['beto'], memberInfo: { beto: { name: 'Beto' } } });
+    await setDoc(doc(db, 'photos/tb'), { ...photo('ana', 'tb'), hidden: true, uploadedBy: 'beto' });
+    await setDoc(doc(db, 'photos/ta'), { ...photo('ana', 'ta'), hidden: true, uploadedBy: 'ana' });
+    await setDoc(doc(db, 'teamSales/pub_ana_beto'), { eventId: 'pub', teamUid: 'ana', memberUid: 'beto', soldPhotos: 4 });
+  });
+  // equipo: lo leen la empresa y el colaborador; nadie lo escribe desde el navegador
+  await assertSucceeds(getDoc(doc(user('ana'), 'teams/ana')));
+  await assertSucceeds(getDoc(doc(user('beto'), 'teams/ana')));
+  await assertFails(getDoc(doc(user('pepe'), 'teams/ana')));
+  await assertFails(setDoc(doc(user('beto'), 'teams/ana'), { members: ['beto', 'pepe'] }));
+  await assertFails(setDoc(doc(user('pepe'), 'teams/pepe'), { members: ['ana'] }));
+  // borrador de la empresa: lo ve el colaborador, no otro fotógrafo
+  await assertSucceeds(getDoc(doc(user('beto'), 'events/draft')));
+  await assertFails(getDoc(doc(user('pepe'), 'events/draft')));
+  // fotos: el colaborador ve y oculta las suyas, no las de otro
+  await assertSucceeds(getDoc(doc(user('beto'), 'photos/tb')));
+  await assertFails(getDoc(doc(user('beto'), 'photos/ta')));
+  await assertSucceeds(updateDoc(doc(user('beto'), 'photos/tb'), { hidden: false }));
+  await assertFails(updateDoc(doc(user('beto'), 'photos/ta'), { hidden: false }));
+  await assertFails(updateDoc(doc(user('beto'), 'photos/tb'), { photographerUid: 'beto' }));
+  await assertSucceeds(getDocs(query(collection(user('beto'), 'photos'), where('eventId', '==', 'pub'), where('photographerUid', '==', 'ana'), where('uploadedBy', '==', 'beto'))));
+  // ventas del colaborador
+  await assertSucceeds(getDoc(doc(user('beto'), 'teamSales/pub_ana_beto')));
+  await assertSucceeds(getDoc(doc(user('ana'), 'teamSales/pub_ana_beto')));
+  await assertFails(getDoc(doc(user('pepe'), 'teamSales/pub_ana_beto')));
+  // nadie se da lugares extra
+  await assertFails(updateDoc(doc(user('ana'), 'users/ana'), { teamExtraSeats: 10 }));
+});

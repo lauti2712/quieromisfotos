@@ -9,7 +9,8 @@ import { planSpec } from '../../js/plans-core.js';
 
 // Premium cobra más el primer pago para cubrir el registro del dominio.
 const PLANS = { lite: { label: 'Profesional Lite', priceKey: 'litePrice' },
-  web: { label: 'Profesional', priceKey: 'webPrice' }, webdomain: { label: 'Profesional Premium', priceKey: 'webDomainPrice', firstKey: 'webDomainFirstPrice' } };
+  web: { label: 'Profesional', priceKey: 'webPrice' }, webdomain: { label: 'Profesional Premium', priceKey: 'webDomainPrice', firstKey: 'webDomainFirstPrice' },
+  empresa: { label: 'Empresas', priceKey: 'empresaPrice', firstKey: 'empresaFirstPrice' } };
 const DAY = 86400_000;
 const GRACE = 3 * DAY; // margen por si el débito del mes se demora
 

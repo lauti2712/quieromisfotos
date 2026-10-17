@@ -15,7 +15,7 @@ const TEMPLATES = [
 // Planes que se ofrecen (el viejo "Portfolio Pro" ya no). Condiciones de cada uno: planSpec (editable en Plataforma).
 const planInfo = st => {
 
-  return ['free', 'lite', 'web', 'webdomain'].map(id => ({ id, items: planFeatures(id, st) }));
+  return ['free', 'lite', 'web', 'webdomain', 'empresa'].map(id => ({ id, items: planFeatures(id, st) }));
 };
 
 export async function viewWeb(view, { uid, profile, settings }) {
@@ -40,7 +40,7 @@ export async function viewWeb(view, { uid, profile, settings }) {
   const sub = subSnap?.exists() ? subSnap.data() : null;
   const subActive = sub?.status === 'authorized';
   // Sin planes nuevos: precios guardados en Plataforma, sin "primer mes" (se cobra el mensual).
-  const first = id => (id === 'webdomain' && planSpec(id, settings).first > planSpec(id, settings).price ? planSpec(id, settings).first : 0);
+  const first = id => (PLANS[id]?.domain && planSpec(id, settings).first > planSpec(id, settings).price ? planSpec(id, settings).first : 0);
   const price = id => (id === 'free' ? 'Gratis' : fmtMoney(planSpec(id, settings).price) + '/mes');
 
   view.innerHTML = `
@@ -150,7 +150,7 @@ async function drawConfig(box, { uid, profile }) {
 
       <div class="row end"><button class="btn primary" type="submit">Guardar mi web</button></div>
     </form>
-    ${planOf(profile) === 'webdomain' ? domainHtml(profile) : ''}`;
+    ${PLANS[planOf(profile)]?.domain ? domainHtml(profile) : ''}`;
 
   box.style.setProperty('--tpl-accent', site.accent);
   $$('.tpl input', box).forEach(r => r.onchange = () => $$('.tpl', box).forEach(l => l.classList.toggle('on', l.querySelector('input').checked)));

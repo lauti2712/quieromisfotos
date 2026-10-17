@@ -49,6 +49,7 @@ export async function commitPhoto(req, env, s, eid, pid, publicBase) {
     bytes: orig.size, fileBytes: Math.max(0, Math.round(Number(b.fileBytes) || orig.size)), bytesPublic,
     takenAt: new Date(takenAt), fileName: String(b.fileName || '').slice(0, 120),
     bibs: [], hidden: false, originalDeleted: false, createdAt: new Date(now),
+    uploadedBy: s.by || s.uid, // quién sacó la foto (en el plan Empresas, el colaborador)
   };
   const setPath = `events/${eid}/sets/${s.uid}`;
   const ops = [
@@ -86,8 +87,9 @@ export async function deletePhotos(req, env, s, eid) {
   list.forEach((id, i) => {
     const p = photos[i];
     const base = `e/${eid}/${s.uid}/${id}`;
-    if (!p) { keys.push(base, `${base}_p.jpg`, `${base}_t.jpg`); deleted.push(id); return; } // subida a medias
+    if (!p) { if (!s.by) { keys.push(base, `${base}_p.jpg`, `${base}_t.jpg`); deleted.push(id); } return; } // subida a medias
     if (p.photographerUid !== s.uid || p.eventId !== eid) return;
+    if (s.by && (p.uploadedBy || p.photographerUid) !== s.by) return; // un colaborador solo borra sus fotos
     if (sold.has(id)) {
       if (!p.hidden) ops.push({ update: `photos/${id}`, data: { hidden: true, soldHidden: true } });
       hidden.push(id);

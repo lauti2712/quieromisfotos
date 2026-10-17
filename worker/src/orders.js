@@ -70,7 +70,7 @@ export async function checkout(req, env) {
     // Sin nombre ni email del comprador: el fotógrafo lee el pedido. Esos datos van a orderPrivate (superadmin y comprador).
     buyerUid: claims.sub,
     photographerUid, photographerName: ph.displayName || '', eventId, eventName: ev.name || '', eventDate: ev.date || '',
-    items: photos.map(p => ({ photoId: p.id, thumbUrl: p.thumbUrl || '', fileName: p.fileName || '' })),
+    items: photos.map(p => ({ photoId: p.id, thumbUrl: p.thumbUrl || '', fileName: p.fileName || '', uploadedBy: p.uploadedBy || photographerUid })),
     count: ids.length, lines: t.lines, subtotal: t.subtotal, serviceFee: t.serviceFee, platformFee: t.platformFee,
     total: t.total, feeMode: t.feeMode, status: 'pending', createdAt: new Date(),
   };
@@ -117,12 +117,28 @@ async function createPreference(req, env, orderId, order, buyerEmail, attempt) {
 }
 
 // Ventas por álbum en salesStats/{eid}_{uid}: privado (fotógrafo y superadmin), no en el set que es público.
+// Plan Empresas: además, por fotógrafo que sacó cada foto (byUploader, con el monto proporcional) y teamSales/{eid}_{empresa}_{colaborador}
+// (lo que ve el colaborador: cantidad de fotos vendidas).
 function countSale(env, order, sign) {
   const path = `salesStats/${order.eventId}_${order.photographerUid}`;
-  return adminCommit(env, [
-    { upsert: path, data: { eventId: order.eventId, photographerUid: order.photographerUid, updatedAt: new Date() } },
-    { inc: path, fields: { soldPhotos: sign * (order.count || 0), soldOrders: sign } },
-  ]).catch(e => console.error('ventas', e));
+  const by = {};
+  for (const it of order.items || []) { const u = it.uploadedBy || order.photographerUid; by[u] = (by[u] || 0) + 1; }
+  const n = order.count || (order.items || []).length || 1;
+  const fields = { soldPhotos: sign * (order.count || 0), soldOrders: sign };
+  const ops = [{ upsert: path, data: { eventId: order.eventId, photographerUid: order.photographerUid, updatedAt: new Date() } }];
+  const team = Object.keys(by).some(u => u !== order.photographerUid);
+  if (team) {
+    for (const [u, k] of Object.entries(by)) {
+      fields[`byUploader.${u}.photos`] = sign * k;
+      fields[`byUploader.${u}.amount`] = sign * Math.round((order.subtotal || 0) * k / n);
+      if (u === order.photographerUid) continue;
+      const tp = `teamSales/${order.eventId}_${order.photographerUid}_${u}`;
+      ops.push({ upsert: tp, data: { eventId: order.eventId, teamUid: order.photographerUid, memberUid: u, updatedAt: new Date() } });
+      ops.push({ inc: tp, fields: { soldPhotos: sign * k } });
+    }
+  }
+  ops.splice(1, 0, { inc: path, fields });
+  return adminCommit(env, ops).catch(e => console.error('ventas', e));
 }
 
 // ------------------------------------------------------------------ pago -> orden (idempotente)

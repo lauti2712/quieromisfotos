@@ -6,7 +6,7 @@
 // El registro en NIC.ar lo hace el superadmin a mano (con su clave fiscal), cargando los servidores de nombres que devuelve activate.
 import { adminGet, adminCommit, adminQuery } from './admin.js';
 import { requireUser } from './firebase.js';
-import { planOf } from './plans.js';
+import { rulesFor } from './plans.js';
 import { addAlert } from './alerts.js';
 import { notifyUser } from './push.js';
 import { json, httpError } from './http.js';
@@ -55,7 +55,7 @@ export async function requestDomain(req, env) {
   const d = String(domain || '').trim().toLowerCase();
   if (!validDomain(d)) throw httpError(400, 'Dominio inválido');
   const user = await adminGet(env, `users/${claims.sub}`);
-  if (!user || planOf(user) !== 'webdomain') throw httpError(403, 'El dominio propio es del plan Profesional Premium');
+  if (!user || !rulesFor(user, (await adminGet(env, 'settings/platform')) || {}).domain) throw httpError(403, 'El dominio propio es de los planes Profesional Premium y Empresas');
   if (user.domainActive) throw httpError(409, 'Ya tenés un dominio activo');
   if ((await available(d)) === false) throw httpError(409, 'Ese dominio ya está registrado. Probá con otro nombre.');
   await adminCommit(env, [{ update: `users/${claims.sub}`, data: { site: { requestedDomain: d }, domainRequestedAt: new Date() }, mask: ['site.requestedDomain', 'domainRequestedAt'] }]);

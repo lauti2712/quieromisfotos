@@ -4,7 +4,7 @@ import { adminGet, adminQuery } from './admin.js';
 import { siteUrl } from './mp.js';
 import { portfolioLimitFor } from './plans.js';
 
-const PAID_WEB = ['web', 'webdomain'];
+const PAID_WEB = ['web', 'webdomain', 'empresa'];
 const TEMPLATES = ['clasica', 'oscura', 'minimal'];
 const CACHE_SECONDS = 300;
 

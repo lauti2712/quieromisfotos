@@ -116,6 +116,10 @@ export async function adminCommit(env, ops) {
     if (o.update) return { update: { name: docName(env, o.update), fields: encodeFields(o.data) }, updateMask: { fieldPaths: (o.mask || Object.keys(o.data)).map(fieldPath) }, currentDocument: { exists: true } };
     if (o.upsert) return { update: { name: docName(env, o.upsert), fields: encodeFields(o.data) }, updateMask: { fieldPaths: Object.keys(o.data).map(fieldPath) } };
     if (o.del) return { delete: docName(env, o.del), ...(o.mustExist ? { currentDocument: { exists: true } } : {}) };
+    if (o.union || o.remove) {
+      const path = o.union || o.remove;
+      return { transform: { document: docName(env, path), fieldTransforms: [{ fieldPath: fieldPath(o.field), [o.union ? 'appendMissingElements' : 'removeAllFromArray']: { values: o.values.map(encodeValue) } }] } };
+    }
     if (o.inc) return { transform: { document: docName(env, o.inc), fieldTransforms: Object.entries(o.fields).map(([f, n]) => ({ fieldPath: fieldPath(f), increment: encodeValue(n) })) } };
     throw new Error('Operación desconocida');
   });
