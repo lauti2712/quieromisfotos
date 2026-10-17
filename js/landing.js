@@ -42,9 +42,12 @@ export async function renderPhotographerLanding(app) {
     { id: 'web', name: 'Profesional', price: sp('web').price, year: sp('web').year, hot: true, cta: 'Quiero este plan', items: planFeatures('web', st) },
     { id: 'webdomain', name: 'Profesional Premium', price: sp('webdomain').price, year: sp('webdomain').year, cta: 'Quiero este plan',
       first: sp('webdomain').first > sp('webdomain').price ? sp('webdomain').first : 0, items: planFeatures('webdomain', st) },
+    // Empresas: tarjeta ancha abajo (productoras o fotógrafos con equipo).
+    { id: 'empresa', name: 'Empresas · para equipos de fotógrafos', price: sp('empresa').price, year: sp('empresa').year, cta: 'Quiero este plan', wide: true,
+      first: sp('empresa').first > sp('empresa').price ? sp('empresa').first : 0, items: planFeatures('empresa', st) },
   ];
   const planCard = (p, i) => `
-        <div class="lp-plan ${p.hot ? 'hot' : ''} reveal" style="--d:${i * 120}ms">
+        <div class="lp-plan ${p.hot ? 'hot' : ''} ${p.wide ? 'wide' : ''} reveal" style="--d:${i * 120}ms">
           ${p.hot ? '<span class="lp-tag">Más elegido</span>' : ''}
           <h3>${esc(p.name)}</h3>
           <div class="lp-price">${p.price ? `${fmtMoney(p.price)}<small>/mes</small>` : '$0'}</div>

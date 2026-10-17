@@ -19,6 +19,7 @@ import { drawWatermark, drawSampleScene, DEFAULT_WATERMARK, wantsLogo } from './
 import { uploadAsset, apiPost } from './api.js';
 import { resizeToJpeg } from './image-proc.js';
 import { mountPhotos, uploadsInProgress } from './panel-photos.js';
+import { loadMyTeams, viewTeam, viewTeams, viewTeamEvent, viewJoin, teamSalesHtml } from './panel-team.js';
 import { initRefresh } from './refresh.js';
 import { pushAvailable, pushOn, pushBlocked, enablePush, disablePush, isIos, isStandalone, listenForeground } from './push.js';
 import { shareLink, eventUrl } from './share.js';
@@ -78,6 +79,7 @@ onAuthStateChanged(auth, async user => {
     S.settings = await loadSettings();
     if (S.isSuper) await seedPlatform();
     S.tax = await loadTaxonomy(true);
+    S.teams = await loadMyTeams(user.uid); // empresas de las que es colaborador (plan Empresas)
   } catch (e) {
     root.innerHTML = `<div class="container"><div class="notice danger">${esc(errMsg(e))}</div></div>`;
     return;
@@ -249,6 +251,8 @@ function navItems() {
   return [
     { href: '#/inicio', label: '🏠 Inicio' },
     { href: '#/eventos', label: '🏟️ Mis eventos', need: true },
+    ...(PLANS[planOf(S.profile)]?.team ? [{ href: '#/equipo', label: '👥 Mi equipo' }] : []),
+    ...((S.teams || []).length ? [{ href: '#/equipos', label: '🤝 Equipos' }] : []),
     { href: '#/ventas', label: '💰 Ventas', need: true },
     { href: '#/portfolio', label: '🖼️ Portfolio' },
     { href: '#/web', label: '⭐ Planes y mi web' },
@@ -337,6 +341,11 @@ function route() {
     if (b === 'clientes') return run(viewAdminCustomers);
     return run(viewAdminPhotographers);
   }
+  // Plan Empresas: invitación, equipo de la empresa y álbumes donde sube un colaborador (también con cuenta pendiente).
+  if (a === 'unirse' && b) return run(() => viewJoin(view, { token: b, onJoined: async () => { S.teams = await loadMyTeams(S.user.uid); } }));
+  if (a === 'equipo' && !S.isSuper) return run(() => viewTeam(view, { uid: S.user.uid, profile: S.profile, settings: S.settings }));
+  if (a === 'equipos') return run(() => viewTeams(view, { uid: S.user.uid, teams: S.teams || [] }));
+  if (a === 'equipo-evento' && b && parts[2]) return run(() => viewTeamEvent(view, { owner: b, eid: parts[2], uid: S.user.uid, settings: S.settings, tax: S.tax }));
   if (a === 'perfil') return run(viewProfile);
   if (a === 'config' && !S.isSuper) return run(viewConfig);
   if (a === 'mp' && !S.isSuper) return run(viewMp);
@@ -1292,6 +1301,9 @@ async function viewEvent(id) {
     return;
   }
   renderSetEditor(ev, sets.get(me) || null, reload);
+  if (PLANS[planOf(S.profile)]?.team) {
+    getDoc(doc(db, 'teams', me)).then(t => teamSalesHtml(id, me, t.data())).then(html => { if (html && $('#ev-sets')) $('#ev-sets').insertAdjacentHTML('afterbegin', html); }).catch(() => {});
+  }
   const mySet = sets.get(me);
   $('#ext-btn')?.addEventListener('click', () => extensionDialog(ev, mySet));
   $('#space-btn')?.addEventListener('click', () => extensionDialog(ev, mySet, 'space'));
@@ -1536,6 +1548,7 @@ async function viewAdminPhotographers() {
           <button class="btn sm" data-pro="${u.uid}">+30 días</button>
           <button class="btn sm" data-courtesy="${u.uid}" title="Plan sin costo y sin vencimiento, hasta que lo quites">🎁 Cortesía</button>` : ''}
         ${isPro(u) ? `<button class="btn sm ghost" data-unpro="${u.uid}">Quitar plan</button>` : ''}
+        ${PLANS[planOf(u)]?.team ? `<button class="btn sm ghost" data-seats="${u.uid}" title="Lugares extra para su equipo (además de los del plan)">👥 Lugares extra: ${u.teamExtraSeats || 0}</button>` : ''}
         ${PLANS[planOf(u)]?.domain && u.site?.requestedDomain && !u.domainActive ? `<button class="btn sm ok" data-dom="${u.uid}">Activar dominio</button>` : ''}
         ${u.domainActive && u.domainSetup && u.domainSetup.status !== 'active' ? `<button class="btn sm" data-domst="${u.uid}">Revisar dominio</button>` : ''}
         ${planOf(u) !== 'free' && PLANS[planOf(u)].web ? `<a class="btn sm" target="_blank" href="${esc(siteUrlOf(u))}">Web</a>` : ''}
@@ -1563,6 +1576,14 @@ async function viewAdminPhotographers() {
       toast(`${u.displayName}: plan ${PLANS[plan].label} de cortesía`);
       viewAdminPhotographers();
     } catch (e) { toast(errMsg(e), 'error'); }
+  });
+  $$('[data-seats]').forEach(b => b.onclick = async () => {
+    const u = users.find(x => x.uid === b.dataset.seats);
+    const v = prompt(`Lugares extra para el equipo de ${u.displayName} (además de los ${planSpec('empresa', S.settings).team} del plan). Cobralos aparte.`, String(u.teamExtraSeats || 0));
+    if (v === null) return;
+    const n = Math.max(0, Math.min(100, Math.round(Number(v) || 0)));
+    try { await updateDoc(doc(db, 'users', u.uid), { teamExtraSeats: n }); toast(`${u.displayName}: ${n} lugares extra`); viewAdminPhotographers(); }
+    catch (e) { toast(errMsg(e), 'error'); }
   });
   $$('[data-unpro]').forEach(b => b.onclick = async () => {
     if (!confirm('¿Quitar el plan? Las fotos de portfolio que superen el límite gratis se ocultan (no se borran) y su web deja de estar disponible.')) return;

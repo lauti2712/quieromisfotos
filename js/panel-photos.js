@@ -19,7 +19,8 @@ export function uploadsInProgress() {
   return !!activeUploader?.busy();
 }
 
-export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs = false }) {
+// team: modo colaborador del plan Empresas (uid = la empresa, me = el colaborador): sube al álbum de la empresa y ve solo sus fotos.
+export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs = false, team = '', me = '' }) {
   const subs = (set.subalbums || []).slice().sort((a, b) => a.order - b.order);
   const subName = id => subs.find(s => s.id === id)?.name || 'Sin sub-álbum';
   const subOptions = (sel = '') => `<option value="">Sin sub-álbum</option>${subs.map(s => `<option value="${s.id}" ${s.id === sel ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}`;
@@ -81,6 +82,7 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
     if (reset) { photos = []; cursor = null; selected.clear(); }
     const f = $('#ph-filter').value;
     const cons = [where('eventId', '==', ev.id), where('photographerUid', '==', uid)];
+    if (team) cons.push(where('uploadedBy', '==', me));
     if (f !== '*') cons.push(where('subalbumId', '==', f));
     cons.push(orderBy('takenAt'), limit(PAGE));
     if (cursor) cons.push(startAfter(cursor));
@@ -160,7 +162,7 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
     const btn = $('#ph-del'); btn.disabled = true; btn.textContent = 'Borrando…';
     let gone = 0, kept = 0;
     try {
-      const s = await uploadSession(ev.id);
+      const s = await uploadSession(ev.id, team);
       for (let i = 0; i < ids.length; i += 100) {
         // El Worker borra y descuenta del álbum; las fotos vendidas con descarga vigente solo se ocultan.
         const r = await postWithToken(`/photos/${ev.id}/delete`, { ids: ids.slice(i, i + 100) }, s.token);
@@ -226,8 +228,8 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
     $('#up-cut-x').onclick = () => { clearInterrupted(ev.id); $('#up-cut').innerHTML = ''; };
   }
   let up;
-  if (activeUploader?.busy() && activeUploader.eventId === ev.id) { up = activeUploader; up.setHandlers(handlers); }
-  else up = activeUploader = createUploader({ eventId: ev.id, uid, wm, logo, optimize: settings.optimizeOriginals !== false, bibs: bibs && settings.bibsEnabled !== false, ...handlers });
+  if (activeUploader?.busy() && activeUploader.eventId === ev.id && (activeUploader.team || '') === team) { up = activeUploader; up.setHandlers(handlers); }
+  else up = activeUploader = createUploader({ eventId: ev.id, uid, team, wm, logo, optimize: settings.optimizeOriginals !== false, bibs: bibs && settings.bibsEnabled !== false, ...handlers });
   let drawT;
   const scheduleDraw = () => { clearTimeout(drawT); drawT = setTimeout(() => document.body.contains(box) && draw(), 400); };
 
@@ -260,7 +262,7 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
     $('#up-cut').innerHTML = '';
     try {
       if (!uploadedKeys) {
-        const snap = await getDocs(query(collection(db, 'photos'), where('eventId', '==', ev.id), where('photographerUid', '==', uid)));
+        const snap = await getDocs(query(collection(db, 'photos'), where('eventId', '==', ev.id), where('photographerUid', '==', uid), ...(team ? [where('uploadedBy', '==', me)] : [])));
         uploadedKeys = new Set(snap.docs.map(d => `${d.data().fileName}|${d.data().fileBytes || d.data().bytes}`));
       }
     } catch (e) { console.warn('duplicados', e); }

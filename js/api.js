@@ -7,15 +7,16 @@ export const API_BASE = location.hostname === 'localhost'
 
 const sessions = new Map(); // eventId|'' -> { token, exp, publicBase }
 
-export async function uploadSession(eventId = null) {
-  const key = eventId || '';
+// team: uid de la empresa cuando sube un colaborador del plan Empresas (sube al álbum de la empresa).
+export async function uploadSession(eventId = null, team = '') {
+  const key = `${eventId || ''}|${team || ''}`;
   const s = sessions.get(key);
   if (s && s.exp - 300 > Date.now() / 1000) return s;
   const idToken = await auth.currentUser.getIdToken();
   const res = await fetch(`${API_BASE}/upload-session`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ eventId }),
+    body: JSON.stringify({ eventId, ...(team ? { team } : {}) }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
@@ -23,8 +24,8 @@ export async function uploadSession(eventId = null) {
   return data;
 }
 
-export function invalidateSession(eventId = null) {
-  sessions.delete(eventId || '');
+export function invalidateSession(eventId = null, team = '') {
+  sessions.delete(`${eventId || ''}|${team || ''}`);
 }
 
 // PUT con progreso (fetch no informa progreso de subida).
