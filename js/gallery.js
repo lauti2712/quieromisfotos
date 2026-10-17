@@ -273,6 +273,12 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
     openViewer({ index: 0, src: () => p.previewUrl, count: () => 1, total: () => '1', footer: (i, el, rerender) => viewerFooter(p, el, rerender) });
   }
 
+  // Crédito: en el plan Empresas, quién sacó la foto ("Juan Pérez para Productora X").
+  function credit(p, ph) {
+    const by = p.uploadedBy && p.uploadedBy !== p.photographerUid ? (ph?.teamPublic || []).find(m => m.uid === p.uploadedBy) : null;
+    return by ? `${esc(by.name)} <span style="opacity:.75">para ${esc(ph?.displayName || '')}</span>` : esc(ph?.displayName || '');
+  }
+
   function viewerFooter(p, el, rerender) {
     const ph = byUid.get(p.photographerUid);
     const set = sets.get(p.photographerUid) || {};
@@ -280,7 +286,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
     const inCart = cart.has(p.id);
     const fav = favs.has(p.id);
     el.innerHTML = `
-      <span class="small">📷 ${esc(ph?.displayName || '')}${set.price ? ` · <strong>${fmtMoney(set.price)}</strong>` : ''}${packs ? `<br><span style="opacity:.75">Packs: ${packs}</span>` : ''}</span>
+      <span class="small">📷 ${credit(p, ph)}${set.price ? ` · <strong>${fmtMoney(set.price)}</strong>` : ''}${packs ? `<br><span style="opacity:.75">Packs: ${packs}</span>` : ''}</span>
       <span class="row">
         <button class="btn sm" id="lb-fav" title="Favorita">${fav ? '♥' : '♡'}</button>
         <button class="btn sm" id="lb-share" title="Compartir esta foto">🔗</button>

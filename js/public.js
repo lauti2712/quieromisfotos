@@ -236,6 +236,20 @@ async function renderEvent(id) {
   fb.onclick = async () => { fb.disabled = true; drawFollow(await toggleFollow('events', ev.id, ev.name)); fb.disabled = false; };
 }
 
+// Plan Empresas: su equipo de fotógrafos (copia pública que mantiene el Worker).
+function teamHtml(user, settings) {
+  const team = (user.teamPublic || []).filter(m => m.name);
+  if (!team.length || !rulesFor(user, settings).team) return '';
+  return `
+    <section class="card" style="margin-bottom:22px">
+      <h2>👥 Nuestro equipo</h2>
+      <div class="people">${team.map(m => {
+        const inner = `${avatarHtml({ displayName: m.name, avatarUrl: m.avatarUrl })}<span>${esc(m.name)}</span>`;
+        return m.linkable && m.slug ? `<a class="person" href="#/f/${esc(m.slug)}">${inner}</a>` : `<span class="person">${inner}</span>`;
+      }).join('')}</div>
+    </section>`;
+}
+
 function gearHtml(gear) {
   const items = (gear || []).filter(g => g.name);
   if (!items.length) return '';
@@ -361,6 +375,7 @@ async function renderProfile(slug) {
         <h1 style="margin-bottom:4px">${esc(user.displayName)} ${isFeatured(user, settings) ? '<span class="pill accent" style="vertical-align:middle">⭐ Destacado</span>' : ''}</h1>
         ${user.zone ? `<div class="muted">📍 ${esc(user.zone)}${user.workZones ? ` · Trabaja en ${esc(user.workZones)}` : ''}</div>` : ''}
         ${user.bio ? `<p style="margin-top:8px;white-space:pre-line">${esc(user.bio)}</p>` : ''}
+        ${(user.teamOf || []).length ? `<div class="muted small" style="margin-top:4px">🤝 Fotógrafo del equipo de ${user.teamOf.map(t => t.slug ? `<a href="#/f/${esc(t.slug)}">${esc(t.name)}</a>` : esc(t.name)).join(', ')}</div>` : ''}
         ${sports.length || user.services?.length ? `<div class="pills" style="margin-bottom:10px">
           ${sports.map(t => `<span class="pill accent">${esc(t.name)}</span>`).join('')}
           ${(user.services || []).map(v => `<span class="pill">${esc(v)}</span>`).join('')}</div>` : ''}
@@ -376,6 +391,7 @@ async function renderProfile(slug) {
       </div>
     </div>
     ${user.demo ? '<div class="notice warn">👀 <strong>Perfil de ejemplo.</strong> Así se ve el perfil de un fotógrafo: portfolio, especialidades, contacto y sus eventos.</div>' : ''}
+    ${teamHtml(user, settings)}
     ${gearHtml(user.gear)}
     <section id="p-portfolio"></section>
     <h2>Eventos</h2>

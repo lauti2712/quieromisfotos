@@ -25,6 +25,7 @@ export async function viewTeam(view, { uid, profile, settings }) {
   const members = t.members || [];
   const info = t.memberInfo || {};
   const extra = planSpec('empresa', settings).seatPrice;
+  if (members.length) apiPost('/team/refresh').catch(() => {}); // nombres y fotos al día en su perfil público
   view.innerHTML = `
     <h1>👥 Mi equipo</h1>
     ${!seats ? `<div class="notice">El equipo de fotógrafos es del plan <a href="#/web">Empresas</a>: tus fotógrafos suben a tus álbumes y vos cobrás todas las ventas.</div>` : ''}

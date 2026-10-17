@@ -45,7 +45,7 @@ import { checkout, webhook, syncOrder, retryCheckout, downloadLinks, download } 
 import { createTag } from './tags.js';
 import { scanBibsRequest } from './bibs.js';
 import { commitPhoto, deletePhotos, orderDownloadUntil } from './photos.js';
-import { teamInvite, teamJoin, teamRemove, teamEvents, canUploadForTeam } from './team.js';
+import { teamInvite, teamJoin, teamRemove, teamEvents, teamRefresh, canUploadForTeam } from './team.js';
 import { checkDomains, requestDomain, activateDomain, domainStatus, checkPendingDomains } from './domains.js';
 import { renderSite } from './site.js';
 import { scanRequest, scanStorage } from './storage.js';
@@ -137,6 +137,7 @@ async function route(req, env, ctx) {
   if (m === 'POST' && url.pathname === '/team/join') return teamJoin(req, env);
   if (m === 'POST' && url.pathname === '/team/remove') return teamRemove(req, env);
   if (m === 'POST' && url.pathname === '/team/events') return teamEvents(req, env);
+  if (m === 'POST' && url.pathname === '/team/refresh') return teamRefresh(req, env);
   if (m === 'GET' && url.pathname === '/domains/check') return checkDomains(req, env);
   if (m === 'POST' && url.pathname === '/domains/request') return requestDomain(req, env);
   if (m === 'POST' && url.pathname === '/admin/domains/activate') return activateDomain(req, env);

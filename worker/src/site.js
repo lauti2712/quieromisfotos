@@ -93,6 +93,8 @@ function page({ env, user, site, photos, events, tax, slug }) {
   const wa = !user.demo && user.socials?.whatsapp ? `https://wa.me/${waNumber(user.socials.whatsapp)}?text=${encodeURIComponent(`¡Hola ${user.displayName}! Vi tu web y quería consultarte por `)}` : '';
   const socials = Object.entries(SOCIAL).filter(([k]) => !user.demo && user.socials?.[k]).map(([k, f]) => `<a href="${esc(f(user.socials[k]))}" target="_blank" rel="noopener">${k === 'web' ? 'Web' : k[0].toUpperCase() + k.slice(1)}</a>`);
   const gear = (user.gear || []).filter(g => g.name);
+  // Plan Empresas: equipo de fotógrafos (copia pública que mantiene el Worker).
+  const team = user.plan === 'empresa' ? (user.teamPublic || []).filter(m => m.name) : [];
   const site0 = siteUrl(env);
   const desc = `${user.displayName} · ${tagline}${user.zone ? ` · ${user.zone}` : ''}`;
   const canonical = user.domainActive && user.siteDomain ? `https://${user.siteDomain}/` : `https://${slug}.quieromisfotos.com.ar/`;
@@ -155,6 +157,7 @@ h2{font-size:clamp(1.6rem,4vw,2.3rem);letter-spacing:-.02em;margin:0 0 22px}
 .grid{columns:3 260px;column-gap:12px}
 .grid figure{margin:0 0 12px;break-inside:avoid;cursor:zoom-in;border-radius:10px;overflow:hidden;background:var(--card)}
 .grid img{width:100%;height:auto;transition:transform .3s}.grid figure:hover img{transform:scale(1.02)}
+.team-card{display:flex;align-items:center;gap:12px}.team-card img{width:44px;height:44px;border-radius:50%;object-fit:cover}
 .about{display:grid;grid-template-columns:200px 1fr;gap:36px;align-items:start}
 @media(max-width:720px){.about{grid-template-columns:1fr}}
 .about img{width:200px;height:200px;border-radius:50%;object-fit:cover}
@@ -214,6 +217,11 @@ ${photos.length ? `<section id="galeria"><div class="wrap">
     ${gear.length ? `<p class="muted" style="margin-top:18px"><strong style="color:var(--fg)">📷 Equipo:</strong> ${gear.map(g => esc(g.name)).join(' · ')}</p>` : ''}
   </div>
 </div></section>
+
+${team.length ? `<section id="equipo" style="padding-top:0"><div class="wrap">
+  <h2>Nuestro equipo</h2>
+  <div class="cards">${team.map(m => `<div class="card team-card">${m.avatarUrl ? `<img src="${esc(m.avatarUrl)}" alt="" loading="lazy">` : ''}<strong>${esc(m.name)}</strong></div>`).join('')}</div>
+</div></section>` : ''}
 
 ${services.length ? `<section id="servicios" style="padding-top:0"><div class="wrap">
   <h2>Servicios</h2>

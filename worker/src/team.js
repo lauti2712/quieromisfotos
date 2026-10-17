@@ -4,8 +4,11 @@
 //   POST /team/join   {token}        (Bearer fotógrafo)      -> se suma al equipo (si hay lugar)
 //   POST /team/remove {team, member} (Bearer empresa o el propio colaborador)
 //   POST /team/events {team}         (Bearer colaborador)    -> eventos de la empresa donde puede subir
+//   POST /team/refresh               (Bearer empresa)        -> actualiza la copia pública del equipo
+// Copia pública (la escribe solo el Worker): users/{empresa}.teamPublic [{uid, name, slug, avatarUrl, linkable}]
+// y users/{colaborador}.teamOf [{uid, name, slug}] (para mostrar "fotógrafo del equipo de…").
 // teams/{uidEmpresa}: { members: [uid], memberInfo: { uid: { name, joinedAt } }, updatedAt }
-import { adminGet, adminGetMany, adminQuery, adminCommit } from './admin.js';
+import { adminGet, adminGetMany, adminQuery, adminCommit, adminUpdate } from './admin.js';
 import { requireUser } from './firebase.js';
 import { teamSeats } from './plans.js';
 import { signToken, verifyToken } from './tokens.js';
@@ -46,6 +49,7 @@ export async function teamJoin(req, env) {
     { upsert: `teams/${t.team}`, data: { memberInfo: { [claims.sub]: { name: me.displayName || '', joinedAt: now } }, updatedAt: now }, mask: [`memberInfo.${claims.sub}`, 'updatedAt'] },
     { union: `teams/${t.team}`, field: 'members', values: [claims.sub] },
   ]);
+  await Promise.all([syncPublic(env, t.team), setTeamOf(env, claims.sub, t.team, true)]).catch(e => console.error('equipo público', e));
   await notifyUser(env, t.team, { title: '👥 Se sumó un fotógrafo a tu equipo', body: `${me.displayName || 'Un fotógrafo'} ya puede subir fotos a tus álbumes.`, link: `${panelUrl(env)}#/equipo` }).catch(() => {});
   return json({ ok: true, team: t.team, name: owner.displayName || '' });
 }
@@ -61,6 +65,7 @@ export async function teamRemove(req, env) {
     { upsert: `teams/${team}`, data: { updatedAt: now }, mask: [`memberInfo.${member}`, 'updatedAt'] },
     { remove: `teams/${team}`, field: 'members', values: [member] },
   ]);
+  await Promise.all([syncPublic(env, team), setTeamOf(env, member, team, false)]).catch(e => console.error('equipo público', e));
   return json({ ok: true });
 }
 
@@ -73,6 +78,33 @@ export async function teamEvents(req, env) {
   if (!(t?.members || []).includes(claims.sub)) throw httpError(403, 'No sos parte de este equipo');
   const evs = await adminQuery(env, 'events', { filters: [['photographerUids', 'array-contains', team]], orderBy: [['date', 'desc']], limit: 100 });
   return json({ events: evs.map(e => ({ id: e.id, name: e.name || '', date: e.date || '', location: e.location || '', status: e.status || '', coverUrl: e.coverUrl || '' })) });
+}
+
+// Copia pública del equipo en el perfil de la empresa (se ve en su perfil, en su web y en el crédito de cada foto).
+async function syncPublic(env, owner) {
+  const t = await adminGet(env, `teams/${owner}`);
+  const members = t?.members || [];
+  const users = members.length ? await adminGetMany(env, members.map(u => `users/${u}`)) : [];
+  const teamPublic = members.map((u, i) => ({
+    uid: u, name: users[i]?.displayName || t.memberInfo?.[u]?.name || 'Fotógrafo', slug: users[i]?.slug || '',
+    avatarUrl: users[i]?.avatarUrl || '', linkable: users[i]?.status === 'approved',
+  }));
+  await adminUpdate(env, `users/${owner}`, { teamPublic });
+}
+
+// En el perfil del colaborador: de qué empresas es parte.
+async function setTeamOf(env, member, owner, add) {
+  const [m, o] = await adminGetMany(env, [`users/${member}`, `users/${owner}`]);
+  if (!m) return;
+  const list = (m.teamOf || []).filter(x => x.uid !== owner);
+  if (add && o) list.push({ uid: owner, name: o.displayName || '', slug: o.slug || '' });
+  await adminUpdate(env, `users/${member}`, { teamOf: list });
+}
+
+export async function teamRefresh(req, env) {
+  const claims = await requireUser(req, env);
+  await syncPublic(env, claims.sub);
+  return json({ ok: true });
 }
 
 // Para la sesión de subida: ¿uid puede subir a los álbumes de la empresa `team` en este evento?

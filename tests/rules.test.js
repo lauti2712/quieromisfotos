@@ -321,4 +321,7 @@ test('plan Empresas: el equipo lo maneja el Worker; el colaborador ve eventos de
   await assertFails(getDoc(doc(user('pepe'), 'teamSales/pub_ana_beto')));
   // nadie se da lugares extra
   await assertFails(updateDoc(doc(user('ana'), 'users/ana'), { teamExtraSeats: 10 }));
+  // la copia pública del equipo la escribe solo el Worker
+  await assertFails(updateDoc(doc(user('ana'), 'users/ana'), { teamPublic: [{ uid: 'x', name: 'Falso' }] }));
+  await assertFails(updateDoc(doc(user('beto'), 'users/beto'), { teamOf: [{ uid: 'ana', name: 'Empresa famosa' }] }));
 });

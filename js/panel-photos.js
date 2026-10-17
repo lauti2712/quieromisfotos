@@ -1,6 +1,6 @@
 // Panel: subida masiva y gestión de fotos del set de un fotógrafo en un evento.
 import {
-  db, collection, doc, getDocs, query, where, orderBy, limit, startAfter, writeBatch, Timestamp,
+  db, collection, doc, getDoc, getDocs, query, where, orderBy, limit, startAfter, writeBatch, Timestamp,
 } from './fb.js';
 import { $, $$, esc, toast, errMsg, fmtBytes, setBytes } from './util.js';
 import { createUploader, fileKey, interruptedUpload, clearInterrupted } from './uploader.js';
@@ -50,7 +50,8 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
     <div class="card stack">
       <div class="row" style="justify-content:space-between">
         <h2 style="margin:0">Mis fotos <span class="muted small" id="ph-count"></span></h2>
-        <select id="ph-filter" style="width:auto"><option value="*">Todas</option>${subOptions()}</select>
+        <span class="row"><select id="ph-by" class="hidden" style="width:auto" aria-label="Fotógrafo"></select>
+        <select id="ph-filter" style="width:auto"><option value="*">Todas</option>${subOptions()}</select></span>
       </div>
       <div class="row toolbar" id="ph-tools">
         <label class="check small"><input type="checkbox" id="ph-all"> Seleccionar todas</label>
@@ -74,6 +75,16 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
   }).observe($('#dz', box));
 
   // ------------------------------------------------ listado
+  // Plan Empresas (vista de la empresa): quién sacó cada foto y filtro por fotógrafo.
+  let names = null;
+  if (!team) {
+    const t = (await getDoc(doc(db, 'teams', uid)).catch(() => null))?.data();
+    if ((t?.members || []).length) {
+      names = { [uid]: 'Vos', ...Object.fromEntries(t.members.map(m => [m, t.memberInfo?.[m]?.name || 'Fotógrafo'])) };
+      $('#ph-by').innerHTML = `<option value="*">Todos los fotógrafos</option>${Object.entries(names).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join('')}`;
+      $('#ph-by').classList.remove('hidden');
+    }
+  }
   let photos = [];
   let cursor = null;
   const selected = new Set();
@@ -83,6 +94,7 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
     const f = $('#ph-filter').value;
     const cons = [where('eventId', '==', ev.id), where('photographerUid', '==', uid)];
     if (team) cons.push(where('uploadedBy', '==', me));
+    else if (names && $('#ph-by').value !== '*') cons.push(where('uploadedBy', '==', $('#ph-by').value));
     if (f !== '*') cons.push(where('subalbumId', '==', f));
     cons.push(orderBy('takenAt'), limit(PAGE));
     if (cursor) cons.push(startAfter(cursor));
@@ -101,7 +113,7 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
       <label class="ph ${p.hidden ? 'is-hidden' : ''} ${selected.has(p.id) ? 'sel' : ''}" data-id="${p.id}">
         <img src="${esc(p.thumbUrl)}" alt="" loading="lazy">
         <input type="checkbox" ${selected.has(p.id) ? 'checked' : ''}>
-        <span class="ph-meta">${p.hidden ? '<span class="pill warn">Oculta</span>' : ''}${subs.length ? `<span class="pill">${esc(subName(p.subalbumId))}</span>` : ''}${(p.bibs || []).length ? `<span class="pill ok" title="Dorsales">#${p.bibs.map(esc).join(' #')}</span>` : ''}</span>
+        <span class="ph-meta">${p.hidden ? '<span class="pill warn">Oculta</span>' : ''}${subs.length ? `<span class="pill">${esc(subName(p.subalbumId))}</span>` : ''}${names && p.uploadedBy && p.uploadedBy !== uid ? `<span class="pill" title="La sacó">📷 ${esc(names[p.uploadedBy] || 'Ex miembro')}</span>` : ''}${(p.bibs || []).length ? `<span class="pill ok" title="Dorsales">#${p.bibs.map(esc).join(' #')}</span>` : ''}</span>
       </label>`).join('') : '<div class="empty" style="grid-column:1/-1">Todavía no subiste fotos a este evento.</div>';
     $$('#ph-grid .ph input').forEach(cb => cb.onchange = () => {
       const id = cb.closest('.ph').dataset.id;
@@ -120,7 +132,9 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
     $('#ph-all').checked = n > 0 && n === photos.length;
   }
 
-  $('#ph-filter').onchange = () => load(true).catch(e => toast(errMsg(e), 'error'));
+  // Fotógrafo y sub-álbum no se combinan (cada combinación necesitaría su propio índice).
+  $('#ph-filter').onchange = () => { $('#ph-by').value = '*'; load(true).catch(e => toast(errMsg(e), 'error')); };
+  $('#ph-by').onchange = () => { $('#ph-filter').value = '*'; load(true).catch(e => toast(errMsg(e), 'error')); };
   $('#ph-more').onclick = () => load(false).catch(e => toast(errMsg(e), 'error'));
   $('#ph-all').onchange = e => { selected.clear(); if (e.target.checked) photos.forEach(p => selected.add(p.id)); draw(); };
 
