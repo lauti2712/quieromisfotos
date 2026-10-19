@@ -99,12 +99,27 @@ function updatePublicProfileBtn() {
   if (ok) a.href = `index.html#/f/${encodeURIComponent(S.profile.slug)}`;
 }
 
+// Plan vigente del fotógrafo, para mostrarlo arriba, en Inicio y en Perfil.
+function planLine(p) {
+  const id = planOf(p);
+  const label = PLANS[id]?.label || 'Gratis';
+  const until = p.proUntil?.toDate?.();
+  const when = until && !p.courtesy && until.getFullYear() < 2090 ? ` hasta el ${until.toLocaleDateString('es-AR')}` : '';
+  const kind = p.courtesy ? ' (cortesía)' : p.trial && id !== 'free' ? ' (prueba gratis)' : '';
+  return { id, label, text: `${label}${kind}${id === 'free' ? '' : when}` };
+}
+function planCardHtml(p) {
+  const l = planLine(p);
+  return `<div class="notice ${l.id === 'free' ? '' : 'ok'} row" style="justify-content:space-between;gap:8px">
+    <span>⭐ Tu plan: <strong>${esc(l.text)}</strong></span><a class="btn sm" href="#/web">${l.id === 'free' ? 'Ver planes' : 'Ver o cambiar'}</a></div>`;
+}
+
 function updateRolePill() {
   updatePublicProfileBtn();
   const p = $('#role-pill');
   const st = S.profile?.status;
   if (S.isSuper) { p.textContent = 'Superadmin'; p.className = 'pill accent'; }
-  else if (st === 'approved') { p.textContent = 'Fotógrafo'; p.className = 'pill ok'; }
+  else if (st === 'approved') { p.textContent = planLine(S.profile).label; p.className = `pill ${planOf(S.profile) === 'free' ? '' : 'ok'}`; }
   else if (st === 'pending') { p.textContent = 'Pendiente'; p.className = 'pill warn'; }
   else { p.textContent = 'Suspendido'; p.className = 'pill danger'; }
   p.style.display = '';
@@ -414,6 +429,7 @@ async function viewHome() {
 
   $('#view').innerHTML = `
     <h1>Hola, ${esc(p.displayName)}</h1>
+    ${planCardHtml(p)}
     <div id="home-alerts"></div>
     ${approved && !p.mpConnected && totalPhotos > 0 ? `<div class="notice danger"><strong>💳 Tus fotos se ven pero no se pueden comprar.</strong><br>Falta vincular Mercado Pago: los compradores ven "todavía no está a la venta". <a href="#/mp">Vincular ahora</a></div>` : ''}
     ${installCardHtml()}
@@ -547,6 +563,7 @@ function viewProfile() {
   const p = S.profile;
   $('#view').innerHTML = `
     <h1>Perfil</h1>
+    ${p.role === 'photographer' ? planCardHtml(p) : ''}
     <form class="card stack" id="pf">
       <div class="row"><span id="pf-av">${avatarHtml(p, 'lg')}</span>
         <div class="stack" style="flex:1;min-width:220px">
@@ -1548,6 +1565,7 @@ async function viewAdminPhotographers() {
           <button class="btn sm" data-pro="${u.uid}">+30 días</button>
           <button class="btn sm" data-courtesy="${u.uid}" title="Plan sin costo y sin vencimiento, hasta que lo quites">🎁 Cortesía</button>` : ''}
         ${isPro(u) ? `<button class="btn sm ghost" data-unpro="${u.uid}">Quitar plan</button>` : ''}
+        <button class="btn sm ghost" data-subsync="${u.uid}" title="Revisa en Mercado Pago su suscripción y aplica el plan">🔄 Suscripción</button>
         ${PLANS[planOf(u)]?.team ? `<button class="btn sm ghost" data-seats="${u.uid}" title="Lugares extra para su equipo (además de los del plan)">👥 Lugares extra: ${u.teamExtraSeats || 0}</button>` : ''}
         ${PLANS[planOf(u)]?.domain && u.site?.requestedDomain && !u.domainActive ? `<button class="btn sm ok" data-dom="${u.uid}">Activar dominio</button>` : ''}
         ${u.domainActive && u.domainSetup && u.domainSetup.status !== 'active' ? `<button class="btn sm" data-domst="${u.uid}">Revisar dominio</button>` : ''}
@@ -1576,6 +1594,16 @@ async function viewAdminPhotographers() {
       toast(`${u.displayName}: plan ${PLANS[plan].label} de cortesía`);
       viewAdminPhotographers();
     } catch (e) { toast(errMsg(e), 'error'); }
+  });
+  $$('[data-subsync]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try {
+      const r = await apiPost('/admin/plans/sync', { uid: b.dataset.subsync });
+      const st = { authorized: '✅ activa', pending: '⏳ pendiente (no confirmó el pago en Mercado Pago)', cancelled: 'cancelada', paused: 'pausada', none: 'no tiene suscripción' }[r.status] || r.status;
+      toast(`Suscripción ${r.plan ? `${PLANS[r.plan]?.label || r.plan} ` : ''}${st}${r.lastPaidAt ? ' · último cobro registrado' : ''}`);
+      if (r.status === 'authorized') viewAdminPhotographers();
+    } catch (e) { toast(errMsg(e), 'error'); }
+    b.disabled = false;
   });
   $$('[data-seats]').forEach(b => b.onclick = async () => {
     const u = users.find(x => x.uid === b.dataset.seats);
