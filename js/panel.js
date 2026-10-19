@@ -2105,6 +2105,7 @@ async function viewAdminConfig() {
         </table></div>
         <label class="field" style="max-width:320px">Prueba gratis de Profesional para fotógrafos nuevos (días)<input type="number" id="a-trial" min="0" max="90" step="1" value="${st.trialDays ?? 30}">
           <span class="hint">Se da al aprobar al fotógrafo, una sola vez. 0 = sin prueba. Rige con los planes nuevos.</span></label>
+        <div class="row"><button type="button" class="btn sm" id="a-mpacc">💳 Ver la cuenta que cobra los planes</button><span class="small" id="a-mpacc-out"></span></div>
         </div>
       </div>
       <div class="card stack">
@@ -2115,6 +2116,17 @@ async function viewAdminConfig() {
       </div>
       <div class="row end" style="margin-top:14px"><button class="btn primary">Guardar</button></div>
     </form>`;
+  // Cuenta de Mercado Pago con la que la plataforma cobra suscripciones y extensiones (tiene que ser la real).
+  $('#a-mpacc').onclick = async e => {
+    e.target.disabled = true;
+    try {
+      const r = await apiPost('/admin/mp/whoami');
+      $('#a-mpacc-out').innerHTML = !r.configured ? '❌ No hay token cargado'
+        : r.test ? `⚠️ <strong>Cuenta de PRUEBA</strong> (${esc(r.nickname)} · #${esc(r.id)}): con esta cuenta los pagos reales fallan. Cargá el Access Token de producción de tu cuenta real.`
+        : `✅ Cuenta real: ${esc(r.nickname)} · #${esc(r.id)}${r.email ? ` · ${esc(r.email)}` : ''}`;
+    } catch (err) { $('#a-mpacc-out').textContent = errMsg(err); }
+    e.target.disabled = false;
+  };
   const draw = () => {
     $('#a-plans').innerHTML = plans.length ? plans.map((p, i) => `
       <div class="row">

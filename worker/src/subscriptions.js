@@ -180,3 +180,14 @@ export async function changeSeats(req, env) {
   await adminUpdate(env, `users/${claims.sub}`, { teamPaidSeats: next });
   return json({ ok: true, paidSeats: next, seats, amount });
 }
+
+// POST /admin/mp/whoami (superadmin): de qué cuenta de Mercado Pago es el token con el que cobra la plataforma
+// (suscripciones y extensiones). No devuelve el token: solo la cuenta y si es de prueba.
+export async function platformAccount(req, env) {
+  const claims = await requireUser(req, env);
+  if (claims.email !== 'lautarom87@gmail.com' || claims.email_verified !== true) throw httpError(403, 'Solo superadmin');
+  if (!env.MP_ACCESS_TOKEN) return json({ configured: false });
+  const me = await mpFetch(env.MP_ACCESS_TOKEN, '/users/me');
+  const test = (me.tags || []).includes('test_user') || String(env.MP_ACCESS_TOKEN).startsWith('TEST-');
+  return json({ configured: true, id: me.id, nickname: me.nickname || '', email: me.email || '', site: me.site_id || '', test });
+}
