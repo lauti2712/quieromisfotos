@@ -145,10 +145,30 @@ export async function subscriptionWebhook(env, preapprovalId) {
 // (el plan gratis de Workers limita los pedidos por ejecución; así cada suscripción se revisa una vez por día).
 const PER_RUN = 5;
 export async function syncDueSubscriptions(env) {
-  const subs = await adminQuery(env, 'subscriptions', { filters: [['status', '==', 'authorized']], limit: 1000 });
-  const due = subs.filter(s => !s.syncedAt || Date.now() - s.syncedAt.getTime() > 20 * 3600_000)
-    .sort((a, b) => (a.syncedAt?.getTime?.() || 0) - (b.syncedAt?.getTime?.() || 0)).slice(0, PER_RUN);
+  const now = Date.now();
+  const [active, pending] = await Promise.all([
+    adminQuery(env, 'subscriptions', { filters: [['status', '==', 'authorized']], limit: 1000 }),
+    adminQuery(env, 'subscriptions', { filters: [['status', '==', 'pending']], limit: 200 }),
+  ]);
+  // Activas: una vez por día. Pendientes de los últimos 3 días: cada 15 minutos (por si pagó y cerró la pestaña sin volver
+  // al panel y el aviso de Mercado Pago no llegó).
+  const synced = x => x.syncedAt?.getTime?.() || 0;
+  const due = [
+    ...pending.filter(x => now - (x.createdAt?.getTime?.() || 0) < 3 * DAY && now - synced(x) > 15 * 60_000),
+    ...active.filter(x => now - synced(x) > 20 * 3600_000),
+  ].sort((a, b) => synced(a) - synced(b)).slice(0, PER_RUN);
   for (const s of due) await syncSubscription(env, s.id).catch(e => console.error('sub sync', s.id, e));
+}
+
+// POST /admin/plans/sync {uid} (superadmin): revisa en Mercado Pago la suscripción de un fotógrafo y aplica el plan.
+export async function adminSyncSubscription(req, env) {
+  const claims = await requireUser(req, env);
+  if (claims.email !== 'lautarom87@gmail.com' || claims.email_verified !== true) throw httpError(403, 'Solo superadmin');
+  const { uid } = await req.json().catch(() => ({}));
+  if (!/^[A-Za-z0-9_-]{6,40}$/.test(uid || '')) throw httpError(400, 'Pedido inválido');
+  const s = await syncSubscription(env, uid);
+  if (!s) return json({ status: 'none' });
+  return json({ status: s.status, plan: s.plan, amount: s.amount, lastPaidAt: s.lastPaidAt || null, nextPaymentDate: s.nextPaymentDate || null });
 }
 
 // ------------------------------------------------------------------ plan Empresas: lugares extra del equipo
