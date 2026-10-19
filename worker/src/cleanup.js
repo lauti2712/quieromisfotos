@@ -4,7 +4,8 @@
 //   - fotos de un álbum sin registro en `photos` (subidas que se cortaron a mitad)
 //   - portadas de evento reemplazadas
 //   - avatar, logo y fotos de portfolio reemplazados o borrados
-import { adminGetMany, adminQuery } from './admin.js';
+import { adminGetMany, adminQuery, adminUpdateMany } from './admin.js';
+import { rulesFor } from './plans.js';
 
 const MIN_AGE = 2 * 86400_000;
 
@@ -43,6 +44,7 @@ export async function cleanOrphans(env, { sets, ids, docs, profileObjs, coverObj
 
   // ---- perfil: avatar, logo y portfolio
   const uids = Object.keys(profileObjs);
+  const dropClean = [];
   // Todo el portfolio en una sola consulta (antes era una por fotógrafo: muchos pedidos por ejecución).
   const pfAll = uids.length ? await adminQuery(env, 'portfolio', { limit: 20000 }) : [];
   const pfBy = new Map();
@@ -54,12 +56,16 @@ export async function cleanOrphans(env, { sets, ids, docs, profileObjs, coverObj
       const uid = uids[j + n];
       const keep = new Set([keyOf(user.avatarUrl || ''), user.watermark?.logoKey || '', keyOf(user.watermark?.logoUrl || ''), keyOf(user.site?.heroUrl || ''), keyOf(user.profileCoverUrl || '')]);
       const pf = pfBy.get(uid) || [];
-      for (const p of pf) [p.urlKey, p.thumbKey, p.cleanKey, keyOf(p.url || ''), keyOf(p.thumbUrl || ''), keyOf(p.cleanUrl || '')].forEach(k => k && keep.add(k));
+      // Sin plan con web, el portfolio no guarda versión sin marca de agua (ej. se terminó la prueba gratis): se quita y se borra.
+      const web = !!rulesFor(user, {}).web;
+      if (!web) dropClean.push(...pf.filter(p => p.cleanUrl || p.cleanKey).map(p => ({ path: `portfolio/${p.id}`, data: { cleanUrl: null, cleanKey: null } })));
+      for (const p of pf) [p.urlKey, p.thumbKey, web && p.cleanKey, keyOf(p.url || ''), keyOf(p.thumbUrl || ''), web && keyOf(p.cleanUrl || '')].forEach(k => k && keep.add(k));
       profileObjs[uid].forEach(o => { if (!keep.has(o.key)) add(o, o.key.includes('/pf/') ? 'Foto de portfolio borrada' : 'Imagen de perfil reemplazada'); });
     }
   }
 
   const deleting = env.CLEANUP_DELETE === '1';
+  if (deleting && dropClean.length) await adminUpdateMany(env, dropClean);
   const deletedKeys = new Set();
   if (deleting && items.length) {
     for (const kind of ['pub', 'priv']) {

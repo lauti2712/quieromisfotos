@@ -8,9 +8,12 @@ export function siteBase() {
 
 // Link a la página indexable del evento (/e/{id}/). Con ?s=1 lleva directo a la galería;
 // así WhatsApp muestra la portada del evento y Google indexa la versión sin parámetros.
+// En el sitio oficial el link va por ver.quieromisfotos.com.ar, que arma la vista previa al instante (también para eventos
+// recién creados, que todavía no tienen su página /e/). Acepta ?f= (álbum de un fotógrafo), &foto= y &dorsal=.
 export function eventUrl(eventId, photographerUid = '') {
   const local = /^(localhost|127\.)/.test(location.hostname);
   if (local) return `${siteBase()}#/evento/${eventId}${photographerUid ? `?f=${encodeURIComponent(photographerUid)}` : ''}`;
+  if (location.hostname === 'quieromisfotos.com.ar') return `https://ver.quieromisfotos.com.ar/e/${eventId}${photographerUid ? `?f=${encodeURIComponent(photographerUid)}` : ''}`;
   return `${location.origin}/e/${eventId}/?s=1${photographerUid ? `&f=${encodeURIComponent(photographerUid)}` : ''}`;
 }
 

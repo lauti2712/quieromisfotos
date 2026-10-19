@@ -44,6 +44,7 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
           <span class="row"><button class="btn sm primary hidden" id="up-full">➕ Comprar más espacio</button><button class="btn sm hidden" id="up-retry">Reintentar fallidas</button><button class="btn sm" id="up-clear">Limpiar terminadas</button></span>
         </div>
         <div class="progress"><span id="up-bar"></span></div>
+        <div id="up-notime"></div>
         <div id="up-list" class="up-list"></div>
       </div>
     </div>
@@ -258,6 +259,10 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
     $('#up-summary').textContent = `${s.done} de ${s.total} subidas${s.failed ? ` · ${s.failed} con error` : ''} · ${s.pct}%`;
     $('#up-bar').style.width = `${s.pct}%`;
     $('#up-retry').classList.toggle('hidden', !s.failed);
+    // Fotos sin la hora de la cámara (pasadas por WhatsApp, capturas, editadas): el filtro por horario puede ubicarlas mal.
+    $('#up-notime').innerHTML = s.noTime && set.showHours !== false
+      ? `<div class="notice warn small" style="margin:8px 0 0">⚠️ ${s.noTime} foto${s.noTime === 1 ? '' : 's'} vino${s.noTime === 1 ? '' : 'eron'} sin la hora de la cámara (por ejemplo, pasada${s.noTime === 1 ? '' : 's'} por WhatsApp o editada${s.noTime === 1 ? '' : 's'}): en el filtro por horario pueden quedar en un horario equivocado. Si son muchas, subí los archivos originales de la cámara o desactivá el filtro por horario en este álbum (arriba, en Galería).</div>`
+      : '';
     const full = s.items.some(i => i.full && i.status === 'error');
     $('#up-full').classList.toggle('hidden', !full);
     $('#up-list').innerHTML = s.items.filter(i => i.status !== 'done').slice(0, 60).map(i => `

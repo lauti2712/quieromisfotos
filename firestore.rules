@@ -47,7 +47,8 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.uid == uid()
         && request.resource.data.keys().hasOnly(['uid'])
-        && slug.matches('^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$');
+        && slug.matches('^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$')
+        && !(slug in ['ver', 'api', 'www', 'fotos', 'prueba', 'sites']); // subdominios del sistema
       allow delete: if signedIn() && (resource.data.uid == uid() || isSuper());
     }
 
@@ -59,11 +60,11 @@ service cloud.firestore {
             && request.resource.data.status == 'pending'
             && request.resource.data.mpConnected == false
             // el plan, la cortesía, el dominio y MP los asignan el superadmin o el Worker, nunca el alta
-            && !request.resource.data.keys().hasAny(['plan', 'proUntil', 'domainActive', 'siteDomain', 'domainSetup', 'trial', 'trialUsed', 'courtesy', 'demo', 'teamExtraSeats', 'teamPublic', 'teamOf'])
+            && !request.resource.data.keys().hasAny(['plan', 'proUntil', 'domainActive', 'siteDomain', 'domainSetup', 'trial', 'trialUsed', 'courtesy', 'demo', 'teamExtraSeats', 'teamPaidSeats', 'teamPublic', 'teamOf'])
             && request.resource.data.get('mpUserId', null) == null)
           || (isSuper() && request.resource.data.role == 'superadmin'));
       allow update: if isSuper() || (signedIn() && uid() == userId
-          && !changed().hasAny(['role', 'status', 'mpConnected', 'mpUserId', 'createdAt', 'plan', 'proUntil', 'domainActive', 'siteDomain', 'domainSetup', 'trial', 'trialUsed', 'courtesy', 'teamExtraSeats', 'teamPublic', 'teamOf'])
+          && !changed().hasAny(['role', 'status', 'mpConnected', 'mpUserId', 'createdAt', 'plan', 'proUntil', 'domainActive', 'siteDomain', 'domainSetup', 'trial', 'trialUsed', 'courtesy', 'teamExtraSeats', 'teamPaidSeats', 'teamPublic', 'teamOf'])
           && (!changed().hasAny(['slug']) || slugOwnedAfter(userId)));
       allow delete: if isSuper();
     }
@@ -213,14 +214,10 @@ service cloud.firestore {
       allow delete: if isSuper() || (signedIn() && resource.data.uid == uid());
     }
 
-    // Estadísticas anónimas (contadores, sin datos de quién visita). Cualquiera suma; solo de a una visita por escritura.
+    // Estadísticas anónimas (contadores, sin datos de quién visita). Las escribe el Worker (POST /stats) para que no se inflen.
     match /stats/{sid} {
       allow read: if signedIn();
-      allow create: if request.resource.data.keys().hasOnly(['views', 'days', 'src', 'pv', 'ca', 'updatedAt'])
-        && request.resource.data.get('views', 0) <= 1;
-      allow update: if request.resource.data.keys().hasOnly(['views', 'days', 'src', 'pv', 'ca', 'updatedAt'])
-        && request.resource.data.get('views', 0) <= resource.data.get('views', 0) + 1
-        && request.resource.data.get('views', 0) >= resource.data.get('views', 0);
+      allow write: if false;
     }
 
     // Botón de arrepentimiento (Res. 424/2020): cualquiera lo puede enviar, sin cuenta. Lo lee el superadmin.

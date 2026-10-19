@@ -56,7 +56,8 @@ export async function processFile(file, wm, logo = null, { optimize = false, sca
     }
     const [preview, thumb] = await Promise.all([toBlob(base, 0.8), toBlob(thumbC, 0.7)]);
     const takenAt = await exifDate(file).catch(() => null);
-    return { preview, thumb, original, scan: scanBlob, width, height, takenAt: takenAt || file.lastModified || Date.now() };
+    // takenAtExact: la hora sale de la cámara (EXIF); si no, es la del archivo (en el celular, suele ser cuando se eligió).
+    return { preview, thumb, original, scan: scanBlob, width, height, takenAt: takenAt || file.lastModified || Date.now(), takenAtExact: !!takenAt };
   } finally {
     bmp.close?.();
   }

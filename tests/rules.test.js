@@ -325,3 +325,13 @@ test('plan Empresas: el equipo lo maneja el Worker; el colaborador ve eventos de
   await assertFails(updateDoc(doc(user('ana'), 'users/ana'), { teamPublic: [{ uid: 'x', name: 'Falso' }] }));
   await assertFails(updateDoc(doc(user('beto'), 'users/beto'), { teamOf: [{ uid: 'ana', name: 'Empresa famosa' }] }));
 });
+
+test('estadísticas: nadie las escribe desde el navegador (las cuenta el Worker); subdominios reservados; lugares pagos', async () => {
+  await assertFails(setDoc(doc(as(), 'stats/pub'), { views: 1 }));
+  await assertFails(setDoc(doc(user('ana'), 'stats/pub'), { views: 1 }));
+  await assertSucceeds(getDoc(doc(user('ana'), 'stats/pub')));
+  await assertFails(setDoc(doc(user('nuevo'), 'slugs/ver'), { uid: 'nuevo' }));
+  await assertFails(setDoc(doc(user('nuevo'), 'slugs/api'), { uid: 'nuevo' }));
+  await assertSucceeds(setDoc(doc(user('nuevo'), 'slugs/vero-fotos'), { uid: 'nuevo' }));
+  await assertFails(updateDoc(doc(user('ana'), 'users/ana'), { teamPaidSeats: 20 }));
+});

@@ -26,6 +26,7 @@
 //   POST   /extensions/checkout        Bearer (fotógrafo) {eventId, planId}    extensión paga del plazo -> { initPoint }
 //   POST   /extensions/{id}/sync       Bearer (fotógrafo)                     consulta el pago a MP
 //   POST   /plans/subscribe · /plans/sync · /plans/cancel   Bearer (fotógrafo)   suscripción mensual a un plan (MP)
+//   POST   /stats                      (sin login)                            visitas anónimas (una por persona cada 6 h)
 //   POST   /team/invite · /team/join · /team/remove · /team/events   equipo del plan Empresas
 //   GET    /domains/check · POST /domains/request · POST /admin/domains/activate|status   dominio propio (Premium)
 //   POST   /tags                       Bearer (fotógrafo aprobado) {type, name}  alta de actividad/club/lugar sin duplicados
@@ -45,6 +46,8 @@ import { checkout, webhook, syncOrder, retryCheckout, downloadLinks, download } 
 import { createTag } from './tags.js';
 import { scanBibsRequest } from './bibs.js';
 import { commitPhoto, deletePhotos, orderDownloadUntil } from './photos.js';
+import { statsHit } from './stats.js';
+import { sharePage } from './share.js';
 import { teamInvite, teamJoin, teamRemove, teamEvents, teamRefresh, canUploadForTeam } from './team.js';
 import { checkDomains, requestDomain, activateDomain, domainStatus, checkPendingDomains } from './domains.js';
 import { renderSite } from './site.js';
@@ -52,7 +55,7 @@ import { scanRequest, scanStorage } from './storage.js';
 import { runBackup, backupRequest } from './backup.js';
 import { notifyFollowersOnce, drainPushQueue } from './push.js';
 import { extensionCheckout, extensionSync } from './extensions.js';
-import { subscribe, syncRequest, cancelSubscription, syncDueSubscriptions } from './subscriptions.js';
+import { subscribe, syncRequest, cancelSubscription, syncDueSubscriptions, changeSeats } from './subscriptions.js';
 
 const MAX = { preview: 6e6, thumb: 1e6, original: 80e6, avatar: 3e6, logo: 2e6, cover: 6e6, portfolio: 6e6, pcover: 6e6 };
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
@@ -101,7 +104,9 @@ async function route(req, env, ctx) {
     const host = url.hostname.toLowerCase();
     const sub = host.match(/^([a-z0-9-]+)\.quieromisfotos\.com\.ar$/)?.[1];
     const ours = /(^|\.)(quieromisfotos\.com\.ar|solucionescotidianas\.com\.ar|workers\.dev)$/.test(host) || host === 'localhost';
-    const isSite = (sub && !['api', 'fotos', 'www', 'prueba'].includes(sub)) || !ours;
+    // ver.quieromisfotos.com.ar: links para compartir con vista previa al instante (share.js).
+    if (sub === 'ver') return sharePage(req, env, ctx);
+    const isSite = (sub && !['api', 'fotos', 'www', 'prueba', 'ver'].includes(sub)) || !ours;
     if (isSite && url.pathname === '/robots.txt') {
       return new Response(`User-agent: *\nAllow: /\n\nSitemap: https://${host}/sitemap.xml\n`, { headers: { 'Content-Type': 'text/plain' } });
     }
@@ -133,11 +138,13 @@ async function route(req, env, ctx) {
   if (m === 'POST' && url.pathname === '/mp/webhook') return webhook(req, env);
   if (m === 'POST' && url.pathname === '/checkout') return checkout(req, env);
   if (m === 'POST' && url.pathname === '/tags') return createTag(req, env);
+  if (m === 'POST' && url.pathname === '/stats') return statsHit(req, env, ctx);
   if (m === 'POST' && url.pathname === '/team/invite') return teamInvite(req, env);
   if (m === 'POST' && url.pathname === '/team/join') return teamJoin(req, env);
   if (m === 'POST' && url.pathname === '/team/remove') return teamRemove(req, env);
   if (m === 'POST' && url.pathname === '/team/events') return teamEvents(req, env);
   if (m === 'POST' && url.pathname === '/team/refresh') return teamRefresh(req, env);
+  if (m === 'POST' && url.pathname === '/team/seats') return changeSeats(req, env);
   if (m === 'GET' && url.pathname === '/domains/check') return checkDomains(req, env);
   if (m === 'POST' && url.pathname === '/domains/request') return requestDomain(req, env);
   if (m === 'POST' && url.pathname === '/admin/domains/activate') return activateDomain(req, env);

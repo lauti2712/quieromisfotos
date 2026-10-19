@@ -107,15 +107,16 @@ export async function viewPortfolio(view, { uid, profile, settings }) {
       $('#pf-progress').textContent = `Subiendo ${n + 1} de ${list.length}…`;
       try {
         const r = await processFile(file, wm, logo);
-        // Copia sin marca de agua: la usa la web personal si el fotógrafo elige mostrar sus fotos limpias.
-        const c = await processFile(file, null);
-        const [p, t, cl] = [await uploadAsset('portfolio', r.preview), await uploadAsset('portfolio', r.thumb), await uploadAsset('portfolio', c.preview)];
+        // Copia sin marca de agua: solo con un plan con web (la usa si el fotógrafo elige mostrar sus fotos limpias).
+        const withWeb = !!PLANS[planOf(profile)]?.web;
+        const c = withWeb ? await processFile(file, null) : null;
+        const [p, t, cl] = [await uploadAsset('portfolio', r.preview), await uploadAsset('portfolio', r.thumb), c ? await uploadAsset('portfolio', c.preview) : null];
         const slot = free[n];
         const typed = $('#pf-album').value.trim().slice(0, 30);
         const album = albums().find(a => a.toLowerCase() === typed.toLowerCase()) || typed;
         const data = {
           photographerUid: uid, slot, url: p.url, thumbUrl: t.url, urlKey: p.key, thumbKey: t.key,
-          cleanUrl: cl.url, cleanKey: cl.key, album,
+          ...(cl ? { cleanUrl: cl.url, cleanKey: cl.key } : {}), album,
           width: r.width, height: r.height, caption: '', order: Date.now(), createdAt: serverTimestamp(),
         };
         await setDoc(doc(db, 'portfolio', `${uid}_${slot}`), data);

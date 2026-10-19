@@ -3,7 +3,7 @@
 //   Colaborador:  #/equipos                   -> empresas de las que forma parte y sus eventos
 //                 #/equipo-evento/{emp}/{eid} -> sube al álbum de la empresa; ve el precio y cuántas de sus fotos se vendieron
 //   Invitación:   #/unirse/{token}
-import { db, collection, doc, getDoc, getDocs, query, where } from './fb.js';
+import { db, collection, doc, getDoc, getDocs, query, where, orderBy, limit } from './fb.js';
 import { $, $$, esc, toast, errMsg, fmtMoney, fmtDate } from './util.js';
 import { apiPost } from './api.js';
 import { teamSeats, planSpec, bibsOn } from './data.js';
@@ -11,6 +11,17 @@ import { mountPhotos } from './panel-photos.js';
 import { shareLink } from './share.js';
 
 const SUPPORT_WA = '5493424856528';
+
+// Descarga un CSV que Excel abre bien en español (separador ; y BOM para los acentos).
+function downloadCsv(name, rows) {
+  const cell = v => { const t = String(v ?? ''); return /[;"\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+  const csv = '\ufeff' + rows.map(r => r.map(cell).join(';')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
 
 // Empresas de las que el usuario es colaborador.
 export async function loadMyTeams(uid) {
@@ -26,6 +37,9 @@ export async function viewTeam(view, { uid, profile, settings }) {
   const info = t.memberInfo || {};
   const extra = planSpec('empresa', settings).seatPrice;
   if (members.length) apiPost('/team/refresh').catch(() => {}); // nombres y fotos al día en su perfil público
+  // Con la suscripción de Mercado Pago activa, los lugares extra se suman al débito desde el panel.
+  const sub = (await getDoc(doc(db, 'subscriptions', uid)).catch(() => null))?.data();
+  const subOk = sub?.status === 'authorized' && sub.plan === 'empresa' && !profile.courtesy;
   view.innerHTML = `
     <h1>👥 Mi equipo</h1>
     ${!seats ? `<div class="notice">El equipo de fotógrafos es del plan <a href="#/web">Empresas</a>: tus fotógrafos suben a tus álbumes y vos cobrás todas las ventas.</div>` : ''}
@@ -37,10 +51,19 @@ export async function viewTeam(view, { uid, profile, settings }) {
           <button class="btn sm danger ghost" data-rm="${esc(m)}">Sacar</button></div>`).join('') : '<p class="muted" style="margin:0">Todavía no sumaste fotógrafos.</p>'}
       ${seats ? `<div class="row">
         <button class="btn primary" id="tm-invite" ${members.length >= seats ? 'disabled' : ''}>🔗 Invitar fotógrafos</button>
-        <a class="btn ghost sm" target="_blank" rel="noopener" href="https://wa.me/${SUPPORT_WA}?text=${encodeURIComponent(`Hola! Soy ${profile.displayName} (plan Empresas) y quiero sumar lugares a mi equipo.`)}">➕ Sumar lugares (${fmtMoney(extra)}/mes c/u)</a>
+        ${subOk ? `<button class="btn ghost sm" id="tm-seat-add">➕ Sumar un lugar (${fmtMoney(extra)}/mes)</button>
+          ${(profile.teamPaidSeats || 0) > 0 ? `<button class="btn ghost sm" id="tm-seat-rm" ${members.length >= seats ? 'disabled title="Primero sacá a un fotógrafo"' : ''}>➖ Quitar un lugar</button>` : ''}`
+        : `<a class="btn ghost sm" target="_blank" rel="noopener" href="https://wa.me/${SUPPORT_WA}?text=${encodeURIComponent(`Hola! Soy ${profile.displayName} (plan Empresas) y quiero sumar lugares a mi equipo.`)}">➕ Sumar lugares (${fmtMoney(extra)}/mes c/u)</a>`}
       </div>
       <div id="tm-link"></div>` : ''}
-    </div>`;
+      ${(profile.teamPaidSeats || 0) ? `<p class="muted small" style="margin:0">Pagás ${profile.teamPaidSeats} lugar${profile.teamPaidSeats === 1 ? '' : 'es'} extra en tu suscripción.</p>` : ''}
+    </div>
+    ${seats ? `<div class="card stack">
+      <div class="row" style="justify-content:space-between"><h2 style="margin:0">🧾 Liquidación del mes</h2>
+        <span class="row"><input type="month" id="tm-month" value="${new Date().toISOString().slice(0, 7)}" style="width:auto"><button class="btn sm" id="tm-csv">⬇️ Excel</button></span></div>
+      <p class="muted small" style="margin:0">Fotos vendidas de cada fotógrafo en los pedidos pagados del mes, en todos tus eventos, y su parte del precio de las fotos (antes de comisiones). El Excel trae el detalle por pedido.</p>
+      <div id="tm-liq"><div class="spinner"></div></div>
+    </div>` : ''}`;
   $('#tm-invite')?.addEventListener('click', async e => {
     e.target.disabled = true;
     try {
@@ -54,6 +77,62 @@ export async function viewTeam(view, { uid, profile, settings }) {
     } catch (err) { toast(errMsg(err), 'error'); }
     e.target.disabled = members.length >= seats;
   });
+  for (const [id, delta, msg] of [['#tm-seat-add', 1, `¿Sumar un lugar a tu equipo? Tu débito de Mercado Pago sube ${fmtMoney(extra)} por mes (${fmtMoney(extra * 12)} si es anual) desde el próximo cobro.`], ['#tm-seat-rm', -1, '¿Quitar un lugar? Tu débito baja desde el próximo cobro.']]) {
+    $(id)?.addEventListener('click', async e => {
+      if (!confirm(msg)) return;
+      e.target.disabled = true;
+      try { const r = await apiPost('/team/seats', { delta }); profile.teamPaidSeats = r.paidSeats; toast(`Listo: ${r.seats} lugares. Próximo débito: ${fmtMoney(r.amount)}`); viewTeam(view, { uid, profile, settings }); }
+      catch (err) { e.target.disabled = false; toast(errMsg(err), 'error'); }
+    });
+  }
+
+  // Liquidación: pedidos pagados del mes, repartidos por quién sacó cada foto (lo mismo que se cuenta en Ventas por fotógrafo).
+  let orders = null;
+  const names = u => (u === uid ? 'Vos' : info[u]?.name || 'Ex miembro del equipo');
+  async function loadOrders() {
+    if (orders) return orders;
+    const snap = await getDocs(query(collection(db, 'orders'), where('photographerUid', '==', uid), orderBy('createdAt', 'desc'), limit(2000)));
+    orders = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => o.status === 'approved');
+    return orders;
+  }
+  const monthOf = o => (o.paidAt || o.createdAt)?.toDate?.().toISOString().slice(0, 7);
+  function linesOf(month) {
+    const out = [];
+    for (const o of orders.filter(x => monthOf(x) === month)) {
+      const by = {};
+      for (const it of o.items || []) { const u = it.uploadedBy || uid; by[u] = (by[u] || 0) + 1; }
+      const n = o.count || (o.items || []).length || 1;
+      for (const [u, k] of Object.entries(by)) out.push({ o, u, k, amount: Math.round((o.subtotal || 0) * k / n) });
+    }
+    return out;
+  }
+  async function drawLiq() {
+    const box = $('#tm-liq');
+    if (!box) return;
+    try {
+      await loadOrders();
+      const lines = linesOf($('#tm-month').value);
+      const tot = {};
+      for (const l of lines) { const t = (tot[l.u] ||= { photos: 0, amount: 0 }); t.photos += l.k; t.amount += l.amount; }
+      const rows = Object.entries(tot).sort((a, b) => b[1].amount - a[1].amount);
+      box.innerHTML = rows.length ? `<div class="table-wrap"><table class="list"><tr><th>Fotógrafo</th><th>Fotos vendidas</th><th>Monto</th></tr>
+        ${rows.map(([u, t]) => `<tr><td>${esc(names(u))}</td><td>${t.photos}</td><td>${fmtMoney(t.amount)}</td></tr>`).join('')}</table></div>`
+        : '<p class="muted" style="margin:0">Sin ventas pagadas en este mes.</p>';
+    } catch (err) { box.innerHTML = `<div class="notice danger">${esc(errMsg(err))}</div>`; }
+  }
+  $('#tm-month')?.addEventListener('change', drawLiq);
+  $('#tm-csv')?.addEventListener('click', async () => {
+    await loadOrders();
+    const month = $('#tm-month').value;
+    const lines = linesOf(month);
+    if (!lines.length) return toast('No hay ventas pagadas en ese mes', 'error');
+    downloadCsv(`liquidacion-${month}.csv`, [
+      ['Fecha', 'Evento', 'Pedido', 'Fotógrafo', 'Fotos', 'Monto (ARS)'],
+      ...lines.map(l => [(l.o.paidAt || l.o.createdAt).toDate().toLocaleDateString('es-AR'), l.o.eventName || '', l.o.id.slice(0, 8), names(l.u), l.k, l.amount]),
+    ]);
+  });
+  drawLiq();
+
   $$('[data-rm]').forEach(b => b.onclick = async () => {
     if (!confirm(`¿Sacar a ${info[b.dataset.rm]?.name || 'este fotógrafo'} del equipo? Sus fotos quedan en tus álbumes; solo deja de poder subir.`)) return;
     try { await apiPost('/team/remove', { team: uid, member: b.dataset.rm }); toast('Listo'); viewTeam(view, { uid, profile, settings }); }

@@ -2,9 +2,14 @@
 // de dónde llega la gente y visitas por día. No se guarda NADA de quién visita (ni usuario, ni IP).
 //   stats/{eventId}:  views, days.{YYYY-MM-DD}, src.{origen}, pv.{uidFotógrafo}, ca.{uidFotógrafo}
 //   stats/u_{uid}:    views, days, src (perfil del fotógrafo)
-// Una escritura por visita (una vez por sesión) + un envío agrupado de fotos vistas / carrito.
-import { db, doc, setDoc, increment, serverTimestamp } from './fb.js';
-import { todayIso } from './util.js';
+// Las escribe el Worker (POST /stats): valida el evento, cuenta una visita por persona cada 6 horas y pone topes,
+// así nadie las puede inflar. Una llamada por visita (una vez por sesión) + un envío agrupado de fotos vistas / carrito.
+import { API_BASE } from './api.js';
+
+function send(body) {
+  // text/plain: pedido simple (sin preflight) y keepalive para que salga aunque se cierre la página.
+  fetch(`${API_BASE}/stats`, { method: 'POST', mode: 'no-cors', keepalive: true, headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(body) }).catch(() => {});
+}
 
 function source() {
   const q = new URLSearchParams(location.search);
@@ -26,14 +31,12 @@ const once = key => {
   return true;
 };
 
-function hit(id) {
-  if (!once(`qmf.st.${id}`)) return;
-  setDoc(doc(db, 'stats', id), {
-    views: increment(1), days: { [todayIso()]: increment(1) }, src: { [source()]: increment(1) }, updatedAt: serverTimestamp(),
-  }, { merge: true }).catch(() => {});
+function hit(kind, id) {
+  if (!once(`qmf.st.${kind}.${id}`)) return;
+  send({ kind, id, view: true, src: source() });
 }
-export const trackEventView = eventId => hit(eventId);
-export const trackProfileView = uid => hit(`u_${uid}`);
+export const trackEventView = eventId => hit('event', eventId);
+export const trackProfileView = uid => hit('profile', uid);
 
 // Fotos vistas y agregadas al carrito: se juntan y se mandan en una sola escritura.
 let pending = null, timer = null;
@@ -49,10 +52,8 @@ export function flush() {
   clearTimeout(timer);
   const p = pending; pending = null;
   if (!p) return;
-  const data = { updatedAt: serverTimestamp() };
-  if (Object.keys(p.pv).length) data.pv = Object.fromEntries(Object.entries(p.pv).map(([u, n]) => [u, increment(Math.min(n, 200))]));
-  if (Object.keys(p.ca).length) data.ca = Object.fromEntries(Object.entries(p.ca).map(([u, n]) => [u, increment(Math.min(n, 200))]));
-  setDoc(doc(db, 'stats', p.eventId), data, { merge: true }).catch(() => {});
+  const cap = o => Object.fromEntries(Object.entries(o).map(([u, n]) => [u, Math.min(n, 200)]));
+  if (Object.keys(p.pv).length || Object.keys(p.ca).length) send({ kind: 'event', id: p.eventId, pv: cap(p.pv), ca: cap(p.ca) });
 }
 export const trackPhotoView = (eventId, uid) => bump(eventId, 'pv', uid);
 export const trackCartAdd = (eventId, uid) => bump(eventId, 'ca', uid);

@@ -48,6 +48,7 @@ export async function commitPhoto(req, env, s, eid, pid, publicBase) {
     width: Math.max(1, Math.round(Number(b.width) || 1)), height: Math.max(1, Math.round(Number(b.height) || 1)),
     bytes: orig.size, fileBytes: Math.max(0, Math.round(Number(b.fileBytes) || orig.size)), bytesPublic,
     takenAt: new Date(takenAt), fileName: String(b.fileName || '').slice(0, 120),
+    ...(b.takenAtExact === false ? { takenAtExact: false } : {}), // sin hora de cámara: el filtro horario puede no ubicarla
     bibs: [], hidden: false, originalDeleted: false, createdAt: new Date(now),
     uploadedBy: s.by || s.uid, // quién sacó la foto (en el plan Empresas, el colaborador)
   };

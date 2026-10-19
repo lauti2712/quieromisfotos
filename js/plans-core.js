@@ -43,8 +43,9 @@ export function albumPhotoLimit(set, st, user) {
   return r.albumPhotos + (r.plan === 'free' ? 0 : (set?.extraPhotos || 0));
 }
 
-// Colaboradores que puede tener la cuenta (0 si su plan no es Empresas). teamExtraSeats: lugares extra que da el superadmin.
+// Colaboradores que puede tener la cuenta (0 si su plan no es Empresas).
+// teamExtraSeats: lugares que da el superadmin · teamPaidSeats: lugares que la empresa paga en su suscripción.
 export function teamSeats(user, st) {
   const r = rulesFor(user, st);
-  return r.team ? r.team + (user?.teamExtraSeats || 0) : 0;
+  return r.team ? r.team + (user?.teamExtraSeats || 0) + (user?.teamPaidSeats || 0) : 0;
 }

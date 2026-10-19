@@ -33,7 +33,9 @@ export async function subscribe(req, env) {
   // Premium: el primer cobro suma el registro del dominio (primer mes − mensual). MP no admite un primer cobro distinto:
   // la suscripción arranca con ese monto y, cuando se cobra, syncSubscription la baja al abono normal.
   const domainExtra = PLANS[plan].firstKey ? Math.max(0, (spec.first || 0) - spec.price) : 0;
-  const first = amount + domainExtra;
+  // Empresas: los lugares extra que ya pagaba siguen en el débito.
+  const seatAmount = plan === 'empresa' ? Math.max(0, user.teamPaidSeats || 0) * (spec.seatPrice || 0) * (yearly ? 12 : 1) : 0;
+  const first = amount + domainExtra + seatAmount;
 
   const fromStaging = req.headers.get('Origin') === 'https://prueba.quieromisfotos.com.ar';
   const back = `${fromStaging ? 'https://prueba.quieromisfotos.com.ar/panel.html' : panelUrl(env)}#/web?sub=1`;
@@ -49,7 +51,7 @@ export async function subscribe(req, env) {
     }),
   });
   const prev = await adminGet(env, `subscriptions/${claims.sub}`);
-  const attempt = { plan, period, amount, firstAmount: first, needsAdjust: first !== amount, payerEmail: email, preapprovalId: pre.id, createdAt: new Date() };
+  const attempt = { plan, period, amount, seatAmount, firstAmount: first, needsAdjust: first !== amount + seatAmount, payerEmail: email, preapprovalId: pre.id, createdAt: new Date() };
   if (prev?.preapprovalId && prev.status === 'authorized') {
     // Cambio de plan: la activa no se toca hasta que la nueva quede autorizada (si la abandona, sigue la de antes).
     if (prev.pending?.preapprovalId) await cancelPreapproval(env, prev.pending.preapprovalId);
@@ -105,7 +107,7 @@ export async function syncSubscription(env, uid) {
     // Ya se cobró el primer mes (más caro): de acá en adelante, el precio mensual.
     if (sub.needsAdjust && (pre.summarized?.charged_quantity || 0) >= 1) {
       await mpFetch(env.MP_ACCESS_TOKEN, `/preapproval/${encodeURIComponent(sub.preapprovalId)}`, {
-        method: 'PUT', body: JSON.stringify({ auto_recurring: { transaction_amount: sub.amount, currency_id: 'ARS' } }),
+        method: 'PUT', body: JSON.stringify({ auto_recurring: { transaction_amount: sub.amount + (sub.seatAmount || 0), currency_id: 'ARS' } }),
       }).then(() => { upd.needsAdjust = false; upd.amountAdjustedAt = new Date(); }).catch(e => console.error('ajuste de monto', e));
     }
   }
@@ -147,4 +149,34 @@ export async function syncDueSubscriptions(env) {
   const due = subs.filter(s => !s.syncedAt || Date.now() - s.syncedAt.getTime() > 20 * 3600_000)
     .sort((a, b) => (a.syncedAt?.getTime?.() || 0) - (b.syncedAt?.getTime?.() || 0)).slice(0, PER_RUN);
   for (const s of due) await syncSubscription(env, s.id).catch(e => console.error('sub sync', s.id, e));
+}
+
+// ------------------------------------------------------------------ plan Empresas: lugares extra del equipo
+// POST /team/seats {delta: 1|-1}  (Bearer empresa con suscripción activa): suma o quita un lugar y ajusta el débito mensual
+// (o anual: el lugar ×12). Los lugares pagos van en users.teamPaidSeats; los que da el superadmin, en teamExtraSeats.
+export async function changeSeats(req, env) {
+  const claims = await requireUser(req, env);
+  const { delta } = await req.json().catch(() => ({}));
+  if (delta !== 1 && delta !== -1) throw httpError(400, 'Pedido inválido');
+  const [user, sub, team, settings] = await Promise.all([adminGet(env, `users/${claims.sub}`), adminGet(env, `subscriptions/${claims.sub}`),
+    adminGet(env, `teams/${claims.sub}`), adminGet(env, 'settings/platform')]);
+  if (!user || user.plan !== 'empresa' || user.courtesy) throw httpError(409, 'Los lugares extra se suman con el plan Empresas pago. Escribinos si tenés un plan de cortesía.');
+  if (!sub?.preapprovalId || sub.status !== 'authorized' || sub.plan !== 'empresa') throw httpError(409, 'Necesitás la suscripción al plan Empresas activa en Mercado Pago.');
+  const spec = planSpec('empresa', settings || {});
+  const paid = Math.max(0, user.teamPaidSeats || 0);
+  const next = paid + delta;
+  if (next < 0) throw httpError(409, 'No tenés lugares extra para quitar');
+  if (next > 50) throw httpError(409, 'Escribinos para equipos de más de 50 fotógrafos');
+  const seats = spec.team + (user.teamExtraSeats || 0) + next;
+  if ((team?.members || []).length > seats) throw httpError(409, 'Primero sacá a un fotógrafo del equipo para liberar el lugar');
+  const seatAmount = next * spec.seatPrice * (sub.period === 'year' ? 12 : 1);
+  // Mientras no se cobró el primer pago (más caro por el dominio), el débito sigue en ese monto + los lugares.
+  const baseFirst = (sub.firstAmount || sub.amount) - (sub.seatAmount || 0);
+  const amount = (sub.needsAdjust ? baseFirst : sub.amount) + seatAmount;
+  await mpFetch(env.MP_ACCESS_TOKEN, `/preapproval/${encodeURIComponent(sub.preapprovalId)}`, {
+    method: 'PUT', body: JSON.stringify({ auto_recurring: { transaction_amount: amount, currency_id: 'ARS' } }),
+  });
+  await adminUpdate(env, `subscriptions/${claims.sub}`, { seatAmount, paidSeats: next, seatsChangedAt: new Date(), ...(sub.needsAdjust ? { firstAmount: baseFirst + seatAmount } : {}) });
+  await adminUpdate(env, `users/${claims.sub}`, { teamPaidSeats: next });
+  return json({ ok: true, paidSeats: next, seats, amount });
 }

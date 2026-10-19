@@ -110,7 +110,8 @@ export function createUploader({ eventId, uid, team = '', wm, logo = null, optim
     const failed = items.filter(i => i.status === 'error').length;
     const bytes = items.reduce((a, i) => a + i.file.size, 0);
     const sent = items.reduce((a, i) => a + (i.status === 'done' ? i.file.size : i.loaded || 0), 0);
-    return { items, total, done, failed, active: total - done - failed, pct: bytes ? Math.round((sent / bytes) * 100) : 0 };
+    const noTime = items.filter(i => i.status === 'done' && i.noTime).length; // subidas sin la hora de la cámara
+    return { items, total, done, failed, noTime, active: total - done - failed, pct: bytes ? Math.round((sent / bytes) * 100) : 0 };
   }
 
   async function runItem(it) {
@@ -134,11 +135,11 @@ export function createUploader({ eventId, uid, team = '', wm, logo = null, optim
 
     // El Worker registra la foto: suma al álbum, fija el vencimiento con la primera y controla el tope del plan.
     const c = await postWithToken(`/photos/${eventId}/${pid}`, {
-      subalbumId: it.subalbumId || '', width: r.width, height: r.height, takenAt: r.takenAt,
+      subalbumId: it.subalbumId || '', width: r.width, height: r.height, takenAt: r.takenAt, takenAtExact: r.takenAtExact,
       fileName: it.file.name.slice(0, 120), fileBytes: it.file.size,
     }, s.token);
     const photo = c.photo ? { ...c.photo, takenAt: Timestamp.fromMillis(c.photo.takenAt) } : null;
-    it.status = 'done'; it.loaded = it.file.size;
+    it.status = 'done'; it.loaded = it.file.size; it.noTime = !r.takenAtExact;
     if (photo) onPhoto?.({ id: pid, ...photo }, c.expiresAt);
     // Dorsales: en segundo plano; si falla, la foto queda igual (se pueden cargar a mano).
     if (r.scan) putBlob(`/bibs/${eventId}/${pid}`, r.scan, s.token).then(res => onBibs?.(pid, res.bibs || [])).catch(e => console.warn('dorsales', e));
