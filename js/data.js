@@ -138,22 +138,8 @@ export const feePercentFor = (user, settings) => rulesFor(user, settings).fee;
 // Álbum activo: tiene fotos y todavía guarda los originales (en venta o en los días de gracia).
 export const setActive = set => !!set && (set.photoCount || 0) > 0 && !set.originalsDeleted && (!setDeleteAt(set) || setDeleteAt(set) > Date.now());
 
-// Qué incluye cada plan (planes nuevos): mismo texto en "Soy fotógrafo" y en el panel.
-export function planFeatures(id, st) {
-  const p = planSpec(id, st);
-  const fee = `Comisión ${String(p.fee).replace('.', ',')}% por venta + la de Mercado Pago`;
-  const gb = `${p.albumPhotos.toLocaleString('es-AR')} fotos por álbum`;
-  const days = `Cada álbum se vende ${p.days} días`;
-  if (id === 'free') return ['Vendé tus fotos en eventos', '1 álbum activo a la vez', `Hasta ${gb}`, days, `Portfolio de ${p.portfolio} fotos`, 'Estadísticas básicas', fee];
-  if (id === 'lite') return ['Álbumes ilimitados', `${gb} (ampliable)`, days, `Portfolio de ${p.portfolio} fotos`, 'Estadísticas por evento', 'Foto de portada en tu perfil',
-    ...(p.featured ? ['Destacado en el directorio'] : []), fee];
-  if (id === 'web') return ['Todo lo de Lite', `${gb} (ampliable)`, days, `Portfolio de ${p.portfolio} fotos`, 'Tu web: tunombre.quieromisfotos.com.ar',
-    'Fotos de tu web sin marca de agua', 'Links cortos para tus eventos', 'Estadísticas completas', ...(p.featured ? ['Destacado en el directorio'] : []), fee];
-  if (id === 'empresa') return ['Todo lo de Premium', `Equipo de ${p.team} fotógrafos (cada uno con su cuenta)`, 'Suben a tus álbumes; vos cobrás todo', 'Ventas por fotógrafo para liquidarles',
-    `${gb} (ampliable)`, days, `Lugar extra: ${'$'}${Number(p.seatPrice).toLocaleString('es-AR')}/mes`, fee];
-  return ['Todo lo de Profesional', 'Tu dominio .com.ar incluido (lo registramos y conectamos nosotros)', `${gb} (ampliable)`, days, `Portfolio de ${p.portfolio} fotos`,
-    ...(p.featured ? ['Destacado en el directorio'] : []), 'Estadísticas avanzadas', 'Atención prioritaria', fee];
-}
+// Qué incluye cada plan: en plans-core.js (lo usa también la página estática de Google, tools/build-seo.py).
+export { planFeatures } from './plans-core.js';
 
 // Dorsales: se leen solos en carreras (running, ciclismo, triatlón…). El fotógrafo lo puede cambiar en su álbum.
 const ENDURANCE = /run|marat|carrera|calle|ciclis|bici|mtb|rural|triat|duat|trail|aventura|aguas abiertas|nataci|cross/i;

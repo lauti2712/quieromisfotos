@@ -2,7 +2,7 @@
 #   /e/{eventId}/   /f/{slug}/   /eventos/   /fotografos/   sitemap.xml   robots.txt
 # Lee solo datos públicos de Firestore (mismas reglas que un visitante). Lo corre GitHub Actions cada hora.
 # Uso: python3 tools/build-seo.py
-import html, json, pathlib, re, shutil, urllib.request, datetime
+import html, json, pathlib, re, shutil, subprocess, urllib.request, datetime
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SITE = 'https://quieromisfotos.com.ar'
@@ -96,7 +96,7 @@ def page(title, desc, canonical, body, image=None, jsonld=None, redirect=None):
 </div></header>
 <main class="container">{body}</main>
 <footer class="site">Quiero Mis Fotos · Encontrá tu foto. Reviví tu momento.
-  <div class="foot-links"><a href="/#/arrepentimiento"><strong>Botón de arrepentimiento</strong></a> · <a href="/eventos/">Eventos</a> · <a href="/fotografos/">Fotógrafos</a> · <a href="/panel.html">Soy fotógrafo</a></div>
+  <div class="foot-links"><a href="/#/arrepentimiento"><strong>Botón de arrepentimiento</strong></a> · <a href="/eventos/">Eventos</a> · <a href="/fotografos/">Fotógrafos</a> · <a href="/soy-fotografo/">Soy fotógrafo</a></div>
   <div class="credit">Desarrollado por <a href="https://solucionescotidianas.com.ar" target="_blank" rel="noopener">Soluciones Cotidianas</a></div></footer>
 </body>
 </html>'''
@@ -197,7 +197,7 @@ for u in users.values():
     write(f'f/{slug}', page(title, desc, f'{SITE}/f/{slug}/', body, (pf[0]['url'] if pf else u.get('avatarUrl')), ld, redirect=app))
     urls.append((f'{SITE}/f/{slug}/', None))
     # Web personal (planes Web): también al sitemap
-    plan_ok = u.get('plan') in ('web', 'webdomain') and (u.get('proUntil') or '') > datetime.datetime.now(datetime.timezone.utc).isoformat()
+    plan_ok = u.get('plan') in ('web', 'webdomain', 'empresa') and (u.get('proUntil') or '') > datetime.datetime.now(datetime.timezone.utc).isoformat()
     if plan_ok:
         urls.append((f'https://{u["siteDomain"]}/' if u.get('domainActive') and u.get('siteDomain') else f'https://{slug}.quieromisfotos.com.ar/', None))
 
@@ -211,6 +211,69 @@ write('fotografos', page('Fotógrafos deportivos y de eventos · Quiero Mis Foto
                          '<h1>Fotógrafos</h1><p class="muted">Encontrá un fotógrafo y pedile presupuesto.</p><div class="dir-grid">' +
                          ''.join(f'<a class="dir-card" href="/f/{e(u["slug"])}/" style="text-decoration:none"><strong>{e(u.get("displayName"))}</strong><span class="muted small">{e(u.get("zone"))}</span></a>' for u in users.values() if u.get('slug')) +
                          '</div>'))
+
+# ---------------------------------------------------------------- "Soy fotógrafo" (para que Google la encuentre)
+# La del sitio (#/soy-fotografo) tiene animación y calculadora, pero Google no indexa rutas con #.
+# Precios y condiciones: los de Plataforma, con el mismo cálculo que el sitio (js/plans-core.js, vía node).
+st = get('settings/platform') or {}
+PLAN_IDS = [('free', 'Gratis'), ('lite', 'Profesional Lite'), ('web', 'Profesional'), ('webdomain', 'Profesional Premium'), ('empresa', 'Empresas')]
+js = ("import { planSpec, planFeatures } from './js/plans-core.js';"
+      "const st = JSON.parse(process.argv[1]);"
+      "console.log(JSON.stringify(Object.fromEntries(['free','lite','web','webdomain','empresa'].map(id => [id, { ...planSpec(id, st), items: planFeatures(id, st) }]))));")
+plans = json.loads(subprocess.check_output(['node', '--input-type=module', '-e', js, json.dumps(st, default=str)], cwd=ROOT))
+money = lambda n: '$' + f'{int(n):,}'.replace(',', '.')
+free_fee = str(plans['free']['fee']).replace('.', ',')
+FAQ = [
+    ('¿Cuánto cuesta vender fotos en Quiero Mis Fotos?', f'Podés empezar gratis: sin costo fijo, solo una comisión del {free_fee}% por venta más la comisión de Mercado Pago. Los planes pagos bajan la comisión y suman álbumes ilimitados, web propia y dominio.'),
+    ('¿Cómo cobro las fotos que vendo?', 'Cada venta se paga con Mercado Pago y la plata entra directo a tu cuenta. Vos elegís en Mercado Pago el plazo de acreditación: al instante o a más días, con menos comisión.'),
+    ('¿Qué deportes y eventos puedo subir?', 'Fútbol, rugby, hockey, básquet, vóley, running, maratones, ciclismo, triatlón, eventos escolares y cualquier evento deportivo o social donde la gente quiera sus fotos.'),
+    ('¿Tengo que poner la marca de agua a mano?', 'No. Subís las fotos y la plataforma les pone tu marca de agua, arma la galería y guarda los originales. El comprador descarga la foto en alta calidad y sin marca después de pagar.'),
+    ('¿Cómo encuentran sus fotos los deportistas?', 'Por evento, por horario y, en carreras, por número de dorsal: la plataforma lee los dorsales de las fotos. Vos compartís un link por evento en WhatsApp o Instagram.'),
+    ('¿Puedo subir desde el celular?', 'Sí. Subís cientos de fotos desde la compu o el celular, y si se corta la conexión la subida sigue sola.'),
+    ('¿Puedo poner mis propios precios?', 'Sí. Precio por foto, packs (por ejemplo 5 fotos a un precio menor) y precios distintos por álbum o por foto.'),
+]
+STEPS = [('📸', 'Subís las fotos', 'Desde la compu o el celular, de a cientos. Se ordenan solas por hora y las podés separar en sub-álbumes.'),
+         ('🪄', 'Nosotros las preparamos', 'Marca de agua automática, galería lista para compartir y originales guardados seguros.'),
+         ('🔗', 'Compartís el link', 'Un link por evento para el grupo del club, Instagram o WhatsApp, con la portada del evento.'),
+         ('💰', 'Cobrás directo', 'Cada venta entra a tu Mercado Pago y el comprador descarga sus fotos en alta calidad al instante.')]
+plan_cards = ''.join(f'''<div class="lp-plan{' hot' if pid == 'web' else ''}"><h3>{e(name)}</h3>
+  <div class="lp-price">{money(plans[pid]['price']) + '<small>/mes</small>' if plans[pid]['price'] else '$0'}</div>
+  {f'<p class="muted small">o {money(plans[pid]["year"])}/año</p>' if plans[pid].get('year') else ''}
+  <ul>{''.join(f'<li>{e(t)}</li>' for t in plans[pid]['items'])}</ul>
+  <a class="btn{' primary' if pid == 'web' else ''}" href="/panel.html?plan={pid}">{'Empezar gratis' if pid == 'free' else 'Quiero este plan'}</a></div>''' for pid, name in PLAN_IDS)
+soy_body = f'''<div class="lp">
+<section class="lp-hero"><div class="lp-hero-txt">
+  <h1>Vendé tus fotos de eventos deportivos online</h1>
+  <p>Quiero Mis Fotos es la plataforma para fotógrafos deportivos de Argentina: subís las fotos de tus partidos, torneos y carreras, y los deportistas las encuentran, las pagan con Mercado Pago y las descargan en alta calidad. Sin armar una web, sin mandar fotos una por una por WhatsApp y sin perseguir a nadie para cobrar.</p>
+  <div class="row"><a class="btn primary" href="/panel.html?plan=free">Crear mi cuenta gratis</a><a class="btn" href="/#/soy-fotografo">Ver la calculadora de ganancias</a></div>
+  <p class="muted small">Sin costo fijo para arrancar: solo una comisión del {free_fee}% cuando vendés, más la comisión de Mercado Pago.</p>
+</div></section>
+<section class="lp-sec"><h2>Cómo funciona</h2><div class="lp-steps">{''.join(f'<div class="lp-step"><span class="lp-n">{i + 1}</span><span class="lp-ic">{ic}</span><h3>{e(t)}</h3><p>{e(d)}</p></div>' for i, (ic, t, d) in enumerate(STEPS))}</div></section>
+<section class="lp-sec"><h2>Todo lo que necesitás para vender tus fotos</h2><ul>
+  <li><strong>Tus precios:</strong> por foto, packs y precios especiales; al comprador se le aplica solo la combinación más barata.</li>
+  <li><strong>Búsqueda por dorsal</strong> en carreras y filtro por horario: el deportista encuentra su foto rápido y compra más.</li>
+  <li><strong>Aviso de cada venta</strong> en tu celular y estadísticas de visitas y ventas por evento.</li>
+  <li><strong>Seguidores:</strong> la gente te sigue y le avisamos cuando subís fotos nuevas.</li>
+  <li><strong>Perfil y portfolio</strong> con botón de WhatsApp para que te pidan presupuesto.</li>
+  <li><strong>Tu propia web</strong> (tunombre.quieromisfotos.com.ar) o tu dominio .com.ar, con los planes Profesional.</li>
+  <li><strong>Plan Empresas</strong> para productoras y equipos de fotógrafos: cada uno sube a tus álbumes y vos cobrás todo.</li>
+</ul></section>
+<section class="lp-sec" id="planes"><h2>Planes para fotógrafos</h2><div class="lp-plans four">{plan_cards}</div>
+  <p class="muted small">A la comisión de cada plan se suma la de Mercado Pago, que depende del plazo de cobro que elijas. Los planes pagos se cobran por Mercado Pago y los cancelás cuando quieras.</p></section>
+<section class="lp-sec lp-faq"><h2>Preguntas frecuentes</h2>{''.join(f'<details><summary>{e(q)}</summary><p>{e(a)}</p></details>' for q, a in FAQ)}</section>
+<section class="lp-final"><h2>¿Arrancamos?</h2><p>Creá tu cuenta en un minuto, subí tu primer evento y compartí el link hoy mismo.</p>
+  <a class="btn primary" href="/panel.html?plan=free">Crear mi cuenta gratis</a></section>
+</div>'''
+soy_ld = [
+    {'@context': 'https://schema.org', '@type': 'FAQPage', 'mainEntity': [{'@type': 'Question', 'name': q, 'acceptedAnswer': {'@type': 'Answer', 'text': a}} for q, a in FAQ]},
+    {'@context': 'https://schema.org', '@type': 'Service', 'name': 'Venta de fotos deportivas online para fotógrafos', 'serviceType': 'Plataforma para vender fotos de eventos',
+     'areaServed': {'@type': 'Country', 'name': 'Argentina'}, 'provider': {'@type': 'Organization', 'name': 'Quiero Mis Fotos', 'url': SITE},
+     'offers': [{'@type': 'Offer', 'name': name, 'price': plans[pid]['price'], 'priceCurrency': 'ARS'} for pid, name in PLAN_IDS]},
+]
+write('soy-fotografo', page('Vendé tus fotos deportivas online · Plataforma para fotógrafos | Quiero Mis Fotos',
+                            f'Plataforma para fotógrafos deportivos en Argentina: subí las fotos de tus eventos, marca de agua automática, búsqueda por dorsal y cobro directo con Mercado Pago. Empezá gratis.',
+                            f'{SITE}/soy-fotografo/', soy_body, jsonld=soy_ld))
+urls.insert(1, (f'{SITE}/soy-fotografo/', None))
 
 today = datetime.date.today().isoformat()
 (ROOT / 'sitemap.xml').write_text('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
