@@ -1,5 +1,5 @@
 // Página del pedido: estado del pago en vivo y descarga de los originales.
-import { db, doc, onSnapshot } from './fb.js';
+import { db, doc, watchDoc } from './fb.js';
 import { $, $$, esc, fmtMoney, fmtTs, toast, errMsg } from './util.js';
 import { apiPost } from './api.js';
 import { cart } from './cart.js';
@@ -34,7 +34,7 @@ export async function renderOrder(app, orderId, query) {
   if (paymentId) { synced = true; sync(); }
 
   let first = true;
-  unsub = onSnapshot(doc(db, 'orders', orderId), snap => {
+  unsub = watchDoc(doc(db, 'orders', orderId), snap => {
     if (!snap.exists()) { app.innerHTML = '<div class="empty"><h2>Pedido no encontrado</h2></div>'; return; }
     const o = { id: snap.id, ...snap.data() };
     if (o.status === 'approved') o.items.forEach(i => cart.has(i.photoId) && cart.remove(i.photoId));

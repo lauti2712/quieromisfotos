@@ -1,8 +1,8 @@
 // Mantiene actualizados los navegadores abiertos:
 // - cada 5 min (y al volver a la pestaña) compara version.json con la versión cargada; si hay una nueva,
 //   recarga en el próximo cambio de pantalla o al volver a la pestaña (no interrumpe lo que está haciendo);
-// - el superadmin puede forzar la recarga de todos (settings/app.reloadAt) desde Plataforma.
-import { db, doc, onSnapshot } from './fb.js';
+// - el superadmin puede forzar la recarga de todos (settings/app.reloadAt) desde Plataforma: se mira en el mismo control.
+import { db, doc, getDoc } from './fb.js';
 import { toast } from './util.js';
 
 const current = document.querySelector('meta[name="app-version"]')?.content || '';
@@ -17,12 +17,23 @@ export function initRefresh({ busy = () => false } = {}) {
     u.searchParams.set('v', latest || Date.now().toString(36));
     location.replace(u.toString());
   };
+  let reloadAt;
+  const forced = async () => {
+    const at = (await getDoc(doc(db, 'settings', 'app')).catch(() => null))?.data()?.reloadAt?.toMillis?.() || 0;
+    const changed = reloadAt !== undefined && at && at !== reloadAt;
+    reloadAt = at;
+    if (!changed) return;
+    if (busy()) { toast('Hay una versión nueva. Recargá la página cuando termine la subida.'); return; }
+    toast('Actualizando a la versión nueva…');
+    setTimeout(reload, 2500);
+  };
   const check = async () => {
     try {
       const r = await fetch(`version.json?t=${Date.now()}`, { cache: 'no-store' });
       const { v } = await r.json();
       if (current && v && v !== current) { latest = v; pending = true; }
     } catch { /* sin conexión */ }
+    await forced();
   };
   setInterval(check, 5 * 60 * 1000);
   setTimeout(check, 20 * 1000);
@@ -31,14 +42,4 @@ export function initRefresh({ busy = () => false } = {}) {
     if (pending) reload(); else check();
   });
   window.addEventListener('hashchange', () => { if (pending) reload(); });
-
-  // Recarga forzada: se ignora la primera lectura (estado al abrir) y se reacciona solo a cambios posteriores.
-  let first = true;
-  onSnapshot(doc(db, 'settings', 'app'), s => {
-    if (first) { first = false; return; }
-    if (!s.data()?.reloadAt) return;
-    if (busy()) { toast('Hay una versión nueva. Recargá la página cuando termine la subida.'); return; }
-    toast('Actualizando a la versión nueva…');
-    setTimeout(reload, 2500);
-  }, () => {});
 }

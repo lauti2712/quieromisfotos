@@ -2195,7 +2195,7 @@ async function viewAdminConfig() {
   $('#view').innerHTML = `
     <h1>Configuración de la plataforma</h1>
     <div class="card row" style="justify-content:space-between">
-      <div><strong>Refrescar todos los dispositivos</strong><br><span class="muted small">Recarga el sitio y el panel en todos los navegadores abiertos (oficial y prueba). Los que están subiendo fotos ven un aviso y no se cortan.</span></div>
+      <div><strong>Refrescar todos los dispositivos</strong><br><span class="muted small">Recarga el sitio y el panel en todos los navegadores abiertos (oficial y prueba), en los próximos 5 minutos o cuando vuelvan a la pestaña. Los que están subiendo fotos ven un aviso y no se cortan.</span></div>
       <button class="btn" id="a-reload">🔄 Refrescar todos</button>
     </div>
     <div class="card stack" id="a-push"></div>
@@ -2277,7 +2277,7 @@ async function viewAdminConfig() {
   drawSuperPush();
   $('#a-reload').onclick = async () => {
     if (!confirm('¿Recargar el sitio en todos los dispositivos abiertos?')) return;
-    try { await setDoc(doc(db, 'settings', 'app'), { reloadAt: serverTimestamp() }, { merge: true }); toast('Listo: se están recargando'); }
+    try { await setDoc(doc(db, 'settings', 'app'), { reloadAt: serverTimestamp() }, { merge: true }); toast('Listo: se van a recargar en los próximos minutos'); }
     catch (err) { toast(errMsg(err), 'error'); }
   };
   $('#a-plan-add').onclick = () => { plans.push({ id: newId(), label: '', days: 30, price: 0 }); draw(); };

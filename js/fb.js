@@ -1,9 +1,12 @@
 // Inicialización de Firebase y re-export del SDK modular (CDN, sin build step).
+// Firestore "lite": cada lectura es un pedido HTTP directo, en paralelo. El SDK completo abre un canal en tiempo real
+// que en celulares tarda varios segundos en arrancar y manda las consultas en fila. Sin tiempo real: watchDoc consulta cada tanto.
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
-import { getFirestore, connectFirestoreEmulator } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+import { getFirestore, connectFirestoreEmulator, getDoc, getCount } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-lite.js';
 import { getAuth, connectAuthEmulator } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 
-export * from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+export * from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-lite.js';
+export { getCount as getCountFromServer };
 export * from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 
 const firebaseConfig = {
@@ -24,6 +27,21 @@ export const EMULATOR = location.hostname === 'localhost' && new URLSearchParams
 if (EMULATOR) {
   connectFirestoreEmulator(db, '127.0.0.1', 8085);
   connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+}
+
+// Reemplazo de onSnapshot para un documento: lo relee cada `every` ms y avisa solo cuando cambia. Devuelve la función para cortar.
+export function watchDoc(ref, onNext, onError = () => {}, every = 3000) {
+  let stop = false, last, timer;
+  const tick = async () => {
+    try {
+      const snap = await getDoc(ref);
+      const key = JSON.stringify(snap.exists() ? snap.data() : null);
+      if (!stop && key !== last) { last = key; onNext(snap); }
+    } catch (e) { if (!stop) onError(e); }
+    if (!stop) timer = setTimeout(tick, document.visibilityState === 'visible' ? every : every * 4);
+  };
+  tick();
+  return () => { stop = true; clearTimeout(timer); };
 }
 
 export const SUPERADMIN_EMAIL = 'lautarom87@gmail.com';
