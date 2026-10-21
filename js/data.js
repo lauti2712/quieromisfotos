@@ -84,26 +84,37 @@ let taxonomyPromise = null;
 
 // settings/tags es un snapshot desnormalizado de tagTypes + tags (1 sola lectura).
 // Lo regenera el superadmin cada vez que edita etiquetas.
+// Las etiquetas cambian poco: se guarda una copia en el navegador (hasta 1 día) y se usa al instante mientras
+// se trae la versión nueva para la próxima vez. force = siempre la del servidor (panel).
+const TAX_KEY = 'qmf-tax';
+const buildTax = d => {
+  const types = (d.types || []).slice().sort((a, b) => a.order - b.order);
+  const tags = (d.tags || []).slice().sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  return { types, tags, tagById: new Map(tags.map(t => [t.id, t])) };
+};
 export function loadTaxonomy(force = false) {
   if (!taxonomyPromise || force) {
-    taxonomyPromise = getDoc(doc(db, 'settings', 'tags')).then(snap => {
+    const fresh = getDoc(doc(db, 'settings', 'tags')).then(snap => {
       const d = snap.exists() ? snap.data() : {};
-      const types = (d.types || []).slice().sort((a, b) => a.order - b.order);
-      const tags = (d.tags || []).slice().sort((a, b) => a.name.localeCompare(b.name, 'es'));
-      const tagById = new Map(tags.map(t => [t.id, t]));
-      return { types, tags, tagById };
-    }).catch(() => ({ types: [], tags: [], tagById: new Map() }));
+      try { localStorage.setItem(TAX_KEY, JSON.stringify({ at: Date.now(), types: d.types || [], tags: d.tags || [] })); } catch { /* nada */ }
+      return buildTax(d);
+    });
+    let cached = null;
+    if (!force) try { const c = JSON.parse(localStorage.getItem(TAX_KEY) || 'null'); if (c && Date.now() - c.at < 86400_000) cached = buildTax(c); } catch { /* nada */ }
+    taxonomyPromise = cached ? (fresh.catch(() => {}), Promise.resolve(cached)) : fresh.catch(() => ({ types: [], tags: [], tagById: new Map() }));
   }
   return taxonomyPromise;
 }
 
-export async function loadSettings() {
-  try {
-    const snap = await getDoc(doc(db, 'settings', 'platform'));
-    return { ...DEFAULT_SETTINGS, ...(snap.exists() ? snap.data() : {}) };
-  } catch {
-    return { ...DEFAULT_SETTINGS };
+// Se pide una sola vez por carga de página (force = releer, p. ej. después de guardar en Plataforma).
+let settingsPromise = null;
+export function loadSettings(force = false) {
+  if (!settingsPromise || force) {
+    settingsPromise = getDoc(doc(db, 'settings', 'platform'))
+      .then(snap => ({ ...DEFAULT_SETTINGS, ...(snap.exists() ? snap.data() : {}) }))
+      .catch(() => { settingsPromise = null; return { ...DEFAULT_SETTINGS }; });
   }
+  return settingsPromise.then(st => ({ ...st }));
 }
 
 export function tagPills(tagIds, taxonomy, max = 99) {

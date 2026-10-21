@@ -83,12 +83,16 @@ onAuthStateChanged(auth, async user => {
   S.isSuper = user.email === SUPERADMIN_EMAIL && user.emailVerified;
   root.innerHTML = '<div class="spinner"></div>';
   try {
-    const snap = await getDoc(doc(db, 'users', user.uid));
+    // Todo a la vez: cada pedido es un viaje a Firestore.
+    const [snap, settings, tax, teams] = await Promise.all([
+      getDoc(doc(db, 'users', user.uid)), loadSettings(), loadTaxonomy(true),
+      loadMyTeams(user.uid), // empresas de las que es colaborador (plan Empresas)
+    ]);
     S.profile = snap.exists() ? snap.data() : null;
-    S.settings = await loadSettings();
+    S.settings = settings;
+    S.tax = tax;
+    S.teams = teams;
     if (S.isSuper) await seedPlatform();
-    S.tax = await loadTaxonomy(true);
-    S.teams = await loadMyTeams(user.uid); // empresas de las que es colaborador (plan Empresas)
   } catch (e) {
     root.innerHTML = `<div class="container"><div class="notice danger">${esc(errMsg(e))}</div></div>`;
     return;
@@ -2013,7 +2017,7 @@ async function viewAdminStorage() {
     if (clean.some(p => !(p.photos > 0) || !(p.price > 0))) return toast('Cada pack necesita cantidad de fotos y precio.', 'error');
     try {
       await setDoc(doc(db, 'settings', 'platform'), { optimizeOriginals: $('#lim-opt').checked, bibsEnabled: $('#lim-bibs').checked, storagePlans: clean, updatedAt: serverTimestamp() }, { merge: true });
-      S.settings = await loadSettings();
+      S.settings = await loadSettings(true);
       toast('Límite guardado');
     } catch (err) { toast(errMsg(err), 'error'); }
   };
@@ -2185,7 +2189,7 @@ async function drawSuperPush() {
 }
 
 async function viewAdminConfig() {
-  S.settings = await loadSettings();
+  S.settings = await loadSettings(true);
   const st = S.settings;
   let plans = (st.extensionPlans || []).map(p => ({ ...p }));
   $('#view').innerHTML = `
@@ -2289,7 +2293,7 @@ async function viewAdminConfig() {
         mpFeePlans: $$('#a-mp [data-mp]').map(i => ({ id: i.dataset.mp, label: i.dataset.label, percent: Math.round(Number(i.value) * 100) / 100 })),
         updatedAt: serverTimestamp(),
       }, { merge: true });
-      S.settings = await loadSettings();
+      S.settings = await loadSettings(true);
       toast('Configuración guardada');
     } catch (err) { toast(errMsg(err), 'error'); }
   };

@@ -12,10 +12,33 @@ css_v = ver(ROOT / 'css' / 'app.css')
 # Versión de la app: cambia con cualquier módulo o el CSS. Los navegadores abiertos la comparan con version.json.
 app_v = hashlib.sha1((json.dumps(imports, sort_keys=True) + css_v).encode()).hexdigest()[:10]
 (ROOT / 'version.json').write_text(json.dumps({'v': app_v}) + '\n')
-block = ('<!-- stamp:start -->\n  <meta name="app-version" content="' + app_v + '">\n  <script type="importmap">' + json.dumps({'imports': imports}, separators=(',', ':')) +
-         '</script>\n  <!-- stamp:end -->')
+# Precarga: todos los módulos que importa la página (de forma estática) se piden de entrada y en paralelo,
+# en vez de en cadena (cada import descubre el siguiente: 4 o 5 viajes seguidos en un celular).
+IMPORT_RE = re.compile(r'''^\s*(?:import|export)\b[^'"]*?from\s*['"]([^'"]+)['"]|^\s*import\s*['"]([^'"]+)['"]''', re.M)
+def graph(entry):
+    seen, todo, ext = [], [entry], []
+    while todo:
+        name = todo.pop(0)
+        if name in seen: continue
+        seen.append(name)
+        for m in IMPORT_RE.finditer((ROOT / 'js' / name).read_text()):
+            spec = m.group(1) or m.group(2)
+            if spec.startswith('http'):
+                if spec not in ext: ext.append(spec)
+            elif spec.startswith('./'): todo.append(spec[2:])
+    return seen, ext
+PRECONNECT = ['https://www.gstatic.com', 'https://firestore.googleapis.com', 'https://api.quieromisfotos.com.ar']
+def block_for(entry):
+    mods, ext = graph(entry)
+    pre = ''.join(f'\n  <link rel="preconnect" href="{u}" crossorigin>' for u in PRECONNECT)
+    pre += '\n  <link rel="preconnect" href="https://qmf-fotos.solucionescotidianas.com.ar">'  # fotos (R2 público)
+    pre += ''.join(f'\n  <link rel="modulepreload" href="js/{m}?v={ver(ROOT / "js" / m)}">' for m in mods)
+    pre += ''.join(f'\n  <link rel="modulepreload" href="{u}" crossorigin>' for u in ext)
+    return ('<!-- stamp:start -->\n  <meta name="app-version" content="' + app_v + '">\n  <script type="importmap">' + json.dumps({'imports': imports}, separators=(',', ':')) +
+            '</script>' + pre + '\n  <!-- stamp:end -->')
 
-for name in ('index.html', 'panel.html'):
+for name, entry in (('index.html', 'public.js'), ('panel.html', 'panel.js')):
+    block = block_for(entry)
     p = ROOT / name
     s = p.read_text()
     if '<!-- stamp:start -->' in s:
