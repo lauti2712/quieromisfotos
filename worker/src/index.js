@@ -36,6 +36,7 @@
 //                u/{uid}/{kind}-{rand}.jpg  (avatar/logo/portada)
 //   qmf-private: e/{eid}/{uid}/{pid}        (original, nunca público)
 
+import { activatePhotographer } from './approval.js';
 import { verifyIdToken, getDocAsUser } from './firebase.js';
 import { adminGet, adminGetMany, adminQuery } from './admin.js';
 import { isFree, albumPhotoLimit, setActive } from './plans.js';
@@ -140,6 +141,7 @@ async function route(req, env, ctx) {
   if (m === 'POST' && url.pathname === '/tags') return createTag(req, env);
   if (m === 'POST' && url.pathname === '/stats') return statsHit(req, env, ctx);
   if (m === 'POST' && url.pathname === '/team/invite') return teamInvite(req, env);
+  if (m === 'POST' && url.pathname === '/photographers/activate') return activatePhotographer(req, env);
   if (m === 'POST' && url.pathname === '/team/join') return teamJoin(req, env);
   if (m === 'POST' && url.pathname === '/team/remove') return teamRemove(req, env);
   if (m === 'POST' && url.pathname === '/team/events') return teamEvents(req, env);

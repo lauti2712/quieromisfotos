@@ -94,6 +94,7 @@ onAuthStateChanged(auth, async user => {
     return;
   }
   if (!S.profile) return renderOnboarding();
+  await autoApprove();
   updateRolePill();
   renderShell();
 });
@@ -167,7 +168,7 @@ function renderLogin() {
   $('#toggle-mode').onclick = () => {
     mode = mode === 'login' ? 'signup' : 'login';
     $('#a-title').textContent = mode === 'login' ? 'Ingresar' : 'Crear cuenta';
-    $('#a-sub').textContent = mode === 'login' ? 'Panel para fotógrafos de Quiero Mis Fotos.' : 'Registrate como fotógrafo. Un administrador aprueba tu cuenta.';
+    $('#a-sub').textContent = mode === 'login' ? 'Panel para fotógrafos de Quiero Mis Fotos.' : 'Registrate como fotógrafo.';
     $('#e-submit').textContent = mode === 'login' ? 'Ingresar' : 'Crear cuenta';
     $('#toggle-mode').textContent = mode === 'login' ? 'Crear cuenta nueva' : 'Ya tengo cuenta';
     $('#e-pass').autocomplete = mode === 'login' ? 'current-password' : 'new-password';
@@ -193,6 +194,17 @@ function renderLogin() {
   };
 }
 
+// Con la aprobación manual apagada (Plataforma → Fotógrafos), la cuenta pendiente se aprueba sola al entrar.
+async function autoApprove() {
+  if (S.isSuper || S.profile?.status !== 'pending' || !S.settings.autoApprove) return;
+  try {
+    const r = await apiPost('/photographers/activate');
+    if (r.status !== 'approved') return;
+    S.profile = (await getDoc(doc(db, 'users', S.user.uid))).data();
+    toast(r.trialDays ? `🎉 Tu cuenta está activa, con ${r.trialDays} días de Profesional gratis` : '🎉 Tu cuenta está activa');
+  } catch (e) { console.error('aprobación', e); }
+}
+
 // ================================================================ alta
 function renderOnboarding() {
   const u = S.user;
@@ -200,7 +212,7 @@ function renderOnboarding() {
   root.innerHTML = `
     <div class="container"><div class="auth-box card" style="max-width:520px">
       <h1>${S.isSuper ? 'Configurá tu perfil' : 'Registro de fotógrafo'}</h1>
-      <p class="muted">${S.isSuper ? 'Sos el superadmin de la plataforma.' : 'Completá tus datos. Después un administrador revisa y aprueba tu cuenta.'}</p>
+      <p class="muted">${S.isSuper ? 'Sos el superadmin de la plataforma.' : (S.settings.autoApprove ? 'Completá tus datos y empezá a vender.' : 'Completá tus datos. Después un administrador revisa y aprueba tu cuenta.')}</p>
       <form id="ob" class="stack">
         <label class="field">Nombre público<input type="text" id="ob-name" required maxlength="60" value="${esc(name)}" placeholder="Ej: Juan Pérez Fotografía"></label>
         <label class="field">Dirección de tu perfil
@@ -241,6 +253,7 @@ function renderOnboarding() {
       await b.commit();
       if (!u.displayName) updateProfile(u, { displayName }).catch(() => {});
       S.profile = (await getDoc(doc(db, 'users', u.uid))).data();
+      await autoApprove();
       updateRolePill();
       location.hash = S.isSuper ? '#/admin/fotografos' : '#/inicio';
       renderShell();
@@ -1571,11 +1584,26 @@ let photogTab = 'pending';
 async function viewAdminPhotographers() {
   const view = $('#view');
   const tabs = [['pending', 'Pendientes'], ['approved', 'Aprobados'], ['suspended', 'Suspendidos']];
+  const manual = !S.settings.autoApprove;
   view.innerHTML = `
     <h1>Fotógrafos</h1>
+    <div class="notice ${manual ? '' : 'warn'} row" style="justify-content:space-between;gap:8px">
+      <span>${manual ? '✋ <strong>Aprobación manual activada:</strong> cada fotógrafo nuevo espera que lo apruebes.' : '⚡ <strong>Aprobación manual desactivada:</strong> los fotógrafos nuevos se aprueban solos al crear la cuenta (te llega una alerta de cada uno).'}</span>
+      <button class="btn sm" id="ap-toggle">${manual ? 'Desactivar aprobación' : 'Activar aprobación'}</button>
+    </div>
     <div class="tabs">${tabs.map(([k, l]) => `<button class="chip ${photogTab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>
     <div class="card" id="pl"><div class="spinner"></div></div>`;
   $$('[data-tab]').forEach(b => b.onclick = () => { photogTab = b.dataset.tab; viewAdminPhotographers(); });
+  $('#ap-toggle').onclick = async () => {
+    const autoApprove = manual;
+    if (autoApprove && !confirm('¿Desactivar la aprobación? Los fotógrafos nuevos van a quedar aprobados solos y pueden publicar y vender enseguida. Los que ya están pendientes se aprueban la próxima vez que entren.')) return;
+    try {
+      await updateDoc(doc(db, 'settings', 'platform'), { autoApprove, updatedAt: serverTimestamp() });
+      S.settings.autoApprove = autoApprove;
+      toast(autoApprove ? 'Aprobación desactivada: los nuevos se aprueban solos' : 'Aprobación activada: los nuevos esperan tu aprobación');
+      viewAdminPhotographers();
+    } catch (e) { toast(errMsg(e), 'error'); }
+  };
 
   const snap = await getDocs(query(collection(db, 'users'), where('status', '==', photogTab)));
   const users = snap.docs.map(d => ({ uid: d.id, ...d.data() })).filter(u => u.role === 'photographer')
