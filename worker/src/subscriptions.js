@@ -5,6 +5,7 @@ import { adminGet, adminSet, adminUpdate, adminQuery } from './admin.js';
 import { requireUser } from './firebase.js';
 import { mpFetch, panelUrl } from './mp.js';
 import { json, httpError } from './http.js';
+import { notifySuper } from './push.js';
 import { planSpec } from '../../js/plans-core.js';
 
 // Premium cobra más el primer pago para cubrir el registro del dominio.
@@ -104,6 +105,15 @@ export async function syncSubscription(env, uid) {
       upd.previousPreapprovalId = null;
     }
     if (last) upd.lastPaidAt = new Date(last);
+    // Cobro nuevo de la membresía: aviso al superadmin (una vez por cobro).
+    if (last && last !== (sub.lastPaidAt?.getTime?.() || 0)) {
+      const amt = Math.round(pre.summarized?.last_charged_amount || sub.amount || 0);
+      await notifySuper(env, 'membership', {
+        title: `⭐ Pago de membresía: $${amt.toLocaleString('es-AR')}`,
+        body: `${user?.displayName || 'Un fotógrafo'} · plan ${PLANS[sub.plan]?.label || sub.plan}${sub.period === 'year' ? ' (anual)' : ''}`,
+        link: `${env.PANEL_URL || 'https://quieromisfotos.com.ar/panel.html'}#/admin/fotografos`,
+      });
+    }
     // Ya se cobró el primer mes (más caro): de acá en adelante, el precio mensual.
     if (sub.needsAdjust && (pre.summarized?.charged_quantity || 0) >= 1) {
       await mpFetch(env.MP_ACCESS_TOKEN, `/preapproval/${encodeURIComponent(sub.preapprovalId)}`, {

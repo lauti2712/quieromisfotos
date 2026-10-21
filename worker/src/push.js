@@ -34,10 +34,24 @@ export async function notifyUser(env, uid, { title, body, link }) {
 
 const SEND_PER_RUN = 30;
 
+// Avisos para el superadmin: registros, membresías, álbumes publicados y ventas. Cada tipo se apaga en Plataforma
+// (settings/platform.superPush.{tipo} = false). Le llegan a los dispositivos donde activó los avisos.
+let superUid = '';
+export async function notifySuper(env, kind, msg) {
+  try {
+    const st = await adminGet(env, 'settings/platform');
+    if (st?.superPush?.[kind] === false) return;
+    if (!superUid) superUid = (await adminQuery(env, 'users', { filters: [['role', '==', 'superadmin']], limit: 1 }))[0]?.id || '';
+    if (superUid) await notifyUser(env, superUid, msg);
+  } catch (e) { console.error('aviso superadmin', kind, e); }
+}
+
 export async function notifyFollowersOnce(env, eid, uid) {
   const [ev, ph] = await adminGetMany(env, [`events/${eid}`, `users/${uid}`]);
   if (!ev || ev.status !== 'published') return false; // en borrador: se reintenta en el escaneo diario
   await adminUpdate(env, `events/${eid}/sets/${uid}`, { followersNotifiedAt: new Date() });
+  const site0 = env.SITE_URL || 'https://quieromisfotos.com.ar/';
+  await notifySuper(env, 'album', { title: '📸 Se publicó un álbum', body: `${ph?.displayName || 'Un fotógrafo'} · ${ev.name || 'Evento'}`, link: `${site0}#/evento/${eid}?f=${uid}` });
   const [a, b] = await Promise.all([
     adminQuery(env, 'follows', { filters: [['events', 'array-contains', eid]], limit: 5000 }),
     adminQuery(env, 'follows', { filters: [['photographers', 'array-contains', uid]], limit: 5000 }),

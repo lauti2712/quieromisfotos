@@ -6,7 +6,7 @@ import { sellerToken, mpFetch, siteUrl } from './mp.js';
 import { signToken, verifyToken } from './tokens.js';
 import { json, httpError, apiUrl } from './http.js';
 import { extensionWebhook } from './extensions.js';
-import { notifyUser } from './push.js';
+import { notifyUser, notifySuper } from './push.js';
 import { feePercentFor, GRACE_DAYS } from './plans.js';
 import { subscriptionWebhook } from './subscriptions.js';
 import { addAlert } from './alerts.js';
@@ -189,6 +189,11 @@ async function applyPayment(env, orderId, order, payment) {
       body: `${order.eventName || 'Evento'} · $${Math.round(order.total || 0).toLocaleString('es-AR')}`,
       link: `${(env.PANEL_URL || 'https://quieromisfotos.com.ar/panel.html')}#/ventas`,
     }).catch(e => console.error('push', e));
+    await notifySuper(env, 'sale', {
+      title: `💰 Venta: ${n} foto${n === 1 ? '' : 's'} · $${Math.round(order.total || 0).toLocaleString('es-AR')}`,
+      body: `${order.photographerName || 'Fotógrafo'} · ${order.eventName || 'Evento'} · comisión $${Math.round(order.platformFee || 0).toLocaleString('es-AR')}`,
+      link: `${env.PANEL_URL || 'https://quieromisfotos.com.ar/panel.html'}#/admin/metricas`,
+    });
   } else if (upd.status === 'refunded' && order.status === 'approved') {
     await countSale(env, order, -1);
   }

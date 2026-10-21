@@ -196,7 +196,8 @@ function renderLogin() {
 
 // Con la aprobación manual apagada (Plataforma → Fotógrafos), la cuenta pendiente se aprueba sola al entrar.
 async function autoApprove() {
-  if (S.isSuper || S.profile?.status !== 'pending' || !S.settings.autoApprove) return;
+  // El Worker también avisa al superadmin del registro (una sola vez).
+  if (S.isSuper || S.profile?.status !== 'pending') return;
   try {
     const r = await apiPost('/photographers/activate');
     if (r.status !== 'approved') return;
@@ -2148,6 +2149,41 @@ function readPlanCfg() {
   });
   return out;
 }
+// Superadmin: avisos push de lo que pasa en la plataforma (registros, membresías, álbumes, ventas).
+const SUPER_PUSH = [
+  ['signup', '🆕 Se registra un fotógrafo'],
+  ['membership', '⭐ Un fotógrafo paga su membresía'],
+  ['album', '📸 Se publica un álbum'],
+  ['sale', '💰 Se vende una foto'],
+];
+async function drawSuperPush() {
+  const box = $('#a-push');
+  if (!box) return;
+  const sp = S.settings.superPush || {};
+  const avail = await pushAvailable();
+  box.innerHTML = `
+    <div class="row" style="justify-content:space-between">
+      <div><h2 style="margin:0 0 4px">🔔 Avisos para vos</h2>
+        <span class="muted small">${!avail ? (isIos() && !isStandalone() ? 'En iPhone, primero agregá el panel a la pantalla de inicio (Compartir → Agregar a inicio) y abrilo desde ese ícono.' : 'Este navegador no permite notificaciones.')
+          : pushOn() ? 'Activados en este dispositivo.' : pushBlocked() ? 'Bloqueaste las notificaciones de este sitio: habilitalas desde la configuración del navegador.' : 'Activalos en cada dispositivo donde quieras recibirlos.'}</span></div>
+      ${avail && !pushBlocked() ? (pushOn() ? '<button class="btn sm" id="sp-off">Desactivar en este dispositivo</button>' : '<button class="btn primary sm" id="sp-on">Activar en este dispositivo</button>') : ''}
+    </div>
+    <div class="stack" style="gap:6px">${SUPER_PUSH.map(([k, l]) => `<label class="check"><input type="checkbox" data-sp="${k}" ${sp[k] === false ? '' : 'checked'}> ${l}</label>`).join('')}</div>`;
+  $('#sp-on', box)?.addEventListener('click', async e => {
+    e.target.disabled = true;
+    try { await enablePush(S.user.uid); toast('🔔 Avisos activados en este dispositivo'); } catch (err) { toast(errMsg(err), 'error'); }
+    drawSuperPush();
+  });
+  $('#sp-off', box)?.addEventListener('click', async () => { await disablePush(S.user.uid).catch(() => {}); toast('Avisos desactivados en este dispositivo'); drawSuperPush(); });
+  $$('[data-sp]', box).forEach(cb => cb.onchange = async () => {
+    try {
+      await setDoc(doc(db, 'settings', 'platform'), { superPush: { [cb.dataset.sp]: cb.checked }, updatedAt: serverTimestamp() }, { merge: true });
+      S.settings.superPush = { ...(S.settings.superPush || {}), [cb.dataset.sp]: cb.checked };
+      toast('Guardado');
+    } catch (err) { toast(errMsg(err), 'error'); cb.checked = !cb.checked; }
+  });
+}
+
 async function viewAdminConfig() {
   S.settings = await loadSettings();
   const st = S.settings;
@@ -2158,6 +2194,7 @@ async function viewAdminConfig() {
       <div><strong>Refrescar todos los dispositivos</strong><br><span class="muted small">Recarga el sitio y el panel en todos los navegadores abiertos (oficial y prueba). Los que están subiendo fotos ven un aviso y no se cortan.</span></div>
       <button class="btn" id="a-reload">🔄 Refrescar todos</button>
     </div>
+    <div class="card stack" id="a-push"></div>
     <form id="acf">
       <div class="card stack">
         <h2 style="margin:0">Sitio público</h2>
@@ -2233,6 +2270,7 @@ async function viewAdminConfig() {
     $$('#a-plans [data-rm]').forEach(b => b.onclick = () => { plans.splice(+b.dataset.rm, 1); draw(); });
   };
   draw();
+  drawSuperPush();
   $('#a-reload').onclick = async () => {
     if (!confirm('¿Recargar el sitio en todos los dispositivos abiertos?')) return;
     try { await setDoc(doc(db, 'settings', 'app'), { reloadAt: serverTimestamp() }, { merge: true }); toast('Listo: se están recargando'); }
