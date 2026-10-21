@@ -19,6 +19,9 @@ const planInfo = st => {
 };
 
 export async function viewWeb(view, { uid, profile, settings }) {
+  // Viene de elegir un plan en "Soy fotógrafo": se abre directo la suscripción.
+  const elegir = parseHash().query.get('elegir');
+  if (elegir) history.replaceState(null, '', '#/web');
   // Vuelta de Mercado Pago después de suscribirse.
   if (parseHash().query.get('sub')) {
     history.replaceState(null, '', '#/web');
@@ -65,6 +68,7 @@ export async function viewWeb(view, { uid, profile, settings }) {
     <div id="web-config"></div>`;
 
   $$('[data-sub]').forEach(b => b.onclick = () => subscribeDialog(b.dataset.sub));
+  if (elegir && PLANS[elegir] && elegir !== 'free' && elegir !== plan && !subActive) subscribeDialog(elegir);
   $('#sub-cancel')?.addEventListener('click', async () => {
     if (!confirm(`¿Cancelar la suscripción? Tu plan sigue activo hasta el ${fmtTs(profile.proUntil)} y después vuelve a Gratis.`)) return;
     try { await apiPost('/plans/cancel'); toast('Suscripción cancelada'); viewWeb(view, { uid, profile, settings }); } catch (e) { toast(errMsg(e), 'error'); }
@@ -85,6 +89,7 @@ export async function viewWeb(view, { uid, profile, settings }) {
         <label class="field">Email de tu cuenta de Mercado Pago<input type="email" id="sub-email" value="${esc(auth.currentUser?.email || '')}" required>
           <span class="hint">Tiene que ser el mismo email con el que entrás a Mercado Pago para pagar.</span></label>
         ${plan !== 'free' ? '<p class="muted small" style="margin:0">Tu plan actual se cancela cuando se active el nuevo.</p>' : ''}
+        ${profile.status === 'pending' ? '<p class="muted small" style="margin:0">Mientras revisamos tu cuenta ya podés armar tu perfil, tu portfolio y tus precios.</p>' : ''}
       </div>
       <div class="dlg-foot"><button class="btn primary" id="sub-go">Suscribirme con Mercado Pago</button></div>`;
     document.body.appendChild(dlg);

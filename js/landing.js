@@ -54,7 +54,7 @@ export async function renderPhotographerLanding(app) {
           ${p.first ? `<p class="muted small">Primer mes ${fmtMoney(p.first)} (incluye el dominio)</p>` : ''}
           ${p.year ? `<p class="muted small">o ${fmtMoney(p.year)}/año (2 meses gratis)</p>` : ''}
           <ul>${p.items.map(t => `<li>${esc(t)}</li>`).join('')}</ul>
-          <a class="btn ${p.hot ? 'primary' : ''} lp-plan-cta" href="panel.html">${esc(p.cta)}</a>
+          <a class="btn ${p.hot ? 'primary' : ''} lp-plan-cta" href="panel.html?plan=${p.id}">${esc(p.cta)}</a>
         </div>`;
 
   app.innerHTML = `
@@ -69,10 +69,10 @@ export async function renderPhotographerLanding(app) {
         <h1>Vos sacá fotos.<br><span>Nosotros nos encargamos del resto.</span></h1>
         <p>Subí las fotos de tus partidos, torneos y carreras, y vendelas en alta calidad. Sin armar una web, sin mandar fotos una por una por WhatsApp y sin perseguir a nadie para cobrar.</p>
         <div class="row">
-          <a class="btn primary lp-cta" href="panel.html">Empezar gratis</a>
+          <a class="btn primary lp-cta" href="panel.html?plan=free">Empezar gratis</a>
           <a class="btn" href="#como-funciona" data-scroll>Ver cómo funciona</a>
         </div>
-        <p class="muted small">Sin costo fijo para arrancar: solo una comisión del ${esc(String(free))}% cuando vendés.</p>
+        <p class="muted small">Sin costo fijo para arrancar: solo una comisión del ${esc(String(free))}% cuando vendés, más la comisión de Mercado Pago.</p>
       </div>
       <div class="lp-stage" aria-hidden="true">
         <div class="lp-card">
@@ -98,7 +98,7 @@ export async function renderPhotographerLanding(app) {
     <section class="lp-sec lp-split">
       <div class="lp-box us reveal">
         <h3>🧰 De esto nos encargamos nosotros</h3>
-        <ul><li>Guardar tus fotos y los originales</li><li>La marca de agua en cada foto</li><li>La galería, los filtros y el carrito</li><li>El cobro y las descargas del comprador</li><li>Tu perfil, tu portfolio y tu web</li><li>Avisarle a tus seguidores</li></ul>
+        <ul><li>Guardar tus fotos y los originales</li><li>La marca de agua en cada foto</li><li>La galería y el carrito</li><li>El cobro y las descargas del comprador</li><li>Tu perfil, tu portfolio y tu web</li><li>Avisarle a tus seguidores</li></ul>
       </div>
       <div class="lp-box you reveal" style="--d:150ms">
         <h3>📷 Vos hacés lo que te apasiona</h3>
@@ -117,7 +117,7 @@ export async function renderPhotographerLanding(app) {
       <h2 class="reveal">Planes</h2>
       <div class="lp-plans four">${plans.map(planCard).join('')}
       </div>
-      <p class="muted small lp-note reveal">En todos los planes elegís quién paga la comisión: la absorbés vos o se le suma al comprador como costo de servicio. Los planes pagos se cobran por Mercado Pago y los cancelás cuando quieras.</p>
+      <p class="muted small lp-note reveal">A la comisión de cada plan se suma la de Mercado Pago, que depende del plazo de cobro que elijas en tu cuenta de MP. En todos los planes elegís quién paga la comisión de Quiero Mis Fotos: la absorbés vos o se le suma al comprador como costo de servicio. Los planes pagos se cobran por Mercado Pago y los cancelás cuando quieras.</p>
     </section>
 
     <section id="cuanto-te-queda" class="lp-sec">
@@ -155,7 +155,7 @@ export async function renderPhotographerLanding(app) {
     <section class="lp-final reveal">
       <h2>¿Arrancamos?</h2>
       <p>Creá tu cuenta en un minuto. Subí tu primer evento y compartí el link hoy mismo.</p>
-      <a class="btn primary lp-cta" href="panel.html">Crear mi cuenta gratis</a>
+      <a class="btn primary lp-cta" href="panel.html?plan=free">Crear mi cuenta gratis</a>
       <p class="small" style="margin-top:12px"><a href="panel.html">Ya tengo cuenta</a></p>
     </section>
   </div>`;

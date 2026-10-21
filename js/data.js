@@ -130,7 +130,7 @@ export const setActive = set => !!set && (set.photoCount || 0) > 0 && !set.origi
 // Qué incluye cada plan (planes nuevos): mismo texto en "Soy fotógrafo" y en el panel.
 export function planFeatures(id, st) {
   const p = planSpec(id, st);
-  const fee = `Comisión ${String(p.fee).replace('.', ',')}% por venta`;
+  const fee = `Comisión ${String(p.fee).replace('.', ',')}% por venta + la de Mercado Pago`;
   const gb = `${p.albumPhotos.toLocaleString('es-AR')} fotos por álbum`;
   const days = `Cada álbum se vende ${p.days} días`;
   if (id === 'free') return ['Vendé tus fotos en eventos', '1 álbum activo a la vez', `Hasta ${gb}`, days, `Portfolio de ${p.portfolio} fotos`, 'Estadísticas básicas', fee];

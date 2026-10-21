@@ -1,5 +1,5 @@
 // Compras: checkout (preferencia de MP con comisión), aviso de pago (webhook), sincronización y descargas.
-import { computeTotals } from '../../js/pricing.js';
+import { computeTotals, splitPhotos } from '../../js/pricing.js';
 import { adminGet, adminGetMany, adminSet, adminUpdate, adminQuery, adminCommit } from './admin.js';
 import { requireUser } from './firebase.js';
 import { sellerToken, mpFetch, siteUrl } from './mp.js';
@@ -54,7 +54,7 @@ export async function checkout(req, env) {
   const bad = photos.findIndex(p => !p || p.eventId !== eventId || p.photographerUid !== photographerUid || p.hidden || p.originalDeleted);
   if (bad >= 0) throw httpError(409, 'Alguna foto del carrito ya no está disponible. Quitala y probá de nuevo.');
 
-  const t = computeTotals({ count: ids.length, price: set.price, packs: set.packs, feeMode: set.feeMode, feePercent: feePercentFor(ph, settings) });
+  const t = computeTotals({ ...splitPhotos(photos, set.price), price: set.price, packs: set.packs, feeMode: set.feeMode, feePercent: feePercentFor(ph, settings) });
   // Mismo comprador, mismas fotos y mismo total con un pago todavía abierto: se reusa (evita pagar dos veces lo mismo).
   const key = [...ids].sort().join(',');
   const open = (await adminQuery(env, 'orders', { filters: [['buyerUid', '==', claims.sub], ['status', '==', 'pending']], limit: 30 }))

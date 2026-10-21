@@ -137,7 +137,11 @@ service cloud.firestore {
       allow create: if isSuper();
       allow update: if isSuper()
         || (signedIn() && (resource.data.photographerUid == uid() || resource.data.get('uploadedBy', '') == uid()) && changed().hasOnly(['subalbumId', 'hidden', 'bibs'])
-            && (!changed().hasAny(['bibs']) || (request.resource.data.bibs is list && request.resource.data.bibs.size() <= 20)));
+            && (!changed().hasAny(['bibs']) || (request.resource.data.bibs is list && request.resource.data.bibs.size() <= 20)))
+        // Precio especial por foto: solo el dueño del álbum (no los colaboradores).
+        || (signedIn() && resource.data.photographerUid == uid() && changed().hasOnly(['price', 'noPack'])
+            && request.resource.data.get('price', 0) is int && request.resource.data.get('price', 0) >= 0 && request.resource.data.get('price', 0) <= 10000000
+            && request.resource.data.get('noPack', false) is bool);
       allow delete: if isSuper();
     }
 

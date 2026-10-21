@@ -195,6 +195,10 @@ test('fotos: ocultas no son públicas; dueño mueve/oculta; otro no', async () =
   await assertFails(deleteDoc(doc(user('ana'), 'photos/v'))); // se borra por el Worker (controla ventas)
   await assertSucceeds(updateDoc(doc(user('ana'), 'photos/v'), { bibs: ['123', '45'] }));
   await assertFails(updateDoc(doc(user('ana'), 'photos/v'), { bibs: Array.from({ length: 21 }, (_, i) => String(i)) }));
+  await assertSucceeds(updateDoc(doc(user('ana'), 'photos/v'), { price: 5000, noPack: true }));
+  await assertFails(updateDoc(doc(user('ana'), 'photos/v'), { price: -1 }));
+  await assertFails(updateDoc(doc(user('ana'), 'photos/v'), { noPack: 'si' }));
+  await assertFails(updateDoc(doc(user('beto'), 'photos/v'), { price: 1 }));
 });
 
 test('set: contador, bytes, conteo por hora y vencimiento solo los escribe el Worker', async () => {
@@ -312,6 +316,7 @@ test('plan Empresas: el equipo lo maneja el Worker; el colaborador ve eventos de
   await assertSucceeds(getDoc(doc(user('beto'), 'photos/tb')));
   await assertFails(getDoc(doc(user('beto'), 'photos/ta')));
   await assertSucceeds(updateDoc(doc(user('beto'), 'photos/tb'), { hidden: false }));
+  await assertFails(updateDoc(doc(user('beto'), 'photos/tb'), { price: 100 })); // el colaborador no pone precios
   await assertFails(updateDoc(doc(user('beto'), 'photos/ta'), { hidden: false }));
   await assertFails(updateDoc(doc(user('beto'), 'photos/tb'), { photographerUid: 'beto' }));
   await assertSucceeds(getDocs(query(collection(user('beto'), 'photos'), where('eventId', '==', 'pub'), where('photographerUid', '==', 'ana'), where('uploadedBy', '==', 'beto'))));

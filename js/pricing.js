@@ -1,6 +1,7 @@
 // Cálculo de precios. Módulo puro: lo usan el frontend (carrito) y el Worker (checkout).
 //
 // Packs: el comprador paga siempre la combinación más barata de packs y fotos sueltas.
+// Fotos con precio propio (photo.price) o marcadas "fuera de packs" (photo.noPack) se cobran aparte, una por una.
 // Comisión (feePercent sobre el subtotal):
 //   absorb -> total = subtotal; la plataforma retiene el % del vendedor.
 //   buyer  -> se suma "costo de servicio" = subtotal × %; total = subtotal + costo.
@@ -39,8 +40,28 @@ export function bestPrice(count, unitPrice, packs = []) {
   return { count: n, subtotal, lines, savings: Math.max(0, n * unit - subtotal) };
 }
 
-export function computeTotals({ count, price, packs, feeMode, feePercent }) {
-  const b = bestPrice(count, price, packs);
+// Separa las fotos del carrito: las que entran en packs (count) y los precios de las que se cobran aparte (solo).
+export function splitPhotos(photos, unitPrice) {
+  const unit = Math.max(0, Math.round(Number(unitPrice) || 0));
+  const solo = [];
+  let count = 0;
+  for (const p of photos || []) {
+    if (p?.price > 0) solo.push(Math.round(p.price));
+    else if (p?.noPack) solo.push(unit);
+    else count++;
+  }
+  return { count, solo };
+}
+
+export function computeTotals({ count, price, packs, feeMode, feePercent, solo = [] }) {
+  const base = bestPrice(count, price, packs);
+  const unit = Math.max(0, Math.round(Number(price) || 0));
+  const extra = new Map();
+  for (const a of solo) extra.set(a, (extra.get(a) || 0) + 1);
+  const soloLines = [...extra].sort((x, y) => y[0] - x[0])
+    .map(([a, times]) => ({ label: a === unit ? 'Foto fuera de pack' : `Foto especial ($${a.toLocaleString('es-AR')} c/u)`, times, amount: a * times }));
+  const soloSum = solo.reduce((x, a) => x + a, 0);
+  const b = { ...base, count: base.count + solo.length, subtotal: base.subtotal + soloSum, lines: [...base.lines, ...soloLines] };
   const fee = Math.round((b.subtotal * (Number(feePercent) || 0)) / 100);
   const buyer = feeMode === 'buyer';
   return {

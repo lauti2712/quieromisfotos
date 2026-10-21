@@ -2,7 +2,7 @@
 import {
   db, collection, doc, getDoc, getDocs, query, where, orderBy, limit, startAfter, writeBatch, Timestamp,
 } from './fb.js';
-import { $, $$, esc, toast, errMsg, fmtBytes, setBytes } from './util.js';
+import { $, $$, esc, toast, errMsg, fmtBytes, setBytes, fmtMoney } from './util.js';
 import { createUploader, fileKey, interruptedUpload, clearInterrupted } from './uploader.js';
 import { uploadSession, postWithToken, loadLogoBitmap } from './api.js';
 import { DEFAULT_WATERMARK, wantsLogo } from './watermark.js';
@@ -59,6 +59,7 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
         <span class="muted small" id="ph-sel"></span>
         <span class="spacer" style="flex:1"></span>
         <select id="ph-move" style="width:auto" disabled><option value="-">Mover a…</option>${subOptions().replace('value=""', 'value="__none"')}</select>
+        ${team ? '' : '<button class="btn sm" id="ph-price" disabled title="Precio distinto o fuera de packs para las fotos elegidas">💲 Precio</button>'}
         <button class="btn sm" id="ph-bibs" disabled title="Corregir los dorsales de la foto seleccionada">🔢 Dorsales</button>
         <button class="btn sm" id="ph-hide" disabled>Ocultar</button>
         <button class="btn sm" id="ph-show" disabled>Mostrar</button>
@@ -114,7 +115,7 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
       <label class="ph ${p.hidden ? 'is-hidden' : ''} ${selected.has(p.id) ? 'sel' : ''}" data-id="${p.id}">
         <img src="${esc(p.thumbUrl)}" alt="" loading="lazy">
         <input type="checkbox" ${selected.has(p.id) ? 'checked' : ''}>
-        <span class="ph-meta">${p.hidden ? '<span class="pill warn">Oculta</span>' : ''}${subs.length ? `<span class="pill">${esc(subName(p.subalbumId))}</span>` : ''}${names && p.uploadedBy && p.uploadedBy !== uid ? `<span class="pill" title="La sacó">📷 ${esc(names[p.uploadedBy] || 'Ex miembro')}</span>` : ''}${(p.bibs || []).length ? `<span class="pill ok" title="Dorsales">#${p.bibs.map(esc).join(' #')}</span>` : ''}</span>
+        <span class="ph-meta">${p.hidden ? '<span class="pill warn">Oculta</span>' : ''}${subs.length ? `<span class="pill">${esc(subName(p.subalbumId))}</span>` : ''}${names && p.uploadedBy && p.uploadedBy !== uid ? `<span class="pill" title="La sacó">📷 ${esc(names[p.uploadedBy] || 'Ex miembro')}</span>` : ''}${p.price > 0 ? `<span class="pill accent" title="Precio especial, fuera de packs">💲 ${fmtMoney(p.price)}</span>` : p.noPack ? '<span class="pill accent">Fuera de packs</span>' : ''}${(p.bibs || []).length ? `<span class="pill ok" title="Dorsales">#${p.bibs.map(esc).join(' #')}</span>` : ''}</span>
       </label>`).join('') : '<div class="empty" style="grid-column:1/-1">Todavía no subiste fotos a este evento.</div>';
     $$('#ph-grid .ph input').forEach(cb => cb.onchange = () => {
       const id = cb.closest('.ph').dataset.id;
@@ -128,7 +129,7 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
   function tools() {
     const n = selected.size;
     $('#ph-sel').textContent = n ? `${n} seleccionada${n > 1 ? 's' : ''}` : '';
-    ['ph-move', 'ph-hide', 'ph-show', 'ph-del'].forEach(id => { $('#' + id).disabled = !n; });
+    ['ph-move', 'ph-hide', 'ph-show', 'ph-del', 'ph-price'].forEach(id => { if ($('#' + id)) $('#' + id).disabled = !n; });
     $('#ph-bibs').disabled = n !== 1;
     $('#ph-all').checked = n > 0 && n === photos.length;
   }
@@ -169,6 +170,34 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
     const list = [...new Set((v.match(/\d{1,6}/g) || []).map(n => String(parseInt(n, 10))).filter(n => n !== '0'))].slice(0, 20);
     bulkUpdate({ bibs: list }, list.length ? `Dorsales: ${list.join(', ')}` : 'Dorsales borrados');
   };
+  // Precio especial por foto: se cobra aparte del álbum y nunca entra en packs. Sin precio = el del álbum.
+  $('#ph-price')?.addEventListener('click', () => {
+    const first = photos.find(x => selected.has(x.id)) || {};
+    const n = selected.size;
+    const dlg = document.createElement('dialog');
+    dlg.innerHTML = `
+      <div class="dlg-head"><h2>Precio de ${n} foto${n > 1 ? 's' : ''}</h2><button class="btn ghost sm" data-close>✕</button></div>
+      <form class="dlg-body stack" id="pp-form">
+        <label class="field">Precio por foto<input type="number" id="pp-price" min="0" step="100" inputmode="numeric" value="${first.price > 0 ? first.price : ''}" placeholder="${set.price ? `Precio del álbum: ${set.price}` : ''}">
+          <span class="hint">Dejalo vacío para usar el precio del álbum${set.price ? ` (${fmtMoney(set.price)})` : ''}. Una foto con precio propio se cobra aparte y no entra en packs.</span></label>
+        <label class="check"><input type="checkbox" id="pp-nopack" ${first.noPack || first.price > 0 ? 'checked' : ''}> No incluir en packs</label>
+        <div class="row end"><button class="btn primary" type="submit">Guardar</button></div>
+      </form>`;
+    document.body.appendChild(dlg);
+    dlg.addEventListener('close', () => dlg.remove());
+    dlg.querySelector('[data-close]').onclick = () => dlg.close();
+    const price = dlg.querySelector('#pp-price'), nopack = dlg.querySelector('#pp-nopack');
+    const sync = () => { const has = Number(price.value) > 0; if (has) nopack.checked = true; nopack.disabled = has; };
+    price.oninput = sync; sync();
+    dlg.querySelector('#pp-form').onsubmit = e => {
+      e.preventDefault();
+      const v = Math.max(0, Math.round(Number(price.value) || 0));
+      dlg.close();
+      bulkUpdate({ price: v, noPack: v > 0 || nopack.checked },
+        v > 0 ? `Precio especial: ${fmtMoney(v)}` : nopack.checked ? 'Fuera de packs, con el precio del álbum' : 'Vuelven al precio del álbum');
+    };
+    dlg.showModal();
+  });
   $('#ph-hide').onclick = () => bulkUpdate({ hidden: true }, 'Fotos ocultas');
   $('#ph-show').onclick = () => bulkUpdate({ hidden: false }, 'Fotos visibles');
   $('#ph-del').onclick = async () => {

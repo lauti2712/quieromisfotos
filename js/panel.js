@@ -34,6 +34,15 @@ const myFee = () => feePercentFor(S.profile, S.settings);
 const myRules = () => rulesFor(S.profile, S.settings);
 
 initRefresh({ busy: uploadsInProgress });
+
+// Llegada desde "Soy fotógrafo" (panel.html?plan=…): se crea la cuenta y, si eligió un plan pago, se abre la suscripción.
+const WANT_KEY = 'qmf-want-plan';
+const wantParam = new URLSearchParams(location.search).get('plan');
+if (wantParam) {
+  try { sessionStorage.setItem(WANT_KEY, wantParam); } catch { /* nada */ }
+  history.replaceState(null, '', location.pathname + location.hash);
+}
+const wantedPlan = () => { try { return sessionStorage.getItem(WANT_KEY) || ''; } catch { return ''; } };
 initTheme();
 
 // Instalar el panel como app (Android/Chrome avisa con beforeinstallprompt; en iPhone se explica a mano).
@@ -163,6 +172,11 @@ function renderLogin() {
     $('#toggle-mode').textContent = mode === 'login' ? 'Crear cuenta nueva' : 'Ya tengo cuenta';
     $('#e-pass').autocomplete = mode === 'login' ? 'current-password' : 'new-password';
   };
+  const want = wantedPlan();
+  if (want) {
+    $('#toggle-mode').onclick();
+    if (PLANS[want] && want !== 'free') $('#a-sub').textContent = `Creá tu cuenta de fotógrafo y después pagás el plan ${PLANS[want].label} con Mercado Pago.`;
+  }
   $('#e-form').onsubmit = async e => {
     e.preventDefault();
     const email = $('#e-mail').value.trim(), pass = $('#e-pass').value;
@@ -302,6 +316,11 @@ function renderShell() {
   root.innerHTML = `${S.isSuper ? '<div id="alerts" class="alerts-bar"></div>' : ''}<div class="panel ${S.isSuper ? '' : 'has-tabs'}"><nav class="sidenav" id="nav"></nav><main id="view"></main></div>
     ${S.isSuper ? '' : '<nav class="tabbar" id="tabbar" aria-label="Secciones"></nav>'}`;
   document.body.classList.toggle('with-tabbar', !S.isSuper);
+  const want = wantedPlan();
+  if (want) {
+    try { sessionStorage.removeItem(WANT_KEY); } catch { /* nada */ }
+    if (!S.isSuper && PLANS[want] && want !== 'free' && want !== planOf(S.profile)) history.replaceState(null, '', `#/web?elegir=${want}`);
+  }
   window.onhashchange = route;
   route();
   if (S.isSuper) drawAlerts();
@@ -905,7 +924,26 @@ async function viewMp() {
     </div>
     <div class="card stack">
       <h2>¿Cuánto cobrás de cada venta?</h2>
-      <p class="muted" style="margin:0">Mercado Pago cobra una comisión que depende de cuándo querés tener la plata disponible. Elegí el plazo que tenés configurado en tu cuenta de MP (en Mercado Pago: <em>Tu negocio → Costos y cuotas</em>) para ver tu neto real.</p>
+      <p class="muted" style="margin:0">Mercado Pago cobra una comisión que depende de cuándo querés tener la plata disponible: si la querés al instante cobra más; si esperás unos días, menos. Ese plazo lo elegís vos en tu cuenta de Mercado Pago y vale para todas tus ventas online.</p>
+      <details class="mp-guide">
+        <summary><strong>📘 Cómo ver y cambiar el plazo en Mercado Pago</strong></summary>
+        <div class="stack small" style="margin-top:8px">
+          <div><strong>Desde la compu</strong> (mercadopago.com.ar)
+            <ol style="margin:4px 0 0 18px;padding:0">
+              <li>Entrá con tu cuenta, la misma que vinculaste acá.</li>
+              <li>En el menú, abrí <em>Tu negocio</em> → <em>Costos</em>.</li>
+              <li>Buscá la parte de cobros <em>online</em> (Checkout o link de pago).</li>
+              <li>Elegí el plazo: al instante o a más días, con menos comisión. Ahí mismo ves el porcentaje de cada opción.</li>
+            </ol></div>
+          <div><strong>Desde el celular</strong> (app de Mercado Pago)
+            <ol style="margin:4px 0 0 18px;padding:0">
+              <li>Tocá <em>Más</em> o tu perfil → <em>Tu negocio</em>.</li>
+              <li>Entrá a <em>Costos</em> y elegí el plazo de los cobros online.</li>
+            </ol></div>
+          <p class="muted" style="margin:0">Si no encontrás la opción, escribí <em>costos</em> en el buscador de ayuda de Mercado Pago. Mercado Pago a veces cambia los nombres de los menús.</p>
+          <p style="margin:0">✅ Cuando lo tengas, <strong>marcá abajo el mismo plazo</strong> para que tus ventas muestren lo que te queda de verdad.</p>
+        </div>
+      </details>
       <div class="stack" id="mp-plans">
         ${(S.settings.mpFeePlans || []).map(pl => `<label class="check"><input type="radio" name="mp-plan" value="${esc(pl.id)}" ${mpPlanOf(p, S.settings).id === pl.id ? 'checked' : ''}> ${esc(pl.label)} <span class="muted small">(${pl.percent}% con IVA)</span></label>`).join('')}
       </div>

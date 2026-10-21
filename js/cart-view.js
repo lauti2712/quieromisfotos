@@ -2,7 +2,7 @@
 import { db, doc, getDoc } from './fb.js';
 import { $, $$, esc, fmtMoney, fmtDate, toast, errMsg } from './util.js';
 import { cart } from './cart.js';
-import { computeTotals, bestPrice } from './pricing.js';
+import { computeTotals, bestPrice, splitPhotos } from './pricing.js';
 import { loadSettings, setForSale, feePercentFor } from './data.js';
 import { currentUser, openLogin } from './account.js';
 import { apiPost } from './api.js';
@@ -26,7 +26,9 @@ export async function renderCart(app) {
     const [ev, set, ph] = await Promise.all([
       cachedGet(`events/${g.eventId}`), cachedGet(`events/${g.eventId}/sets/${g.photographerUid}`), cachedGet(`users/${g.photographerUid}`),
     ]);
-    return { ...g, ev, set, ph };
+    // Precio propio o "fuera de packs" de cada foto (lo vuelve a calcular el Worker al pagar).
+    const photos = await Promise.all(g.items.map(i => cachedGet(`photos/${i.photoId}`)));
+    return { ...g, ev, set, ph, photos };
   }));
 
   app.innerHTML = `
@@ -75,8 +77,9 @@ function groupHtml(g, settings) {
     return `<section class="card stack">${head}<div class="notice warn">Estas fotos ya no están disponibles para compra.</div></section>`;
   }
 
-  const t = computeTotals({ count: n, price: g.set.price, packs: g.set.packs, feeMode: g.set.feeMode, feePercent: feePercentFor(g.ph, settings) });
-  const tip = nextPackTip(n, g.set);
+  const split = splitPhotos(g.photos, g.set.price);
+  const t = computeTotals({ ...split, price: g.set.price, packs: g.set.packs, feeMode: g.set.feeMode, feePercent: feePercentFor(g.ph, settings) });
+  const tip = nextPackTip(split.count, g.set);
   return `
     <section class="card stack">
       ${head}

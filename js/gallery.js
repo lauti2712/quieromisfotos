@@ -1,6 +1,6 @@
 // Galería pública de un evento: filtros por fotógrafo y sub-álbum, scroll infinito y visor.
 import { db, collection, getDocs, query, where, orderBy, limit, startAfter, Timestamp, getCountFromServer, doc, getDoc } from './fb.js';
-import { $, $$, esc, fmtMoney, toast, errMsg, todayIso, fmtDate } from './util.js';
+import { $, $$, esc, fmtMoney, toast, errMsg, todayIso, fmtDate, waLink } from './util.js';
 import { cart } from './cart.js';
 import { openViewer } from './viewer.js';
 import { setForSale, setUntil } from './data.js';
@@ -39,7 +39,10 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
   const expired = withPhotos.filter(p => !setForSale(sets.get(p.uid)) && setUntil(sets.get(p.uid)));
   const noPay = withPhotos.filter(p => setForSale(sets.get(p.uid)) && !canCharge(p.uid));
   box.innerHTML = `
-    ${expired.length ? `<div class="notice warn">${expired.length === withPhotos.length ? 'Las fotos de este evento' : `Las fotos de ${expired.map(p => esc(p.displayName)).join(', ')}`} ya no están a la venta (venció el plazo de disponibilidad).</div>` : ''}
+    ${expired.length ? `<div class="notice warn stack" style="gap:8px"><span>${expired.length === withPhotos.length ? 'Las fotos de este evento' : `Las fotos de ${expired.map(p => esc(p.displayName)).join(', ')}`} ya no están a la venta en la plataforma (venció el plazo de disponibilidad). Si querés alguna, escribile al fotógrafo: puede que todavía las tenga.</span>
+      <span class="row">${expired.map(p => { const u = byUid.get(p.uid); return u?.socials?.whatsapp
+        ? `<a class="btn sm primary" target="_blank" rel="noopener" href="${esc(waLink(u.socials.whatsapp, `¡Hola ${u.displayName || ''}! Vi tus fotos de "${ev.name}" en Quiero Mis Fotos y quería pedirte una.`))}">💬 Escribirle a ${esc(p.displayName)}</a>`
+        : u?.slug ? `<a class="btn sm" href="#/f/${esc(u.slug)}">Ver contacto de ${esc(p.displayName)}</a>` : ''; }).join('')}</span></div>` : ''}
     ${hasBibs ? `<form class="g-bib" id="g-bib" role="search">
       <label for="g-bib-in">🔢 Buscá tus fotos por número de dorsal</label>
       <div class="row"><input id="g-bib-in" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="Ej: 1234" autocomplete="off" value="${esc(state.bib)}">
@@ -164,6 +167,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
   function itemHtml(p, i) {
     return `<div class="g-item ${cart.has(p.id) ? 'in-cart' : ''}" data-i="${i}" data-id="${p.id}" role="button" tabindex="0" aria-label="Ver foto">
       <img src="${esc(p.thumbUrl)}" alt="" loading="lazy" decoding="async">
+      ${p.price > 0 ? `<span class="g-tag">${fmtMoney(p.price)}</span>` : ''}
       <button class="g-fav ${favs.has(p.id) ? 'on' : ''}" data-favi="${i}" aria-label="Favorita">${favs.has(p.id) ? '♥' : '♡'}</button>
       ${forSale(p.photographerUid) ? `<button class="g-add" data-add="${i}" aria-label="Agregar al carrito">${cart.has(p.id) ? '✓' : '+'}</button>` : ''}
     </div>`;
@@ -286,7 +290,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
     const inCart = cart.has(p.id);
     const fav = favs.has(p.id);
     el.innerHTML = `
-      <span class="small">📷 ${credit(p, ph)}${set.price ? ` · <strong>${fmtMoney(set.price)}</strong>` : ''}${packs ? `<br><span style="opacity:.75">Packs: ${packs}</span>` : ''}</span>
+      <span class="small">📷 ${credit(p, ph)}${set.price ? ` · <strong>${fmtMoney(p.price > 0 ? p.price : set.price)}</strong>` : ''}${p.price > 0 || p.noPack ? '<br><span style="opacity:.75">Esta foto no entra en packs</span>' : packs ? `<br><span style="opacity:.75">Packs: ${packs}</span>` : ''}</span>
       <span class="row">
         <button class="btn sm" id="lb-fav" title="Favorita">${fav ? '♥' : '♡'}</button>
         <button class="btn sm" id="lb-share" title="Compartir esta foto">🔗</button>
