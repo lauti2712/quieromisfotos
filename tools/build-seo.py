@@ -161,7 +161,13 @@ for ev in events:
           'eventStatus': 'https://schema.org/EventScheduled', 'eventAttendanceMode': 'https://schema.org/OfflineEventAttendanceMode',
           'location': {'@type': 'Place', 'name': ev.get('location') or 'Argentina', 'address': ev.get('location') or 'Argentina'},
           'image': [first_img] if first_img else [], 'description': desc, 'url': f'{SITE}/e/{ev["id"]}/',
-          'organizer': {'@type': 'Organization', 'name': 'Quiero Mis Fotos', 'url': SITE}}
+          'organizer': {'@type': 'Organization', 'name': 'Quiero Mis Fotos', 'url': SITE},
+          'endDate': ev.get('date'), 'performer': {'@type': 'PerformingGroup', 'name': f'Participantes de {name}'}}
+    # Oferta: las fotos del evento, desde el precio por foto más bajo entre los fotógrafos.
+    prices = [s.get('price') for s in (get(f'events/{ev["id"]}/sets/{u}') for u in ev.get('photographerUids') or []) if s and (s.get('price') or 0) > 0]
+    if prices:
+        ld['offers'] = {'@type': 'Offer', 'name': f'Fotos de {name}', 'price': min(prices), 'priceCurrency': 'ARS',
+                        'availability': 'https://schema.org/InStock', 'url': f'{SITE}/e/{ev["id"]}/', 'validFrom': ev.get('date')}
     write(f'e/{ev["id"]}', page(title, desc, f'{SITE}/e/{ev["id"]}/', body, first_img, ld, redirect=app))
     urls.append((f'{SITE}/e/{ev["id"]}/', ev.get('date')))
 
