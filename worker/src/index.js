@@ -20,6 +20,9 @@
 //   POST   /orders/{id}/sync           Bearer (comprador) {paymentId?}        consulta el pago a MP
 //   POST   /orders/{id}/checkout       Bearer (comprador)                     reintentar pago
 //   POST   /orders/{id}/downloads      Bearer (comprador)                     -> links de 15 min
+//   POST   /orders/{id}/mark-paid      Bearer (fotógrafo/superadmin)          transferencia recibida (a mano)
+//   POST   /fees/report  {amount}      Bearer (fotógrafo)                     avisa que pagó su saldo de comisiones (transfers.js)
+//   POST   /admin/fees/confirm         Bearer (superadmin)                    confirma/rechaza/registra un pago de comisiones
 //   GET    /dl/{token}                                                        descarga del original
 //   GET    /w/{slug}  ·  {slug}.quieromisfotos.com.ar  ·  dominio propio           web personal del fotógrafo (planes Web)
 //   POST   /admin/storage/scan         Bearer (superadmin)                    recalcula el uso de R2 (también corre a diario)
@@ -57,6 +60,7 @@ import { scanRequest, scanStorage } from './storage.js';
 import { runBackup, backupRequest } from './backup.js';
 import { costsRequest, checkCosts } from './costs.js';
 import { recentPayments } from './mptest.js';
+import { markPaid, reportFeePayment, confirmFeePayment, matchPendingTransfers } from './transfers.js';
 import { notifyFollowersOnce, drainPushQueue } from './push.js';
 import { extensionCheckout, extensionSync } from './extensions.js';
 import { subscribe, syncRequest, cancelSubscription, syncDueSubscriptions, changeSeats, platformAccount, adminSyncSubscription } from './subscriptions.js';
@@ -89,6 +93,7 @@ export default {
     if (event.cron === BACKUP_CRON) { ctx.waitUntil(runBackup(env)); return; }
     // Cada 5 minutos: avisos a seguidores y suscripciones (de a pocas). Una tarea por vez para no pasar el límite de pedidos.
     if (event.cron === PUSH_CRON) {
+      ctx.waitUntil(matchPendingTransfers(env).catch(e => console.error('transferencias', e)));
       ctx.waitUntil(drainPushQueue(env).catch(e => { console.error('push', e); return 99; })
         .then(sent => (sent > 5 ? null : syncDueSubscriptions(env))).catch(e => console.error('subs', e)));
       return;
@@ -160,6 +165,8 @@ async function route(req, env, ctx) {
   if (m === 'POST' && url.pathname === '/admin/storage/scan') return scanRequest(req, env);
   if (m === 'GET' && url.pathname === '/admin/costs') return costsRequest(req, env, ctx);
   if (m === 'POST' && url.pathname === '/admin/mp/recent') return recentPayments(req, env);
+  if (m === 'POST' && url.pathname === '/fees/report') return reportFeePayment(req, env);
+  if (m === 'POST' && url.pathname === '/admin/fees/confirm') return confirmFeePayment(req, env);
   if (m === 'POST' && url.pathname === '/admin/backup') return backupRequest(req, env);
   if (m === 'POST' && url.pathname === '/extensions/checkout') return extensionCheckout(req, env);
   if (m === 'POST' && url.pathname === '/plans/subscribe') return subscribe(req, env);
@@ -172,6 +179,7 @@ async function route(req, env, ctx) {
     if (parts[2] === 'sync') return syncOrder(req, env, parts[1]);
     if (parts[2] === 'checkout') return retryCheckout(req, env, parts[1]);
     if (parts[2] === 'downloads') return downloadLinks(req, env, parts[1]);
+    if (parts[2] === 'mark-paid') return markPaid(req, env, parts[1]);
   }
   if (m === 'GET' && parts[0] === 'dl' && parts.length === 2) return download(req, env, parts[1]);
   throw httpError(404, 'No encontrado');

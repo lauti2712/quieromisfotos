@@ -3,7 +3,7 @@ import { db, doc, getDoc } from './fb.js';
 import { $, $$, esc, fmtMoney, fmtDate, toast, errMsg } from './util.js';
 import { cart } from './cart.js';
 import { computeTotals, bestPrice, splitPhotos } from './pricing.js';
-import { loadSettings, setForSale, feePercentFor } from './data.js';
+import { loadSettings, setForSale, feePercentFor, planOf } from './data.js';
 import { currentUser, openLogin } from './account.js';
 import { apiPost } from './api.js';
 
@@ -38,12 +38,15 @@ export async function renderCart(app) {
 
   $$('[data-pay]', app).forEach(b => b.onclick = async () => {
     const g = groups.find(x => x.key === b.dataset.pay);
-    b.disabled = true; b.textContent = 'Preparando el pago…';
+    const transfer = b.dataset.method === 'transfer';
+    b.disabled = true; b.textContent = transfer ? 'Preparando…' : 'Preparando el pago…';
     try {
-      const { initPoint } = await apiPost('/checkout', {
+      const r = await apiPost('/checkout', {
         eventId: g.eventId, photographerUid: g.photographerUid, photoIds: g.items.map(i => i.photoId),
+        ...(transfer ? { method: 'transfer' } : {}),
       });
-      location.href = initPoint;
+      if (r.transfer) location.hash = `#/pedido/${r.orderId}`;
+      else location.href = r.initPoint;
     } catch (e) {
       b.disabled = false; b.textContent = 'Reintentar pago';
       toast(errMsg(e), 'error');
@@ -96,10 +99,17 @@ function groupHtml(g, settings) {
         ${g.ev.demo
           ? `<button class="btn primary" disabled>Pagar ${fmtMoney(t.total)}</button>`
           : currentUser()
-          ? `<span class="muted small">Pagás con Mercado Pago: tarjeta, débito o dinero en cuenta. Al pagar aceptás los <a href="terminos/" target="_blank">términos</a>.</span><button class="btn primary" data-pay="${g.key}">Pagar ${fmtMoney(t.total)}</button>`
+          ? `<span class="muted small">Pagás con Mercado Pago: tarjeta, débito o dinero en cuenta${transferOk(g.ph, settings) ? ', o por transferencia al alias del fotógrafo' : ''}. Al pagar aceptás los <a href="terminos/" target="_blank">términos</a>.</span>
+             ${transferOk(g.ph, settings) ? `<button class="btn" data-pay="${g.key}" data-method="transfer">🏦 Pagar por transferencia</button>` : ''}
+             <button class="btn primary" data-pay="${g.key}">Pagar ${fmtMoney(t.total)}</button>`
           : `<span class="muted small">Ingresá para comprar: tus fotos quedan siempre en Mis compras.</span><button class="btn primary" data-login>Ingresar para pagar</button>`}
       </div>
     </section>`;
+}
+
+// Cobro por transferencia: lo habilita el fotógrafo, su plan tiene que estar entre los elegidos en Plataforma y el superadmin no se lo bloqueó.
+function transferOk(ph, settings) {
+  return !!(ph?.transferOn && ph.transferAlias && !ph.transferBlocked && (settings.transfer?.plans || []).includes(planOf(ph)));
 }
 
 // Sugerencia: si agregando pocas fotos se llega a un pack que cuesta casi lo mismo.

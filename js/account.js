@@ -129,7 +129,7 @@ export function openLogin(reason = '') {
 
 // ---------------------------------------------------------------- Mi cuenta / Mis compras
 const STATUS = {
-  pending: ['Pago pendiente', 'warn'], approved: ['Pagado', 'ok'], rejected: ['Pago rechazado', 'danger'], refunded: ['Reembolsado', ''],
+  pending: ['Pago pendiente', 'warn'], approved: ['Pagado', 'ok'], rejected: ['Pago rechazado', 'danger'], refunded: ['Reembolsado', ''], expired: ['Transferencia vencida', 'danger'],
 };
 
 export async function renderAccount(app) {

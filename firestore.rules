@@ -62,11 +62,11 @@ service cloud.firestore {
             && request.resource.data.status == 'pending'
             && request.resource.data.mpConnected == false
             // el plan, la cortesía, el dominio y MP los asignan el superadmin o el Worker, nunca el alta
-            && !request.resource.data.keys().hasAny(['plan', 'proUntil', 'domainActive', 'siteDomain', 'domainSetup', 'trial', 'trialUsed', 'courtesy', 'demo', 'teamExtraSeats', 'teamPaidSeats', 'teamPublic', 'teamOf'])
+            && !request.resource.data.keys().hasAny(['transferBlocked', 'plan', 'proUntil', 'domainActive', 'siteDomain', 'domainSetup', 'trial', 'trialUsed', 'courtesy', 'demo', 'teamExtraSeats', 'teamPaidSeats', 'teamPublic', 'teamOf'])
             && request.resource.data.get('mpUserId', null) == null)
           || (isSuper() && request.resource.data.role == 'superadmin'));
       allow update: if isSuper() || (signedIn() && uid() == userId
-          && !changed().hasAny(['role', 'status', 'mpConnected', 'mpUserId', 'createdAt', 'plan', 'proUntil', 'domainActive', 'siteDomain', 'domainSetup', 'trial', 'trialUsed', 'courtesy', 'teamExtraSeats', 'teamPaidSeats', 'teamPublic', 'teamOf'])
+          && !changed().hasAny(['transferBlocked', 'role', 'status', 'mpConnected', 'mpUserId', 'createdAt', 'plan', 'proUntil', 'domainActive', 'siteDomain', 'domainSetup', 'trial', 'trialUsed', 'courtesy', 'teamExtraSeats', 'teamPaidSeats', 'teamPublic', 'teamOf'])
           && (!changed().hasAny(['slug']) || slugOwnedAfter(userId)));
       allow delete: if isSuper();
     }
@@ -262,6 +262,20 @@ service cloud.firestore {
       allow read: if isSuper() || (signedIn() && resource.data.buyerUid == uid());
       allow write: if false;
     }
+    // Cobro por transferencia: saldo de comisiones del fotógrafo y sus pagos (los escribe el Worker).
+    match /feeBalance/{owner} {
+      allow read: if isSuper() || (signedIn() && uid() == owner);
+      allow write: if false;
+    }
+    match /feePayments/{id} {
+      allow read: if isSuper() || (signedIn() && resource.data.uid == uid());
+      allow write: if false;
+    }
+    // Datos bancarios de la plataforma (para que los fotógrafos paguen su saldo de comisiones).
+    match /platformPrivate/{id} {
+      allow read: if isSuper() || isActivePhotographer();
+      allow write: if isSuper();
+    }
     match /orders/{id} {
       allow read: if isSuper() || (signedIn() && (resource.data.photographerUid == uid() || resource.data.buyerUid == uid()));
       allow write: if false;
@@ -287,7 +301,7 @@ service cloud.firestore {
 
     // Suscripción del fotógrafo a un plan (la escribe el Worker con Mercado Pago)
     match /subscriptions/{uid} {
-      allow read: if isSuper() || (signedIn() && uid() == uid);
+      allow read: if isSuper() || (signedIn() && uid() == owner);
       allow write: if false;
     }
 

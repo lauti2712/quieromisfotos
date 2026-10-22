@@ -44,12 +44,28 @@ export async function renderOrder(app, orderId, query) {
   }, err => { app.innerHTML = `<div class="notice danger">${esc(errMsg(err))}</div>`; });
 }
 
+// Datos para transferir: alias del fotógrafo y monto exacto (los centavos identifican el pedido).
+function transferBox(o) {
+  const amount = Number(o.transferAmount || 0);
+  const txt = amount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `<div class="card stack" style="margin:0;border:2px solid var(--accent)">
+    <div class="row" style="justify-content:space-between"><span>Alias</span><span class="row" style="gap:6px"><strong style="font-size:1.1rem">${esc(o.transferAlias)}</strong><button class="btn sm" data-copy="${esc(o.transferAlias)}">📋 Copiar</button></span></div>
+    ${o.transferHolder ? `<div class="row" style="justify-content:space-between"><span>Titular</span><span>${esc(o.transferHolder)}</span></div>` : ''}
+    <div class="row" style="justify-content:space-between"><span>Monto exacto</span><span class="row" style="gap:6px"><strong style="font-size:1.3rem">$ ${esc(txt)}</strong><button class="btn sm" data-copy="${esc(amount.toFixed(2).replace('.', ','))}">📋 Copiar</button></span></div>
+    <div class="notice warn small" style="margin:0">⚠️ Transferí <strong>exactamente $ ${esc(txt)}, con los centavos</strong>: así reconocemos tu pago automáticamente. Si mandás otro monto, el fotógrafo lo tiene que confirmar a mano.</div>
+    <div class="row end"><button class="btn primary" id="tr-done">✅ Ya transferí</button></div>
+  </div>`;
+}
+
 function draw(app, o) {
   const expired = o.downloadExpiresAt && o.downloadExpiresAt.toMillis() < Date.now();
   const head = {
     approved: ['✅ ¡Pago aprobado!', 'Ya podés descargar tus fotos en alta calidad, sin marca de agua.', 'ok'],
-    pending: ['⏳ Esperando la confirmación del pago', 'Esto suele tardar unos segundos. Esta página se actualiza sola.', 'warn'],
+    pending: o.payMethod === 'transfer'
+      ? ['🏦 Falta tu transferencia', `Transferí el monto exacto y se acredita solo en unos minutos. Tenés tiempo hasta el ${fmtTs(o.transferExpiresAt)}.`, 'warn']
+      : ['⏳ Esperando la confirmación del pago', 'Esto suele tardar unos segundos. Esta página se actualiza sola.', 'warn'],
     rejected: ['❌ El pago no se aprobó', 'Podés intentar de nuevo con otro medio de pago.', 'danger'],
+    expired: ['⌛ El plazo para transferir venció', 'Si ya transferiste, escribile al fotógrafo para que lo confirme. Si no, volvé a armar el pedido desde el evento.', 'danger'],
     refunded: ['↩️ Pago reembolsado', 'Este pedido fue reembolsado.', ''],
   }[o.status] || [o.status, '', ''];
 
@@ -74,7 +90,8 @@ function draw(app, o) {
             <span class="small">📱 En el celular se guardan en <em>Descargas</em> / <em>Archivos</em>. Para pasarlas a la galería: abrí la foto y tocá <em>Compartir → Guardar imagen</em>.</span>
           </div>`}
         <div class="row"><a class="btn sm" href="#/evento/${esc(o.eventId)}">📷 Ver más fotos del evento</a></div>` : ''}
-      ${o.status === 'rejected' || o.status === 'pending' ? `<div class="row end"><button class="btn ${o.status === 'rejected' ? 'primary' : ''}" id="retry">${o.status === 'rejected' ? 'Intentar de nuevo' : 'Volver a Mercado Pago'}</button></div>` : ''}
+      ${o.payMethod === 'transfer' && o.status === 'pending' ? transferBox(o) : ''}
+      ${o.payMethod !== 'transfer' && (o.status === 'rejected' || o.status === 'pending') ? `<div class="row end"><button class="btn ${o.status === 'rejected' ? 'primary' : ''}" id="retry">${o.status === 'rejected' ? 'Intentar de nuevo' : 'Volver a Mercado Pago'}</button></div>` : ''}
       <div class="order-grid">
         ${o.items.map((it, i) => `
           <div class="order-item">
@@ -84,6 +101,17 @@ function draw(app, o) {
       </div>
     </div>`;
 
+  $$('[data-copy]', app).forEach(b => b.onclick = async () => {
+    try { await navigator.clipboard.writeText(b.dataset.copy); toast('Copiado'); } catch { toast(b.dataset.copy); }
+  });
+  $('#tr-done')?.addEventListener('click', async e => {
+    e.target.disabled = true; e.target.textContent = 'Buscando tu transferencia…';
+    try {
+      const r = await apiPost(`/orders/${o.id}/sync`);
+      if (r.status !== 'approved') toast('Todavía no la vemos. A veces tarda unos minutos: esta página se actualiza sola.');
+    } catch (err) { toast(errMsg(err), 'error'); }
+    e.target.disabled = false; e.target.textContent = '✅ Ya transferí';
+  });
   $('#retry')?.addEventListener('click', async e => {
     e.target.disabled = true;
     try { const { initPoint } = await apiPost(`/orders/${o.id}/checkout`); location.href = initPoint; }

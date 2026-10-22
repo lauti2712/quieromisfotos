@@ -10,6 +10,7 @@ import { notifyUser, notifySuper } from './push.js';
 import { feePercentFor, GRACE_DAYS } from './plans.js';
 import { subscriptionWebhook } from './subscriptions.js';
 import { addAlert } from './alerts.js';
+import { createTransferOrder, syncTransferOrder } from './transfers.js';
 
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
 const MAX_ITEMS = 300;
@@ -25,7 +26,7 @@ export function setAvailableUntil(set) {
 }
 
 // El comprador descarga mientras exista el original (venta + gracia, con las extensiones), y como mínimo 7 días.
-function downloadUntil(paidAt, set) {
+export function downloadUntil(paidAt, set) {
   const until = setAvailableUntil(set);
   return Math.max(paidAt + DOWNLOAD_DAYS * 86400_000, until ? until + GRACE_DAYS * 86400_000 : 0);
 }
@@ -34,7 +35,7 @@ function downloadUntil(paidAt, set) {
 export async function checkout(req, env) {
   const claims = await requireUser(req, env);
   if (!claims.email) throw httpError(400, 'Tu cuenta necesita un email');
-  const { eventId, photographerUid, photoIds } = await req.json().catch(() => ({}));
+  const { eventId, photographerUid, photoIds, method } = await req.json().catch(() => ({}));
   const ids = [...new Set(Array.isArray(photoIds) ? photoIds : [])];
   if (!ID_RE.test(eventId || '') || !ID_RE.test(photographerUid || '') || !ids.length || ids.length > MAX_ITEMS || !ids.every(i => ID_RE.test(i))) {
     throw httpError(400, 'Pedido inválido');
@@ -55,6 +56,7 @@ export async function checkout(req, env) {
   if (bad >= 0) throw httpError(409, 'Alguna foto del carrito ya no está disponible. Quitala y probá de nuevo.');
 
   const t = computeTotals({ ...splitPhotos(photos, set.price), price: set.price, packs: set.packs, feeMode: set.feeMode, feePercent: feePercentFor(ph, settings) });
+  if (method === 'transfer') return json(await createTransferOrder(env, { claims, ev, ph, settings, photos, t, ids, photographerUid, eventId, orderId: newId() }));
   // Mismo comprador, mismas fotos y mismo total con un pago todavía abierto: se reusa (evita pagar dos veces lo mismo).
   const key = [...ids].sort().join(',');
   const open = (await adminQuery(env, 'orders', { filters: [['buyerUid', '==', claims.sub], ['status', '==', 'pending']], limit: 30 }))
@@ -168,6 +170,12 @@ async function applyPayment(env, orderId, order, payment) {
   } else if (order.status !== 'approved') {
     upd.status = status; // un pago rechazado no pisa uno aprobado
   }
+  return commitOrderUpdate(env, orderId, order, upd);
+}
+
+// Guarda el cambio de estado del pedido y, si pasó a aprobado (o se reembolsó), cuenta la venta y avisa.
+// Lo usan el pago con Mercado Pago y el cobro por transferencia (transfers.js).
+export async function commitOrderUpdate(env, orderId, order, upd) {
   const transition = (upd.status === 'approved' && order.status !== 'approved') || (upd.status === 'refunded' && order.status === 'approved');
   if (transition) {
     // El webhook y la sincronización pueden llegar a la vez: solo cuenta el que escribe primero.
@@ -182,6 +190,13 @@ async function applyPayment(env, orderId, order, payment) {
   // Contador de ventas del álbum (solo la primera vez que el pedido pasa a aprobado o se reembolsa).
   if (upd.status === 'approved' && order.status !== 'approved') {
     await countSale(env, order, 1);
+    // Transferencia: la plata llegó entera al fotógrafo; la comisión queda como saldo a pagar a la plataforma.
+    if (order.payMethod === 'transfer' && order.platformFee > 0) {
+      await adminCommit(env, [
+        { upsert: `feeBalance/${order.photographerUid}`, data: { updatedAt: new Date() } },
+        { inc: `feeBalance/${order.photographerUid}`, fields: { accrued: order.platformFee, orders: 1 } },
+      ]).catch(e => console.error('saldo comisión', e));
+    }
     // Aviso al fotógrafo en sus dispositivos.
     const n = order.count || 0;
     await notifyUser(env, order.photographerUid, {
@@ -235,6 +250,7 @@ export async function syncOrder(req, env, orderId) {
   const order = await adminGet(env, `orders/${orderId}`);
   if (!order || order.buyerUid !== claims.sub) throw httpError(404, 'Pedido no encontrado');
   if (order.status === 'approved') return json({ status: order.status });
+  if (order.payMethod === 'transfer') return json({ status: (await syncTransferOrder(env, { ...order, id: orderId })).status });
   const { paymentId } = await req.json().catch(() => ({}));
   const token = await sellerToken(env, order.photographerUid);
   let payment = null;

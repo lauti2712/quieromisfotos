@@ -112,6 +112,27 @@ test('solo superadmin escribe etiquetas y settings', async () => {
   await assertSucceeds(getDoc(doc(as(), 'settings/platform')));
 });
 
+test('transferencia: el fotógrafo no se desbloquea solo; saldos y pagos privados; datos bancarios solo para fotógrafos', async () => {
+  await env.withSecurityRulesDisabled(async ctx => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'feeBalance/ana'), { accrued: 100, paid: 0 });
+    await setDoc(doc(db, 'feePayments/p1'), { uid: 'ana', amount: 50, status: 'reported' });
+    await setDoc(doc(db, 'platformPrivate/feeBank'), { alias: 'qmf.alias' });
+  });
+  await assertFails(updateDoc(doc(user('ana'), 'users/ana'), { transferBlocked: false }));
+  await assertSucceeds(updateDoc(doc(user('ana'), 'users/ana'), { transferOn: true, transferAlias: 'ana.fotos' }));
+  await assertSucceeds(getDoc(doc(user('ana'), 'feeBalance/ana')));
+  await assertFails(getDoc(doc(user('beto'), 'feeBalance/ana')));
+  await assertFails(setDoc(doc(user('ana'), 'feeBalance/ana'), { accrued: 0, paid: 0 }));
+  await assertSucceeds(getDoc(doc(user('ana'), 'feePayments/p1')));
+  await assertFails(getDoc(doc(user('beto'), 'feePayments/p1')));
+  await assertSucceeds(getDoc(doc(user('ana'), 'platformPrivate/feeBank')));
+  await assertFails(getDoc(doc(as(), 'platformPrivate/feeBank')));
+  await assertFails(setDoc(doc(user('ana'), 'platformPrivate/feeBank'), { alias: 'trucho' }));
+  await assertSucceeds(setDoc(doc(as(SUPER), 'platformPrivate/feeBank'), { alias: 'qmf.alias' }));
+  await assertSucceeds(updateDoc(doc(as(SUPER), 'users/ana'), { transferBlocked: true }));
+});
+
 // ---------- eventos
 test('sin correo confirmado: crea borradores pero no publica ni se suma a eventos', async () => {
   const db = as({ uid: 'beto', token: { email: 'beto@x.com', email_verified: false } });

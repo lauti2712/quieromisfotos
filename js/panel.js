@@ -1038,6 +1038,7 @@ async function viewMp() {
       </div>
       <p class="muted small" style="margin:0">Te vamos a llevar a Mercado Pago para que autorices a Quiero Mis Fotos a cobrar en tu nombre. Nunca vemos tu contraseña.</p>
     </div>
+    <div class="card stack" id="mp-transfer"></div>
     <div class="card stack">
       <h2>¿Cuánto cobrás de cada venta?</h2>
       <p class="muted" style="margin:0">Mercado Pago cobra una comisión que depende de cuándo querés tener la plata disponible: si la querés al instante cobra más; si esperás unos días, menos. Ese plazo lo elegís vos en tu cuenta de Mercado Pago y vale para todas tus ventas online.</p>
@@ -1068,6 +1069,7 @@ async function viewMp() {
     </div>`;
   const drawNet = () => { $('#mp-net').innerHTML = breakdownHtml(p.defaults?.price || 0, p.defaults?.feeMode || 'absorb'); };
   drawNet();
+  drawTransferCard();
   $('#mp-plans').addEventListener('change', async e => {
     const mpReleasePlan = e.target.value;
     try { await updateDoc(doc(db, 'users', S.user.uid), { mpReleasePlan }); S.profile.mpReleasePlan = mpReleasePlan; drawNet(); toast('Plazo guardado'); }
@@ -1087,21 +1089,90 @@ async function viewMp() {
   });
 }
 
+// Cobro por transferencia: el comprador transfiere al alias del fotógrafo (sin comisión de MP). Se reconoce solo
+// por el monto con centavos; la comisión de la plataforma se acumula como saldo que el fotógrafo paga aparte.
+async function drawTransferCard() {
+  const box = $('#mp-transfer');
+  if (!box) return;
+  const p = S.profile, st = S.settings;
+  const plans = st.transfer?.plans || [];
+  if (!plans.length) { box.remove(); return; }
+  const allowed = plans.includes(planOf(p));
+  const [bal, pays, bank] = await Promise.all([
+    getDoc(doc(db, 'feeBalance', S.user.uid)).then(x => x.data() || {}).catch(() => ({})),
+    getDocs(query(collection(db, 'feePayments'), where('uid', '==', S.user.uid), limit(20))).then(x => x.docs.map(d => ({ id: d.id, ...d.data() }))).catch(() => []),
+    getDoc(doc(db, 'platformPrivate', 'feeBank')).then(x => x.data() || null).catch(() => null),
+  ]);
+  const owed = Math.max(0, Math.round(((bal.accrued || 0) - (bal.paid || 0)) * 100) / 100);
+  const reported = pays.filter(x => x.status === 'reported').reduce((a, x) => a + x.amount, 0);
+  pays.sort((a, b) => (b.reportedAt?.toMillis?.() || 0) - (a.reportedAt?.toMillis?.() || 0));
+  const PST = { reported: ['Por confirmar', 'warn'], confirmed: ['Confirmado', 'ok'], rejected: ['No encontrado', 'danger'] };
+  box.innerHTML = `
+    <h2 style="margin:0">🏦 Cobrar por transferencia</h2>
+    <p class="muted" style="margin:0">Tus clientes también pueden pagarte por transferencia a tu alias: <strong>no pagás la comisión de Mercado Pago</strong>. Cada pedido tiene un monto con centavos únicos (ej. $8.500,37) y se acredita solo cuando entra a tu Mercado Pago. La comisión de la plataforma (${myFee()}%) se va sumando a un saldo que nos pagás vos por transferencia.</p>
+    ${!allowed ? `<div class="notice">Disponible en los planes ${plans.map(id => `<strong>${esc(PLANS[id]?.label || id)}</strong>`).join(', ')}. <a href="#/web">Ver planes</a></div>`
+      : p.transferBlocked ? '<div class="notice warn">La plataforma desactivó el cobro por transferencia en tu cuenta. Escribinos por WhatsApp para reactivarlo.</div>'
+      : `${p.mpConnected ? '' : '<div class="notice warn small" style="margin:0">Vinculá tu Mercado Pago (arriba): lo usamos para reconocer las transferencias que te llegan.</div>'}
+      <label class="check"><input type="checkbox" id="tr-on" ${p.transferOn ? 'checked' : ''}> Ofrecer pago por transferencia en mis fotos</label>
+      <label class="field">Alias de tu Mercado Pago<input type="text" id="tr-alias" maxlength="40" value="${esc(p.transferAlias || '')}" placeholder="Ej: juan.fotos.mp"><span class="hint">Tiene que ser el alias de la <strong>misma cuenta de Mercado Pago</strong> que vinculaste; si no, no podemos ver los pagos.</span></label>
+      <label class="field">Titular (como aparece al transferir)<input type="text" id="tr-holder" maxlength="60" value="${esc(p.transferHolder || '')}" placeholder="Ej: Juan Pérez"></label>
+      <div><button class="btn primary" id="tr-save">Guardar</button></div>`}
+    ${(bal.accrued || pays.length) ? `<hr>
+      <h3 style="margin:0">Saldo de comisiones</h3>
+      <div class="row" style="justify-content:space-between"><span>Comisiones de ventas por transferencia${bal.orders ? ` (${bal.orders})` : ''}</span><strong>${fmtMoney(bal.accrued || 0)}</strong></div>
+      <div class="row" style="justify-content:space-between"><span>Pagado</span><strong>−${fmtMoney(bal.paid || 0)}</strong></div>
+      <div class="row" style="justify-content:space-between;font-size:1.1rem"><span>Debés</span><strong>${fmtMoney(owed)}</strong></div>
+      ${reported ? `<div class="notice small" style="margin:0">Avisaste pagos por ${fmtMoney(reported)} que estamos confirmando.</div>` : ''}
+      ${owed > 0 ? `${bank && (bank.alias || bank.cbu) ? `<div class="notice stack small" style="margin:0"><strong>Transferí a Quiero Mis Fotos:</strong>
+          ${bank.alias ? `<span>Alias: <strong>${esc(bank.alias)}</strong> <button class="btn sm" data-copyv="${esc(bank.alias)}">📋</button></span>` : ''}
+          ${bank.cbu ? `<span>CBU/CVU: <strong>${esc(bank.cbu)}</strong> <button class="btn sm" data-copyv="${esc(bank.cbu)}">📋</button></span>` : ''}
+          ${bank.holder ? `<span>Titular: ${esc(bank.holder)}${bank.cuit ? ` · CUIT ${esc(bank.cuit)}` : ''}</span>` : ''}
+          ${bank.bank ? `<span>${esc(bank.bank)}</span>` : ''}</div>` : '<div class="notice small" style="margin:0">Escribinos por WhatsApp y te pasamos los datos para pagar.</div>'}
+        <div class="row" style="align-items:flex-end"><label class="field" style="flex:1">Monto que transferiste<input type="number" id="fee-amount" min="1" step="0.01" value="${owed}"></label><button class="btn" id="fee-report">Avisar que pagué</button></div>` : ''}
+      ${pays.length ? `<div class="stack small">${pays.slice(0, 8).map(x => { const [l, c] = PST[x.status] || [x.status, '']; return `<div class="row" style="justify-content:space-between"><span>${esc(fmtTs(x.reportedAt))} · ${fmtMoney(x.amount)}</span><span class="pill ${c}">${l}</span></div>`; }).join('')}</div>` : ''}` : ''}`;
+  $('#tr-save')?.addEventListener('click', async e => {
+    const transferAlias = $('#tr-alias').value.trim(), transferHolder = $('#tr-holder').value.trim(), transferOn = $('#tr-on').checked;
+    if (transferOn && !/^[A-Za-z0-9.\-]{6,20}$/.test(transferAlias)) return toast('Revisá el alias: entre 6 y 20 letras, números, puntos o guiones.', 'error');
+    e.target.disabled = true;
+    try {
+      await updateDoc(doc(db, 'users', S.user.uid), { transferOn, transferAlias, transferHolder });
+      Object.assign(S.profile, { transferOn, transferAlias, transferHolder });
+      toast(transferOn ? 'Listo: tus clientes ya pueden pagarte por transferencia' : 'Guardado');
+    } catch (err) { toast(errMsg(err), 'error'); }
+    e.target.disabled = false;
+  });
+  $$('[data-copyv]', box).forEach(b => b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copyv); toast('Copiado'); } catch { toast(b.dataset.copyv); } });
+  $('#fee-report')?.addEventListener('click', async e => {
+    const amount = Number($('#fee-amount').value);
+    if (!(amount > 0)) return toast('Escribí el monto que transferiste.', 'error');
+    e.target.disabled = true;
+    try { await apiPost('/fees/report', { amount }); toast('¡Gracias! Lo confirmamos cuando veamos la transferencia.'); drawTransferCard(); }
+    catch (err) { e.target.disabled = false; toast(errMsg(err), 'error'); }
+  });
+}
+
 async function viewSales() {
   const snap = await getDocs(query(collection(db, 'orders'), where('photographerUid', '==', S.user.uid), orderBy('createdAt', 'desc'), limit(300)));
   const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   const paid = orders.filter(o => o.status === 'approved');
   const mpPct = mpPlanOf(S.profile, S.settings).percent;
-  const net = o => (o.total || 0) - (o.platformFee || 0) - Math.round(((o.total || 0) * mpPct) / 100);
+  // Transferencia: sin comisión de MP (la de la plataforma queda como saldo a pagar).
+  const net = o => (o.total || 0) - (o.platformFee || 0) - (o.payMethod === 'transfer' ? 0 : Math.round(((o.total || 0) * mpPct) / 100));
   const byEvent = new Map();
   for (const o of paid) {
     const e = byEvent.get(o.eventId) || { name: o.eventName, count: 0, photos: 0, total: 0, net: 0 };
     e.count++; e.photos += o.count || 0; e.total += o.total || 0; e.net += net(o);
     byEvent.set(o.eventId, e);
   }
-  const STATUS = { approved: ['Pagado', 'ok'], pending: ['Pendiente', 'warn'], rejected: ['Rechazado', 'danger'], refunded: ['Reembolsado', ''] };
+  const STATUS = { approved: ['Pagado', 'ok'], pending: ['Pendiente', 'warn'], rejected: ['Rechazado', 'danger'], refunded: ['Reembolsado', ''], expired: ['Vencido', 'danger'] };
+  const waiting = orders.filter(o => o.payMethod === 'transfer' && ['pending', 'expired'].includes(o.status));
   $('#view').innerHTML = `
     <h1>Ventas</h1>
+    ${waiting.length ? `<div class="card stack"><h2 style="margin:0">🏦 Transferencias por recibir</h2>
+      <p class="muted small" style="margin:0">Se acreditan solas cuando entra a tu Mercado Pago el monto exacto (con los centavos). Si te transfirieron otro monto o desde otra cuenta, confirmalo a mano.</p>
+      ${waiting.map(o => `<div class="item-row"><div class="grow"><strong>$ ${Number(o.transferAmount || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</strong> · ${esc(o.eventName)} · ${o.count} foto${o.count === 1 ? '' : 's'}<br>
+        <span class="muted small">${esc(fmtTs(o.createdAt))} · ${o.status === 'expired' ? 'venció el plazo' : `vence ${esc(fmtTs(o.transferExpiresAt))}`}</span></div>
+        <button class="btn sm ok" data-markpaid="${o.id}">Marcar como pagado</button></div>`).join('')}</div>` : ''}
     <div class="stats">
       <div class="stat"><span class="muted small">Ventas pagadas</span><strong>${paid.length}</strong></div>
       <div class="stat"><span class="muted small">Fotos vendidas</span><strong>${paid.reduce((a, o) => a + (o.count || 0), 0)}</strong></div>
@@ -1115,9 +1186,16 @@ async function viewSales() {
     <div class="card"><h2>Últimos pedidos</h2>
       ${orders.length ? `<div class="table-wrap"><table class="list">
         <tr><th>Fecha</th><th>Evento</th><th>Fotos</th><th>Total</th><th>Estado</th></tr>
-        ${orders.map(o => { const [l, c] = STATUS[o.status] || [o.status, '']; return `<tr><td>${esc(fmtTs(o.createdAt))}</td><td>${esc(o.eventName)}</td><td>${o.count}</td><td>${fmtMoney(o.total)}</td><td><span class="pill ${c}">${l}</span></td></tr>`; }).join('')}
+        ${orders.map(o => { const [l, c] = STATUS[o.status] || [o.status, '']; return `<tr><td>${esc(fmtTs(o.createdAt))}</td><td>${esc(o.eventName)}</td><td>${o.count}</td><td>${fmtMoney(o.total)}${o.payMethod === 'transfer' ? ' <span class="muted small">🏦</span>' : ''}</td><td><span class="pill ${c}">${l}</span></td></tr>`; }).join('')}
       </table></div>` : '<div class="empty">Todavía no tenés ventas.</div>'}
     </div>`;
+  $$('[data-markpaid]').forEach(b => b.onclick = async () => {
+    const o = waiting.find(x => x.id === b.dataset.markpaid);
+    if (!confirm(`¿Recibiste la transferencia de ${o.eventName}? El comprador va a poder descargar las fotos y la comisión de ${fmtMoney(o.platformFee || 0)} se suma a tu saldo.`)) return;
+    b.disabled = true;
+    try { await apiPost(`/orders/${o.id}/mark-paid`); toast('Listo: el comprador ya puede descargar'); route(); }
+    catch (e) { b.disabled = false; toast(errMsg(e), 'error'); }
+  });
 }
 
 // ================================================================ eventos (fotógrafo)
@@ -1717,6 +1795,14 @@ async function viewAdminPhotographers() {
     .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
   const privs = await Promise.all(users.map(u => getDoc(doc(db, 'userPrivate', u.uid)).then(s => s.data() || {}).catch(() => ({}))));
   const reqs = await Promise.all(users.map(u => getDoc(doc(db, 'planRequests', u.uid)).then(s => s.data() || null).catch(() => null)));
+  // Cobro por transferencia: saldos de comisiones y pagos avisados por confirmar.
+  const [balSnap, repSnap] = await Promise.all([
+    getDocs(collection(db, 'feeBalance')).catch(() => null),
+    getDocs(query(collection(db, 'feePayments'), where('status', '==', 'reported'))).catch(() => null),
+  ]);
+  const bals = new Map((balSnap?.docs || []).map(d => [d.id, d.data()]));
+  const reported = (repSnap?.docs || []).map(d => ({ id: d.id, ...d.data() }));
+  const owedOf = uid => { const b = bals.get(uid) || {}; return Math.max(0, Math.round(((b.accrued || 0) - (b.paid || 0)) * 100) / 100); };
   $('#pl').innerHTML = users.length ? users.map((u, i) => `
     <div class="item-row">
       ${avatarHtml(u)}
@@ -1742,6 +1828,7 @@ async function viewAdminPhotographers() {
           <button class="btn sm" data-courtesy="${u.uid}" title="Plan sin costo y sin vencimiento, hasta que lo quites">🎁 Cortesía</button>` : ''}
         ${isPro(u) ? `<button class="btn sm ghost" data-unpro="${u.uid}">Quitar plan</button>` : ''}
         <button class="btn sm ghost" data-subsync="${u.uid}" title="Revisa en Mercado Pago su suscripción y aplica el plan">🔄 Suscripción</button>
+        ${u.transferOn || bals.has(u.uid) || u.transferBlocked ? `<button class="btn sm ghost" data-fees="${u.uid}">🏦 Transferencia${owedOf(u.uid) ? ` · debe ${fmtMoney(owedOf(u.uid))}` : ''}${reported.some(r => r.uid === u.uid) ? ' · 🔔 avisó un pago' : ''}</button>` : ''}
         ${u.mpConnected ? `<button class="btn sm ghost" data-mprecent="${u.uid}" title="Prueba: cobros que ve el sistema en su Mercado Pago (para cobros por transferencia)">🧪 Cobros MP</button>` : ''}
         ${PLANS[planOf(u)]?.team ? `<button class="btn sm ghost" data-seats="${u.uid}" title="Lugares extra para su equipo (además de los del plan)">👥 Lugares extra: ${u.teamExtraSeats || 0}</button>` : ''}
         ${PLANS[planOf(u)]?.domain && u.site?.requestedDomain && !u.domainActive ? `<button class="btn sm ok" data-dom="${u.uid}">Activar dominio</button>` : ''}
@@ -1773,6 +1860,38 @@ async function viewAdminPhotographers() {
       toast(`${u.displayName}: plan ${PLANS[plan].label} de cortesía`);
       viewAdminPhotographers();
     } catch (e) { toast(errMsg(e), 'error'); }
+  });
+  // Cobro por transferencia de un fotógrafo: saldo, pagos avisados (confirmar / rechazar), registrar un pago y bloquear la opción.
+  $$('[data-fees]').forEach(b => b.onclick = () => {
+    const u = users.find(x => x.uid === b.dataset.fees);
+    const bal = bals.get(u.uid) || {};
+    const mine = reported.filter(r => r.uid === u.uid);
+    const dlg = openDialog(`Transferencia · ${u.displayName}`, `
+      <div class="stack">
+        <div>Estado: ${u.transferBlocked ? '<span class="pill danger">Bloqueada por vos</span>' : u.transferOn ? `<span class="pill ok">Activa</span> <span class="muted small">alias ${esc(u.transferAlias || '')}</span>` : '<span class="pill">Apagada por el fotógrafo</span>'}</div>
+        <div class="row" style="justify-content:space-between"><span>Comisiones acumuladas${bal.orders ? ` (${bal.orders} ventas)` : ''}</span><strong>${fmtMoney(bal.accrued || 0)}</strong></div>
+        <div class="row" style="justify-content:space-between"><span>Pagado</span><strong>−${fmtMoney(bal.paid || 0)}</strong></div>
+        <div class="row" style="justify-content:space-between;font-size:1.1rem"><span>Debe</span><strong>${fmtMoney(owedOf(u.uid))}</strong></div>
+        ${mine.length ? `<strong class="small">Pagos que avisó</strong>${mine.map(r => `<div class="item-row"><div class="grow">${fmtMoney(r.amount)} <span class="muted small">${esc(fmtTs(r.reportedAt))}${r.note ? ` · ${esc(r.note)}` : ''}</span></div>
+          <button class="btn sm ok" data-fconf="${r.id}">Confirmar</button><button class="btn sm ghost danger" data-frej="${r.id}">No llegó</button></div>`).join('')}` : ''}
+        <div class="row" style="align-items:flex-end"><label class="field" style="flex:1">Registrar un pago recibido<input type="number" id="f-amt" min="1" step="0.01" placeholder="Monto"></label><button class="btn" id="f-add">Registrar</button></div>
+      </div>`,
+      `<button class="btn ${u.transferBlocked ? 'ok' : 'danger'}" id="f-block">${u.transferBlocked ? 'Habilitar transferencia' : 'Bloquear transferencia'}</button>`);
+    const done = msg => { toast(msg); dlg.close(); viewAdminPhotographers(); };
+    $$('[data-fconf]', dlg).forEach(x => x.onclick = async () => { x.disabled = true; try { await apiPost('/admin/fees/confirm', { id: x.dataset.fconf }); done('Pago confirmado'); } catch (e) { x.disabled = false; toast(errMsg(e), 'error'); } });
+    $$('[data-frej]', dlg).forEach(x => x.onclick = async () => { if (!confirm('¿Marcar que este pago no llegó? Le avisamos al fotógrafo.')) return; x.disabled = true; try { await apiPost('/admin/fees/confirm', { id: x.dataset.frej, reject: true }); done('Marcado como no recibido'); } catch (e) { x.disabled = false; toast(errMsg(e), 'error'); } });
+    $('#f-add', dlg).onclick = async e => {
+      const amount = Number($('#f-amt', dlg).value);
+      if (!(amount > 0)) return toast('Escribí el monto.', 'error');
+      e.target.disabled = true;
+      try { await apiPost('/admin/fees/confirm', { uid: u.uid, amount }); done('Pago registrado'); } catch (err) { e.target.disabled = false; toast(errMsg(err), 'error'); }
+    };
+    $('#f-block', dlg).onclick = async e => {
+      const transferBlocked = !u.transferBlocked;
+      if (transferBlocked && !confirm(`¿Bloquear el cobro por transferencia de ${u.displayName}? Sus clientes solo van a poder pagar con Mercado Pago.`)) return;
+      e.target.disabled = true;
+      try { await updateDoc(doc(db, 'users', u.uid), { transferBlocked }); done(transferBlocked ? 'Transferencia bloqueada' : 'Transferencia habilitada'); } catch (err) { e.target.disabled = false; toast(errMsg(err), 'error'); }
+    };
   });
   // Prueba de cobros por transferencia: ¿las transferencias al CVU del fotógrafo aparecen en su lista de cobros?
   $$('[data-mprecent]').forEach(b => b.onclick = async () => {
@@ -2320,6 +2439,42 @@ const SUPER_PUSH = [
   ['sale', '💰 Se vende una foto'],
   ['costos', '🧾 Algún servicio pasa lo gratis (Firebase, Cloudflare): revisión diaria'],
 ];
+// Cobro por transferencia: qué planes lo tienen y los datos bancarios donde los fotógrafos pagan su saldo de comisiones.
+async function drawAdminTransfer() {
+  const box = $('#a-transfer');
+  if (!box) return;
+  const plans = S.settings.transfer?.plans || [];
+  const bank = (await getDoc(doc(db, 'platformPrivate', 'feeBank')).then(x => x.data()).catch(() => null)) || {};
+  box.innerHTML = `
+    <h2 style="margin:0">🏦 Cobro por transferencia</h2>
+    <p class="muted small" style="margin:0">El comprador transfiere al alias del fotógrafo (sin comisión de Mercado Pago) y se acredita solo. Tu comisión se acumula como saldo que el fotógrafo te paga a los datos de abajo; lo confirmás en Fotógrafos.</p>
+    <div class="stack" style="gap:6px"><strong class="small">Planes que pueden ofrecerlo</strong>
+      ${['lite', 'web', 'webdomain', 'empresa'].map(id => `<label class="check"><input type="checkbox" data-trplan="${id}" ${plans.includes(id) ? 'checked' : ''}> ${esc(PLANS[id]?.label || id)}</label>`).join('')}</div>
+    <strong class="small">Tus datos para que te paguen el saldo</strong>
+    <label class="field">Alias<input type="text" id="fb-alias" maxlength="40" value="${esc(bank.alias || '')}"></label>
+    <label class="field">CBU / CVU<input type="text" id="fb-cbu" maxlength="30" inputmode="numeric" value="${esc(bank.cbu || '')}"></label>
+    <label class="field">Titular<input type="text" id="fb-holder" maxlength="80" value="${esc(bank.holder || '')}"></label>
+    <label class="field">CUIT<input type="text" id="fb-cuit" maxlength="15" value="${esc(bank.cuit || '')}"></label>
+    <label class="field">Banco o billetera<input type="text" id="fb-bank" maxlength="60" value="${esc(bank.bank || '')}" placeholder="Ej: Mercado Pago"></label>
+    <p class="muted small" style="margin:0">Estos datos solo los ven los fotógrafos registrados.</p>
+    <div><button class="btn primary" id="fb-save">Guardar</button></div>`;
+  $('#fb-save', box).onclick = async e => {
+    const plansOn = $$('[data-trplan]', box).filter(c => c.checked).map(c => c.dataset.trplan);
+    const data = { alias: $('#fb-alias').value.trim(), cbu: $('#fb-cbu').value.replace(/\s/g, ''), holder: $('#fb-holder').value.trim(), cuit: $('#fb-cuit').value.trim(), bank: $('#fb-bank').value.trim(), updatedAt: serverTimestamp() };
+    if (plansOn.length && !data.alias && !data.cbu) return toast('Cargá tu alias o CBU para que los fotógrafos te puedan pagar.', 'error');
+    e.target.disabled = true;
+    try {
+      await Promise.all([
+        setDoc(doc(db, 'platformPrivate', 'feeBank'), data),
+        setDoc(doc(db, 'settings', 'platform'), { transfer: { plans: plansOn }, updatedAt: serverTimestamp() }, { merge: true }),
+      ]);
+      S.settings.transfer = { ...(S.settings.transfer || {}), plans: plansOn };
+      toast('Guardado');
+    } catch (err) { toast(errMsg(err), 'error'); }
+    e.target.disabled = false;
+  };
+}
+
 async function drawSuperPush() {
   const box = $('#a-push');
   if (!box) return;
@@ -2359,6 +2514,7 @@ async function viewAdminConfig() {
       <button class="btn" id="a-reload">🔄 Refrescar todos</button>
     </div>
     <div class="card stack" id="a-push"></div>
+    <div class="card stack" id="a-transfer"></div>
     <form id="acf">
       <div class="card stack">
         <h2 style="margin:0">Sitio público</h2>
@@ -2435,6 +2591,7 @@ async function viewAdminConfig() {
   };
   draw();
   drawSuperPush();
+  drawAdminTransfer();
   $('#a-reload').onclick = async () => {
     if (!confirm('¿Recargar el sitio en todos los dispositivos abiertos?')) return;
     try { await setDoc(doc(db, 'settings', 'app'), { reloadAt: serverTimestamp() }, { merge: true }); toast('Listo: se van a recargar en los próximos minutos'); }
