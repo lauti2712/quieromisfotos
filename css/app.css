@@ -416,12 +416,23 @@ footer.site .foot-links a { color: var(--muted); }
 .wa-tip b { display: block; color: #1a9d55; margin-top: 2px; }
 @media (hover: hover) { .wa-fab:hover .wa-tip { opacity: 1; } }
 body:has(.lightbox, .intro, dialog[open]) .wa-fab { display: none; }
+/* Globito fijo de ayuda mientras el fotógrafo se registra y completa lo básico */
+.wa-bubble { position: fixed; right: 80px; bottom: calc(22px + env(safe-area-inset-bottom)); z-index: 80; display: flex; align-items: flex-start; gap: 2px; max-width: min(240px, calc(100vw - 100px)); background: var(--surface); color: var(--text); border: 1px solid var(--border); box-shadow: var(--shadow); border-radius: 14px 14px 4px 14px; padding: 8px 6px 8px 12px; font-size: .85rem; line-height: 1.3; animation: wa-pop .3s ease-out .6s both; }
+.wa-bubble a { color: inherit; text-decoration: none; }
+.wa-bubble a b { display: block; color: #1a9d55; margin-top: 2px; }
+.wa-bubble button { background: none; border: 0; color: var(--muted); font-size: 1.1rem; line-height: 1; padding: 0 4px; cursor: pointer; }
+.wa-bubble ~ .wa-fab .wa-tip, .wa-fab:has(~ .wa-bubble) .wa-tip { display: none; }
+@keyframes wa-pop { from { opacity: 0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) { .wa-bubble { animation: none; } }
+body:has(.lightbox, .intro, dialog[open]) .wa-bubble { display: none; }
 /* Celular: burbuja más chica, se esconde mientras escribe y sube si está la barra del carrito; el pie no queda tapado. */
 @media (max-width: 640px) {
   .wa-fab { width: 46px; height: 46px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); }
   .wa-fab svg { width: 24px; height: 24px; }
   footer.site { padding-bottom: 76px; }
   body:has(input:focus, textarea:focus, select:focus) .wa-fab { display: none; }
+  .wa-bubble { right: 66px; bottom: calc(16px + env(safe-area-inset-bottom)); }
+  body:has(input:focus, textarea:focus, select:focus) .wa-bubble { display: none; }
   body:has(.g-cartbar:not(.hidden)) .wa-fab { bottom: calc(80px + env(safe-area-inset-bottom)); }
 }
 .g-cartbar { position: sticky; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 30; margin-top: 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -627,6 +638,7 @@ footer.site .foot-links { display: flex; flex-wrap: wrap; justify-content: cente
 @media (max-width: 800px) {
   body.with-tabbar { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
   body.with-tabbar .wa-fab { bottom: calc(76px + env(safe-area-inset-bottom)); }
+  body.with-tabbar .wa-bubble { bottom: calc(80px + env(safe-area-inset-bottom)); }
   .tabbar { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; position: fixed; left: 0; right: 0; bottom: 0; z-index: 70;
     background: var(--surface); border-top: 1px solid var(--border); padding: 4px 4px calc(4px + env(safe-area-inset-bottom)); }
   .tabbar a, .tabbar button { display: grid; justify-items: center; gap: 1px; padding: 6px 2px; border: 0; background: none; font: inherit; font-size: .72rem; font-weight: 600;

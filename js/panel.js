@@ -181,6 +181,7 @@ function renderLogin() {
     $('#e-submit').textContent = mode === 'login' ? 'Ingresar' : 'Crear cuenta';
     $('#toggle-mode').textContent = mode === 'login' ? 'Crear cuenta nueva' : 'Ya tengo cuenta';
     $('#e-pass').autocomplete = mode === 'login' ? 'current-password' : 'new-password';
+    if (mode === 'signup') signupSupport(); else document.querySelector('.wa-bubble')?.remove();
   };
   const want = wantedPlan();
   if (want) {
@@ -264,6 +265,7 @@ async function requireVerified() {
 
 // ================================================================ alta
 function renderOnboarding() {
+  signupSupport();
   const u = S.user;
   const name = u.displayName || '';
   root.innerHTML = `
@@ -369,16 +371,52 @@ function navItems() {
 }
 
 // WhatsApp de ayuda del panel: llega con el nombre y el plan del fotógrafo; Premium, marcado como prioritario.
+// Mientras se registra o completa lo básico (perfil, WhatsApp, precio, Mercado Pago), el botón de WhatsApp muestra
+// un globito fijo "¿Tenés algún inconveniente?" (se puede cerrar).
+const SUPPORT_WA = '5493424856528';
+const WA_BUBBLE_OFF = 'qmf-wa-bubble-off';
+const setupPending = p => !p || !(p.displayName && p.zone && p.bio && p.avatarUrl) || !p.socials?.whatsapp || !((p.defaults?.price || 0) > 0) || !p.mpConnected;
+function setupBubble(on) {
+  const fab = document.querySelector('.wa-fab');
+  if (!fab) return;
+  let off = false;
+  try { off = !!sessionStorage.getItem(WA_BUBBLE_OFF); } catch { /* nada */ }
+  const show = on && !off && !S.isSuper;
+  let b = document.querySelector('.wa-bubble');
+  if (!show) { b?.remove(); return; }
+  if (b) return;
+  b = document.createElement('div');
+  b.className = 'wa-bubble';
+  b.innerHTML = '<a target="_blank" rel="noopener">¿Tenés algún inconveniente?<b>Escribinos por WhatsApp</b></a><button type="button" aria-label="Cerrar">×</button>';
+  b.querySelector('a').href = fab.href;
+  b.querySelector('button').onclick = () => { try { sessionStorage.setItem(WA_BUBBLE_OFF, '1'); } catch { /* nada */ } b.remove(); };
+  fab.after(b);
+}
+// Antes de tener perfil (registro): mensaje genérico de alta.
+function signupSupport() {
+  const fab = document.querySelector('.wa-fab');
+  if (!fab) return;
+  fab.href = `https://wa.me/${SUPPORT_WA}?text=${encodeURIComponent('Hola! Me estoy registrando como fotógrafo en Quiero Mis Fotos y tengo un inconveniente: ')}`;
+  document.querySelector('.wa-bubble')?.remove();
+  setupBubble(true);
+}
+
 function updateSupportLink() {
   const fab = document.querySelector('.wa-fab');
   if (!fab || !S.profile) return;
   const r = myRules();
   const label = PLANS[r.plan]?.label || 'Gratis';
-  const msg = `${r.priority ? '⭐ ATENCIÓN PRIORITARIA · ' : ''}Hola! Soy ${S.profile.displayName || ''} (fotógrafo, plan ${label}). Les escribo por: `;
-  const url = `https://wa.me/5493424856528?text=${encodeURIComponent(msg)}`;
+  const setup = setupPending(S.profile);
+  const msg = setup
+    ? `Hola! Soy ${S.profile.displayName || ''} (fotógrafo, plan ${label}). Estoy configurando mi cuenta y tengo un inconveniente: `
+    : `${r.priority ? '⭐ ATENCIÓN PRIORITARIA · ' : ''}Hola! Soy ${S.profile.displayName || ''} (fotógrafo, plan ${label}). Les escribo por: `;
+  const url = `https://wa.me/${SUPPORT_WA}?text=${encodeURIComponent(msg)}`;
   fab.href = url;
   document.querySelectorAll('.foot-help a').forEach(a => { a.href = url; });
   if (r.priority) fab.querySelector('.wa-tip').innerHTML = '⭐ Tenés atención prioritaria<b>Escribinos por WhatsApp</b>';
+  const bubble = document.querySelector('.wa-bubble a');
+  if (bubble && bubble.getAttribute('href') !== url) bubble.href = url;
+  setupBubble(setup);
 }
 
 function renderShell() {
@@ -425,6 +463,7 @@ async function drawAlerts() {
 }
 
 function route() {
+  updateSupportLink(); // el globito de ayuda se va solo cuando completa lo básico
   // Al cambiar de pantalla se cierran los diálogos abiertos.
   document.querySelectorAll('dialog[open]').forEach(d => d.close());
   const { parts } = parseHash();
