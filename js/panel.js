@@ -99,7 +99,10 @@ onAuthStateChanged(auth, async user => {
     return;
   }
   if (!S.profile) return renderOnboarding();
-  if (user.emailVerified && !S.isSuper) markVerified();
+  if (!S.isSuper) {
+    if (user.emailVerified) markVerified();
+    else setDoc(doc(db, 'userPrivate', user.uid), { provider: providerOf(user) }, { merge: true }).catch(() => {});
+  }
   await autoApprove();
   updateRolePill();
   renderShell();
@@ -236,8 +239,9 @@ async function refreshVerified() {
 }
 // Para la lista de Fotógrafos del superadmin.
 function markVerified() {
-  setDoc(doc(db, 'userPrivate', S.user.uid), { emailVerified: true }, { merge: true }).catch(() => {});
+  setDoc(doc(db, 'userPrivate', S.user.uid), { emailVerified: true, provider: providerOf(S.user) }, { merge: true }).catch(() => {});
 }
+const providerOf = u => (u.providerData || []).some(p => p.providerId === 'google.com') ? 'google' : 'password';
 function verifyBarHtml() {
   if (!needsVerify()) return '';
   return `<div class="notice warn row" id="verify-bar" style="justify-content:space-between;gap:8px;margin:12px 16px 0">
@@ -306,7 +310,7 @@ function renderOnboarding() {
       const b = writeBatch(db);
       if (!taken.exists()) b.set(doc(db, 'slugs', slug), { uid: u.uid });
       b.set(doc(db, 'users', u.uid), profile);
-      b.set(doc(db, 'userPrivate', u.uid), { email: u.email || '', ...(wa ? { whatsapp: wa } : {}), ...(u.emailVerified ? { emailVerified: true } : {}), createdAt: serverTimestamp() });
+      b.set(doc(db, 'userPrivate', u.uid), { email: u.email || '', ...(wa ? { whatsapp: wa } : {}), ...(u.emailVerified ? { emailVerified: true } : {}), provider: providerOf(u), createdAt: serverTimestamp() });
       await b.commit();
       if (!u.displayName) updateProfile(u, { displayName }).catch(() => {});
       S.profile = (await getDoc(doc(db, 'users', u.uid))).data();
@@ -1679,6 +1683,7 @@ async function viewAdminPhotographers() {
         <strong>${esc(u.displayName)}</strong> <span class="muted small">/${esc(u.slug)}</span><br>
         <span class="muted small">${esc(privs[i].email || '')}${u.zone ? ' · ' + esc(u.zone) : ''} · alta ${esc(fmtTs(u.createdAt))}</span>
         ${waOf(u, privs[i]) ? `<a class="small" target="_blank" rel="noopener" href="${esc(waLink(waOf(u, privs[i])))}">💬 ${esc(waOf(u, privs[i]))}</a>` : ''}<br>
+        ${privs[i].provider ? `<span class="pill" title="Cómo se registró">${privs[i].provider === 'google' ? 'Ingresa con Google' : 'Ingresa con email y contraseña'}</span>` : ''}
         ${privs[i].emailVerified ? '' : '<span class="pill warn" title="Todavía no tocó el link del mail de confirmación: no puede publicar ni vincular Mercado Pago">✉️ Correo sin confirmar</span>'}
         ${u.mpConnected ? '<span class="pill ok">MP vinculado</span>' : `<span class="pill ${u.status === 'approved' ? 'danger' : ''}">MP sin vincular</span>`}
         ${planOf(u) !== 'free' ? `<span class="pill accent">⭐ ${esc(PLANS[planOf(u)].label)} ${u.courtesy ? '· cortesía, sin vencimiento' : `hasta ${esc(fmtTs(u.proUntil))}`}</span>` : '<span class="pill">Gratis</span>'}
