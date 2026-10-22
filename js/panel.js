@@ -1742,6 +1742,7 @@ async function viewAdminPhotographers() {
           <button class="btn sm" data-courtesy="${u.uid}" title="Plan sin costo y sin vencimiento, hasta que lo quites">🎁 Cortesía</button>` : ''}
         ${isPro(u) ? `<button class="btn sm ghost" data-unpro="${u.uid}">Quitar plan</button>` : ''}
         <button class="btn sm ghost" data-subsync="${u.uid}" title="Revisa en Mercado Pago su suscripción y aplica el plan">🔄 Suscripción</button>
+        ${u.mpConnected ? `<button class="btn sm ghost" data-mprecent="${u.uid}" title="Prueba: cobros que ve el sistema en su Mercado Pago (para cobros por transferencia)">🧪 Cobros MP</button>` : ''}
         ${PLANS[planOf(u)]?.team ? `<button class="btn sm ghost" data-seats="${u.uid}" title="Lugares extra para su equipo (además de los del plan)">👥 Lugares extra: ${u.teamExtraSeats || 0}</button>` : ''}
         ${PLANS[planOf(u)]?.domain && u.site?.requestedDomain && !u.domainActive ? `<button class="btn sm ok" data-dom="${u.uid}">Activar dominio</button>` : ''}
         ${u.domainActive && u.domainSetup && u.domainSetup.status !== 'active' ? `<button class="btn sm" data-domst="${u.uid}">Revisar dominio</button>` : ''}
@@ -1772,6 +1773,21 @@ async function viewAdminPhotographers() {
       toast(`${u.displayName}: plan ${PLANS[plan].label} de cortesía`);
       viewAdminPhotographers();
     } catch (e) { toast(errMsg(e), 'error'); }
+  });
+  // Prueba de cobros por transferencia: ¿las transferencias al CVU del fotógrafo aparecen en su lista de cobros?
+  $$('[data-mprecent]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try {
+      const r = await apiPost('/admin/mp/recent', { uid: b.dataset.mprecent, days: 7 });
+      const u = users.find(x => x.uid === b.dataset.mprecent);
+      const rows = r.payments.map(p => `<tr><td>${esc(new Date(p.created).toLocaleString('es-AR'))}</td><td style="text-align:right"><strong>${fmtMoney(p.amount)}</strong></td>
+        <td>${esc(p.status)}</td><td>${esc(p.type || '')} · ${esc(p.method || '')}</td><td>${esc(p.operation || '')}</td><td class="muted small">${esc(p.description || p.ref || '')}</td></tr>`).join('');
+      openDialog(`Cobros de ${u?.displayName || ''} (últimos 7 días)`, r.payments.length
+        ? `<p class="muted small">${r.total} cobros. Si una transferencia de prueba aparece acá (tipo <em>account_money</em> / <em>bank_transfer</em> u operación <em>money_transfer</em>), se pueden reconocer solas.</p>
+          <div style="overflow:auto"><table class="list small"><thead><tr><th>Fecha</th><th>Monto</th><th>Estado</th><th>Tipo · medio</th><th>Operación</th><th>Detalle</th></tr></thead><tbody>${rows}</tbody></table></div>`
+        : '<p>No aparece ningún cobro en los últimos 7 días.</p>');
+    } catch (e) { toast(errMsg(e), 'error'); }
+    b.disabled = false;
   });
   $$('[data-subsync]').forEach(b => b.onclick = async () => {
     b.disabled = true;

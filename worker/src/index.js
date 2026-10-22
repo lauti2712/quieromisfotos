@@ -56,6 +56,7 @@ import { renderSite } from './site.js';
 import { scanRequest, scanStorage } from './storage.js';
 import { runBackup, backupRequest } from './backup.js';
 import { costsRequest, checkCosts } from './costs.js';
+import { recentPayments } from './mptest.js';
 import { notifyFollowersOnce, drainPushQueue } from './push.js';
 import { extensionCheckout, extensionSync } from './extensions.js';
 import { subscribe, syncRequest, cancelSubscription, syncDueSubscriptions, changeSeats, platformAccount, adminSyncSubscription } from './subscriptions.js';
@@ -158,6 +159,7 @@ async function route(req, env, ctx) {
   if (m === 'POST' && url.pathname === '/admin/domains/status') return domainStatus(req, env);
   if (m === 'POST' && url.pathname === '/admin/storage/scan') return scanRequest(req, env);
   if (m === 'GET' && url.pathname === '/admin/costs') return costsRequest(req, env, ctx);
+  if (m === 'POST' && url.pathname === '/admin/mp/recent') return recentPayments(req, env);
   if (m === 'POST' && url.pathname === '/admin/backup') return backupRequest(req, env);
   if (m === 'POST' && url.pathname === '/extensions/checkout') return extensionCheckout(req, env);
   if (m === 'POST' && url.pathname === '/plans/subscribe') return subscribe(req, env);
