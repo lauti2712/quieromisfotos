@@ -1899,7 +1899,7 @@ async function viewAdminPhotographers() {
     try {
       const r = await apiPost('/admin/mp/recent', { uid: b.dataset.mprecent, days: 7 });
       const u = users.find(x => x.uid === b.dataset.mprecent);
-      const rows = r.payments.map(p => `<tr><td>${esc(new Date(p.created).toLocaleString('es-AR'))}</td><td style="text-align:right"><strong>${fmtMoney(p.amount)}</strong></td>
+      const rows = r.payments.map(p => `<tr><td>${esc(new Date(p.created).toLocaleString('es-AR'))}</td><td style="text-align:right"><strong>$ ${Number(p.amount || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></td>
         <td>${esc(p.status)}</td><td>${esc(p.type || '')} · ${esc(p.method || '')}</td><td>${esc(p.operation || '')}</td><td class="muted small">${esc(p.description || p.ref || '')}</td></tr>`).join('');
       openDialog(`Cobros de ${u?.displayName || ''} (últimos 7 días)`, r.payments.length
         ? `<p class="muted small">${r.total} cobros. Si una transferencia de prueba aparece acá (tipo <em>account_money</em> / <em>bank_transfer</em> u operación <em>money_transfer</em>), se pueden reconocer solas.</p>
