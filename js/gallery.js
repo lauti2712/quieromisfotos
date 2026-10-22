@@ -110,7 +110,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
   }
 
   function reset() {
-    Object.assign(state, { photos: [], cursor: null, done: false });
+    Object.assign(state, { photos: [], cursor: null, done: false, noTime: false, noTimeShown: false });
     $('#g-grid', box).innerHTML = '';
     drawFilters();
     loadMore();
@@ -131,17 +131,32 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
     if (state.bib) cons.push(where('bibs', 'array-contains', state.bib));
     else if (state.uid) cons.push(where('photographerUid', '==', state.uid));
     if (!state.bib && state.uid && state.sub) cons.push(where('subalbumId', '==', state.sub));
-    if (!state.bib && state.hour) cons.push(where('takenAt', '>=', Timestamp.fromMillis(state.hour)), where('takenAt', '<', Timestamp.fromMillis(state.hour + 3600000)));
-    cons.push(orderBy('takenAt'), limit(PAGE));
+    // Filtro por hora: después de las fotos de esa hora se suman las que no tienen hora de cámara (sin EXIF:
+    // su hora es la del archivo y pueden ser de cualquier momento del evento), para que no queden afuera.
+    if (!state.bib && state.hour && state.noTime) cons.push(where('takenAtExact', '==', false), limit(PAGE));
+    else {
+      if (!state.bib && state.hour) cons.push(where('takenAt', '>=', Timestamp.fromMillis(state.hour)), where('takenAt', '<', Timestamp.fromMillis(state.hour + 3600000)));
+      cons.push(orderBy('takenAt'), limit(PAGE));
+    }
     if (state.cursor) cons.push(startAfter(state.cursor));
     try {
       const snap = await getDocs(query(collection(db, 'photos'), ...cons));
       state.cursor = snap.docs.at(-1) || state.cursor;
       state.done = snap.docs.length < PAGE;
-      const fresh = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => byUid.has(p.photographerUid));
+      const seen = new Set(state.photos.map(p => p.id));
+      const fresh = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => byUid.has(p.photographerUid) && !seen.has(p.id));
       const start = state.photos.length;
+      if (state.noTime && fresh.length && !state.noTimeShown) {
+        state.noTimeShown = true;
+        $('#g-grid', box).insertAdjacentHTML('beforeend', '<div class="g-notime muted small" style="grid-column:1/-1;padding:10px 2px 2px">🕒 Fotos sin hora de cámara: pueden ser de cualquier momento del evento.</div>');
+      }
       state.photos.push(...fresh);
       $('#g-grid', box).insertAdjacentHTML('beforeend', fresh.map((p, i) => itemHtml(p, start + i)).join(''));
+      if (state.done && !state.noTime && !state.bib && state.hour) {
+        Object.assign(state, { noTime: true, noTimeShown: false, cursor: null, done: false });
+        setTimeout(loadMore); // sigue con las sin hora cuando termine esta carga
+        return;
+      }
       if (!state.photos.length) $('#g-grid', box).innerHTML = state.bib
         ? `<div class="empty" style="grid-column:1/-1">No encontramos fotos con el dorsal <strong>${esc(state.bib)}</strong>.<br>Puede que el número haya quedado tapado en la foto: probá buscando por horario.</div>`
         : '<div class="empty" style="grid-column:1/-1">No hay fotos con este filtro.</div>';

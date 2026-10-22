@@ -4,17 +4,22 @@ import { b64url } from './tokens.js';
 import { decodeFields } from './firebase.js';
 import { httpError } from './http.js';
 
-let cached = null; // { token, exp }
+const DEFAULT_SCOPE = 'https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/firebase.messaging';
+const cache = {}; // scope -> { token, exp }
 
-export async function accessToken(env) {
+export const accessToken = env => serviceToken(env, DEFAULT_SCOPE);
+
+// Token de la cuenta de servicio para otra API de Google (ej. Cloud Monitoring, para el panel de costos).
+export async function serviceToken(env, scope) {
   if (env.FIREBASE_EMULATOR) return 'owner';
+  const cached = cache[scope];
   if (cached && cached.exp > Date.now() + 60_000) return cached.token;
   const sa = JSON.parse(env.FIREBASE_SA);
   const enc = new TextEncoder();
   const now = Math.floor(Date.now() / 1000);
   const header = b64url(enc.encode(JSON.stringify({ alg: 'RS256', typ: 'JWT', kid: sa.private_key_id })));
   const claims = b64url(enc.encode(JSON.stringify({
-    iss: sa.client_email, scope: 'https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/firebase.messaging',
+    iss: sa.client_email, scope,
     aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600,
   })));
   const der = Uint8Array.from(atob(sa.private_key.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')), c => c.charCodeAt(0));
@@ -27,8 +32,8 @@ export async function accessToken(env) {
   });
   if (!res.ok) throw httpError(502, `Google OAuth ${res.status}`);
   const d = await res.json();
-  cached = { token: d.access_token, exp: Date.now() + d.expires_in * 1000 };
-  return cached.token;
+  cache[scope] = { token: d.access_token, exp: Date.now() + d.expires_in * 1000 };
+  return d.access_token;
 }
 
 const root = env => `${env.FIREBASE_EMULATOR ? 'http://127.0.0.1:8085' : 'https://firestore.googleapis.com'}/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents`;
