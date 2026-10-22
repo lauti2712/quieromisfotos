@@ -1114,7 +1114,6 @@ async function drawTransferCard() {
       : p.transferBlocked ? '<div class="notice warn">La plataforma desactivó el cobro por transferencia en tu cuenta. Escribinos por WhatsApp para reactivarlo.</div>'
       : `${p.mpConnected ? '' : '<div class="notice warn small" style="margin:0">Vinculá tu Mercado Pago (arriba): lo usamos para reconocer las transferencias que te llegan.</div>'}
       <label class="check"><input type="checkbox" id="tr-on" ${p.transferOn ? 'checked' : ''}> Ofrecer pago por transferencia en mis fotos</label>
-      <p class="muted small" style="margin:0">🔒 Para reconocer las transferencias, el sistema revisa en forma automática los cobros que entran a tu Mercado Pago y busca solo los montos exactos de tus pedidos. <strong>Ninguna persona ve el registro de tus movimientos</strong>: se procesan en el momento y no se guardan; solo queda el número del pago de cada pedido.</p>
       <label class="field">Alias de tu Mercado Pago<input type="text" id="tr-alias" maxlength="40" value="${esc(p.transferAlias || '')}" placeholder="Ej: juan.fotos.mp"><span class="hint">Tiene que ser el alias de la <strong>misma cuenta de Mercado Pago</strong> que vinculaste; si no, no podemos ver los pagos.</span></label>
       <label class="field">Titular (como aparece al transferir)<input type="text" id="tr-holder" maxlength="60" value="${esc(p.transferHolder || '')}" placeholder="Ej: Juan Pérez"></label>
       <div><button class="btn primary" id="tr-save">Guardar</button></div>`}
