@@ -113,6 +113,15 @@ test('solo superadmin escribe etiquetas y settings', async () => {
 });
 
 // ---------- eventos
+test('sin correo confirmado: crea borradores pero no publica ni se suma a eventos', async () => {
+  const db = as({ uid: 'beto', token: { email: 'beto@x.com', email_verified: false } });
+  await assertSucceeds(setDoc(doc(db, 'events/uv'), { name: 'U', status: 'draft', kind: 'own', createdBy: 'beto', photographerUids: ['beto'] }));
+  await assertFails(updateDoc(doc(db, 'events/uv'), { status: 'published' }));
+  await assertFails(setDoc(doc(db, 'events/uv2'), { name: 'U', status: 'published', kind: 'own', createdBy: 'beto', photographerUids: ['beto'] }));
+  await assertFails(updateDoc(doc(db, 'events/pub'), { photographerUids: ['ana', 'beto'] }));
+  await assertSucceeds(updateDoc(doc(user('beto'), 'events/uv'), { status: 'published' }));
+});
+
 test('fotógrafo aprobado crea evento propio con su set; pendiente no', async () => {
   const db = user('beto');
   const b = writeBatch(db);

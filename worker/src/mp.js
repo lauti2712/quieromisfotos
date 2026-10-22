@@ -16,6 +16,7 @@ export async function connectUrl(req, env) {
   const claims = await requireUser(req, env);
   const user = await adminGet(env, `users/${claims.sub}`);
   if (!user || user.role !== 'photographer') throw httpError(403, 'Solo fotógrafos pueden vincular Mercado Pago');
+  if (claims.email_verified !== true) throw httpError(403, 'Primero confirmá tu correo: tocá el link del mail que te mandamos.');
   const state = await signToken({ typ: 'mp', uid: claims.sub, exp: Math.floor(Date.now() / 1000) + 900, n: crypto.randomUUID().slice(0, 8) }, env.UPLOAD_SECRET);
   const url = new URL('https://auth.mercadopago.com.ar/authorization');
   url.search = new URLSearchParams({

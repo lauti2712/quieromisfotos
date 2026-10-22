@@ -18,6 +18,8 @@ service cloud.firestore {
     function isActivePhotographer() {
       return signedIn() && exists(userPath(uid())) && get(userPath(uid())).data.status in ['approved', 'pending'];
     }
+    // Correo confirmado (las cuentas de Google ya vienen confirmadas): necesario para publicar y sumarse a eventos.
+    function verified() { return request.auth.token.email_verified == true; }
     function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
     function slugOwnedAfter(id) {
       return getAfter(/databases/$(database)/documents/slugs/$(request.resource.data.slug)).data.uid == id;
@@ -87,14 +89,16 @@ service cloud.firestore {
         || (isApproved()
             && request.resource.data.kind == 'own'
             && request.resource.data.createdBy == uid()
-            && request.resource.data.photographerUids == [uid()]);
+            && request.resource.data.photographerUids == [uid()]
+            && (request.resource.data.get('status', 'draft') != 'published' || verified()));
 
       allow update: if isSuper()
         // el creador de un evento propio edita sus datos (no la membresía)
         || (isApproved() && resource.data.kind == 'own' && resource.data.createdBy == uid()
-            && !changed().hasAny(['createdBy', 'kind', 'createdAt', 'photographerUids']))
+            && !changed().hasAny(['createdBy', 'kind', 'createdAt', 'photographerUids'])
+            && (request.resource.data.get('status', 'draft') != 'published' || resource.data.get('status', 'draft') == 'published' || verified()))
         // sumarse a un evento abierto
-        || (isApproved() && resource.data.openToJoin == true
+        || (isApproved() && verified() && resource.data.openToJoin == true
             && changed().hasOnly(['photographerUids'])
             && !(uid() in resource.data.photographerUids)
             && request.resource.data.photographerUids.hasAll(resource.data.photographerUids)

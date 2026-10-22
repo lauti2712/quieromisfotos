@@ -4,12 +4,13 @@ import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, writeBatch,
   query, where, orderBy, limit, serverTimestamp, arrayUnion, arrayRemove, Timestamp,
   onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword,
-  createUserWithEmailAndPassword, sendPasswordResetEmail, signOut, updateProfile,
+  createUserWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification, signOut, updateProfile,
 } from './fb.js';
 import {
   $, $$, esc, inAppNotice, bindInAppNotice, slugify, SLUG_RE, searchTokens, fmtMoney, fmtDate, fmtTs, todayIso, parseHash,
-  toast, errMsg, avatarHtml, coverHtml, SOCIALS, newId, normalize, fmtBytes, setBytes,
+  toast, errMsg, avatarHtml, coverHtml, SOCIALS, newId, normalize, fmtBytes, setBytes, waLink,
 } from './util.js';
+const waOf = (u, priv) => priv?.whatsapp || u.socials?.whatsapp || '';
 import { initTheme } from './theme.js';
 import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, ACTIVITY_TYPE, USER_TAG_TYPES, tagPills, SERVICES, isPro, mpPlanOf, GEAR_TYPES, PLANS, planOf, siteUrlOf, setUntil, setDeleteAt, GRACE_DAYS, albumPhotoLimit, feePercentFor, isFreePlan, setActive, planSpec, rulesFor, bibsOn } from './data.js';
 import { viewWeb } from './panel-web.js';
@@ -98,6 +99,7 @@ onAuthStateChanged(auth, async user => {
     return;
   }
   if (!S.profile) return renderOnboarding();
+  if (user.emailVerified && !S.isSuper) markVerified();
   await autoApprove();
   updateRolePill();
   renderShell();
@@ -187,7 +189,10 @@ function renderLogin() {
     const email = $('#e-mail').value.trim(), pass = $('#e-pass').value;
     try {
       if (mode === 'login') await signInWithEmailAndPassword(auth, email, pass);
-      else await createUserWithEmailAndPassword(auth, email, pass);
+      else {
+        const cred = await createUserWithEmailAndPassword(auth, email, pass);
+        sendVerification(cred.user, true);
+      }
     } catch (err) { toast(errMsg(err), 'error'); }
   };
   $('#reset').onclick = async () => {
@@ -210,6 +215,49 @@ async function autoApprove() {
   } catch (e) { console.error('aprobación', e); }
 }
 
+// Cuentas con email y contraseña: hasta confirmar el correo no pueden publicar eventos, sumarse a eventos ni vincular
+// Mercado Pago (lo controlan las reglas y el Worker). Las de Google ya vienen confirmadas.
+const PANEL_URL = `${location.origin}${location.pathname}`;
+const needsVerify = () => !!S.user && !S.user.emailVerified && !S.isSuper;
+async function sendVerification(user, silent) {
+  try {
+    auth.languageCode = 'es';
+    await sendEmailVerification(user, { url: PANEL_URL });
+    if (!silent) toast(`Te mandamos el mail a ${user.email}. Revisá también Spam o Promociones.`);
+  } catch (e) { if (!silent) toast(e.code === 'auth/too-many-requests' ? 'Ya te lo mandamos hace un ratito. Esperá unos minutos y revisá Spam.' : errMsg(e), 'error'); }
+}
+// Vuelve a leer la cuenta (y el token) por si ya confirmó el correo en otra pestaña o en el celular.
+async function refreshVerified() {
+  if (!S.user || S.user.emailVerified) return true;
+  try { await S.user.reload(); if (auth.currentUser?.emailVerified) await auth.currentUser.getIdToken(true); } catch { /* nada */ }
+  S.user = auth.currentUser;
+  if (S.user?.emailVerified) markVerified();
+  return !!S.user?.emailVerified;
+}
+// Para la lista de Fotógrafos del superadmin.
+function markVerified() {
+  setDoc(doc(db, 'userPrivate', S.user.uid), { emailVerified: true }, { merge: true }).catch(() => {});
+}
+function verifyBarHtml() {
+  if (!needsVerify()) return '';
+  return `<div class="notice warn row" id="verify-bar" style="justify-content:space-between;gap:8px;margin:12px 16px 0">
+    <span>✉️ <strong>Confirmá tu correo</strong> (${esc(S.user.email)}): tocá el link del mail que te mandamos. Hasta entonces podés armar tu perfil y subir fotos, pero no publicar eventos ni vincular Mercado Pago.</span>
+    <span class="row" style="gap:6px"><button class="btn sm" id="vb-check">Ya lo confirmé</button><button class="btn sm ghost" id="vb-send">Reenviar mail</button></span></div>`;
+}
+function bindVerifyBar() {
+  $('#vb-send')?.addEventListener('click', () => sendVerification(S.user));
+  $('#vb-check')?.addEventListener('click', async () => {
+    if (await refreshVerified()) { toast('✅ Correo confirmado'); $('#verify-bar')?.remove(); route(); }
+    else toast('Todavía no figura confirmado. Abrí el link del mail y volvé a tocar.', 'error');
+  });
+}
+// Antes de publicar o sumarse: true si puede seguir; si no, avisa.
+async function requireVerified() {
+  if (!needsVerify() || await refreshVerified()) return true;
+  toast('Primero confirmá tu correo: tocá el link del mail que te mandamos (o reenvialo desde el aviso de arriba).', 'error');
+  return false;
+}
+
 // ================================================================ alta
 function renderOnboarding() {
   const u = S.user;
@@ -225,6 +273,8 @@ function renderOnboarding() {
           <span class="hint" id="ob-slug-hint">quieromisfotos/#/f/<strong>${esc(slugify(name) || '...')}</strong></span>
         </label>
         <label class="field">Zona<input type="text" id="ob-zone" maxlength="60" placeholder="Ej: Rosario, Santa Fe"></label>
+        ${S.isSuper ? '' : `<label class="field">WhatsApp<input type="tel" id="ob-wa" required maxlength="30" inputmode="tel" autocomplete="tel" placeholder="Ej: 341 555-1234 (con código de área)">
+          <span class="hint">Para avisarte novedades de tu cuenta. También se muestra en tu perfil para que te pidan presupuestos (lo podés sacar después).</span></label>`}
         <button class="btn primary" type="submit">Crear perfil</button>
       </form>
     </div></div>`;
@@ -238,6 +288,8 @@ function renderOnboarding() {
     const displayName = $('#ob-name').value.trim();
     const slug = slugify($('#ob-slug').value);
     if (!SLUG_RE.test(slug)) return toast('La dirección debe tener entre 3 y 40 letras, números o guiones.', 'error');
+    const wa = $('#ob-wa')?.value.trim() || '';
+    if (!S.isSuper && wa.replace(/\D/g, '').length < 8) return toast('Escribí tu WhatsApp con código de área (ej: 341 555-1234).', 'error');
     try {
       const taken = await getDoc(doc(db, 'slugs', slug));
       if (taken.exists() && taken.data().uid !== u.uid) return toast('Esa dirección ya está en uso. Probá otra.', 'error');
@@ -245,7 +297,7 @@ function renderOnboarding() {
         role: S.isSuper ? 'superadmin' : 'photographer',
         status: S.isSuper ? 'approved' : 'pending',
         displayName, slug, zone: $('#ob-zone').value.trim(),
-        avatarUrl: u.photoURL || '', bio: '', socials: {},
+        avatarUrl: u.photoURL || '', bio: '', socials: wa ? { whatsapp: wa } : {},
         mpConnected: false, mpUserId: null,
         defaults: { price: 0, packs: [], feeMode: 'absorb' },
         watermark: { ...DEFAULT_WATERMARK },
@@ -254,7 +306,7 @@ function renderOnboarding() {
       const b = writeBatch(db);
       if (!taken.exists()) b.set(doc(db, 'slugs', slug), { uid: u.uid });
       b.set(doc(db, 'users', u.uid), profile);
-      b.set(doc(db, 'userPrivate', u.uid), { email: u.email || '', createdAt: serverTimestamp() });
+      b.set(doc(db, 'userPrivate', u.uid), { email: u.email || '', ...(wa ? { whatsapp: wa } : {}), ...(u.emailVerified ? { emailVerified: true } : {}), createdAt: serverTimestamp() });
       await b.commit();
       if (!u.displayName) updateProfile(u, { displayName }).catch(() => {});
       S.profile = (await getDoc(doc(db, 'users', u.uid))).data();
@@ -331,7 +383,7 @@ function renderShell() {
     root.innerHTML = `<div class="container"><div class="auth-box card"><h1>Cuenta suspendida</h1><p class="muted">Tu cuenta de fotógrafo está suspendida. Si creés que es un error, contactá al administrador.</p></div></div>`;
     return;
   }
-  root.innerHTML = `${S.isSuper ? '<div id="alerts" class="alerts-bar"></div>' : ''}<div class="panel ${S.isSuper ? '' : 'has-tabs'}"><nav class="sidenav" id="nav"></nav><main id="view"></main></div>
+  root.innerHTML = `${S.isSuper ? '<div id="alerts" class="alerts-bar"></div>' : ''}${verifyBarHtml()}<div class="panel ${S.isSuper ? '' : 'has-tabs'}"><nav class="sidenav" id="nav"></nav><main id="view"></main></div>
     ${S.isSuper ? '' : '<nav class="tabbar" id="tabbar" aria-label="Secciones"></nav>'}`;
   document.body.classList.toggle('with-tabbar', !S.isSuper);
   const want = wantedPlan();
@@ -341,6 +393,7 @@ function renderShell() {
   }
   window.onhashchange = route;
   route();
+  bindVerifyBar();
   if (S.isSuper) drawAlerts();
 }
 
@@ -976,6 +1029,7 @@ async function viewMp() {
     catch (err) { toast(errMsg(err), 'error'); }
   });
   $('#mp-connect').onclick = async e => {
+    if (!await requireVerified()) return;
     e.target.disabled = true;
     try { const { url } = await apiPost('/mp/connect-url'); location.href = url; }
     catch (err) { e.target.disabled = false; toast(errMsg(err), 'error'); }
@@ -1167,6 +1221,7 @@ async function joinDialog() {
           <button class="btn sm primary" data-join="${ev.id}">Sumarme</button>
         </div>`).join('') : '<div class="empty">No hay eventos abiertos para sumarse.</div>';
       $$('[data-join]', dlg).forEach(b => b.onclick = async () => {
+        if (!await requireVerified()) return;
         b.disabled = true;
         try {
           const bt = writeBatch(db);
@@ -1266,6 +1321,7 @@ function eventDialog(ev, onSaved) {
   $('#ev-save', dlg).onclick = async () => {
     const name = $('#ev-name', dlg).value.trim(), date = $('#ev-date', dlg).value, loc = $('#ev-loc', dlg).value.trim();
     if (!name || !date) return toast('Completá nombre y fecha.', 'error');
+    if ($('#ev-status', dlg).value === 'published' && ev?.status !== 'published' && !await requireVerified()) return;
     const tagNames = [...sel].map(id => tax.tagById.get(id)?.name || '');
     const data = {
       name, date, location: loc, tagIds: [...sel].filter(id => tax.tagById.has(id)),
@@ -1336,6 +1392,7 @@ async function viewEvent(id) {
   if (canEdit) {
     $('#ev-edit').onclick = () => eventDialog(ev, reload);
     $('#ev-toggle').onclick = async () => {
+      if (ev.status !== 'published' && !await requireVerified()) return;
       try { await updateDoc(doc(db, 'events', id), { status: ev.status === 'published' ? 'draft' : 'published', updatedAt: serverTimestamp() }); reload(); }
       catch (e) { toast(errMsg(e), 'error'); }
     };
@@ -1475,7 +1532,7 @@ function renderSetEditor(ev, set, reload) {
   const box = $('#ev-sets');
   if (!set) {
     box.innerHTML = `<div class="card"><p>No tenés un set en este evento.</p><button class="btn primary" id="mk-set">Crear mi set</button></div>`;
-    $('#mk-set').onclick = async () => { try { await setDoc(doc(db, 'events', ev.id, 'sets', S.user.uid), newSetData()); reload(); } catch (e) { toast(errMsg(e), 'error'); } };
+    $('#mk-set').onclick = async () => { if (!await requireVerified()) return; try { await setDoc(doc(db, 'events', ev.id, 'sets', S.user.uid), newSetData()); reload(); } catch (e) { toast(errMsg(e), 'error'); } };
     return;
   }
   let subs = (set.subalbums || []).map(s => ({ ...s })).sort((a, b) => a.order - b.order);
@@ -1620,7 +1677,9 @@ async function viewAdminPhotographers() {
       ${avatarHtml(u)}
       <div class="grow">
         <strong>${esc(u.displayName)}</strong> <span class="muted small">/${esc(u.slug)}</span><br>
-        <span class="muted small">${esc(privs[i].email || '')}${u.zone ? ' · ' + esc(u.zone) : ''} · alta ${esc(fmtTs(u.createdAt))}</span><br>
+        <span class="muted small">${esc(privs[i].email || '')}${u.zone ? ' · ' + esc(u.zone) : ''} · alta ${esc(fmtTs(u.createdAt))}</span>
+        ${waOf(u, privs[i]) ? `<a class="small" target="_blank" rel="noopener" href="${esc(waLink(waOf(u, privs[i])))}">💬 ${esc(waOf(u, privs[i]))}</a>` : ''}<br>
+        ${privs[i].emailVerified ? '' : '<span class="pill warn" title="Todavía no tocó el link del mail de confirmación: no puede publicar ni vincular Mercado Pago">✉️ Correo sin confirmar</span>'}
         ${u.mpConnected ? '<span class="pill ok">MP vinculado</span>' : `<span class="pill ${u.status === 'approved' ? 'danger' : ''}">MP sin vincular</span>`}
         ${planOf(u) !== 'free' ? `<span class="pill accent">⭐ ${esc(PLANS[planOf(u)].label)} ${u.courtesy ? '· cortesía, sin vencimiento' : `hasta ${esc(fmtTs(u.proUntil))}`}</span>` : '<span class="pill">Gratis</span>'}
         ${reqs[i] && reqs[i].plan !== planOf(u) ? `<span class="pill warn">Pidió: ${esc(PLANS[reqs[i].plan]?.label || reqs[i].plan)}</span>` : ''}
@@ -1632,7 +1691,7 @@ async function viewAdminPhotographers() {
         ${u.status !== 'approved' ? `<button class="btn sm ok" data-st="approved" data-uid="${u.uid}">Aprobar</button>` : ''}
         ${u.status !== 'suspended' ? `<button class="btn sm danger" data-st="suspended" data-uid="${u.uid}">Suspender</button>` : ''}
         ${u.status === 'suspended' ? `<button class="btn sm" data-st="pending" data-uid="${u.uid}">Volver a pendiente</button>` : ''}
-        ${u.status === 'approved' ? `<select data-plan-sel="${u.uid}" style="width:auto">${Object.entries(PLANS).filter(([k]) => k !== 'free').map(([k, p]) => `<option value="${k}" ${(reqs[i]?.plan || planOf(u)) === k ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}</select>
+        ${u.status === 'approved' ? `<select data-plan-sel="${u.uid}" style="width:auto" title="Plan a dar con +30 días o Cortesía (no es su plan actual)"><option value="">Dar plan…</option>${Object.entries(PLANS).filter(([k]) => k !== 'free').map(([k, p]) => `<option value="${k}" ${(reqs[i]?.plan || (planOf(u) !== 'free' ? planOf(u) : '')) === k ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}</select>
           <button class="btn sm" data-pro="${u.uid}">+30 días</button>
           <button class="btn sm" data-courtesy="${u.uid}" title="Plan sin costo y sin vencimiento, hasta que lo quites">🎁 Cortesía</button>` : ''}
         ${isPro(u) ? `<button class="btn sm ghost" data-unpro="${u.uid}">Quitar plan</button>` : ''}
@@ -1646,6 +1705,7 @@ async function viewAdminPhotographers() {
   $$('[data-pro]').forEach(b => b.onclick = async () => {
     const u = users.find(x => x.uid === b.dataset.pro);
     const plan = $(`[data-plan-sel="${u.uid}"]`).value;
+    if (!plan) return toast('Elegí qué plan darle en la lista.', 'error');
     const from = isPro(u) ? u.proUntil.toMillis() : Date.now();
     try {
       await updateDoc(doc(db, 'users', u.uid), { plan, proUntil: Timestamp.fromMillis(from + 30 * 86400000), courtesy: false });
@@ -1658,6 +1718,7 @@ async function viewAdminPhotographers() {
   $$('[data-courtesy]').forEach(b => b.onclick = async () => {
     const u = users.find(x => x.uid === b.dataset.courtesy);
     const plan = $(`[data-plan-sel="${u.uid}"]`).value;
+    if (!plan) return toast('Elegí qué plan darle en la lista.', 'error');
     if (!confirm(`¿Dar a ${u.displayName} el plan ${PLANS[plan].label} de cortesía, sin costo y sin vencimiento?`)) return;
     try {
       await updateDoc(doc(db, 'users', u.uid), { plan, proUntil: Timestamp.fromDate(new Date('2099-12-31T00:00:00Z')), courtesy: true, trial: false });
