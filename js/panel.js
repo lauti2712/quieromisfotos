@@ -17,7 +17,7 @@ import { viewWeb } from './panel-web.js';
 import { sellerNet } from './pricing.js';
 import { viewPortfolio } from './panel-portfolio.js';
 import { drawWatermark, drawSampleScene, DEFAULT_WATERMARK, wantsLogo } from './watermark.js';
-import { uploadAsset, apiPost } from './api.js';
+import { uploadAsset, apiPost, apiGet } from './api.js';
 import { resizeToJpeg } from './image-proc.js';
 import { mountPhotos, uploadsInProgress } from './panel-photos.js';
 import { loadMyTeams, viewTeam, viewTeams, viewTeamEvent, viewJoin, teamSalesHtml } from './panel-team.js';
@@ -348,6 +348,7 @@ function navItems() {
     { href: '#/admin/eventos', label: '🏟️ Eventos' },
     { href: '#/admin/etiquetas', label: '🏷️ Etiquetas' },
     { href: '#/admin/almacenamiento', label: '💾 Almacenamiento' },
+    { href: '#/admin/costos', label: '🧾 Costos' },
     { href: '#/admin/config', label: '⚙️ Plataforma' },
     { group: 'Mi cuenta' },
     { href: '#/perfil', label: '👤 Perfil' },
@@ -485,6 +486,7 @@ function route() {
     if (b === 'etiquetas') return run(viewAdminTags);
     if (b === 'config') return run(viewAdminConfig);
     if (b === 'almacenamiento') return run(viewAdminStorage);
+    if (b === 'costos') return run(viewAdminCosts);
     if (b === 'metricas') return run(viewAdminMetrics);
     if (b === 'clientes') return run(viewAdminCustomers);
     return run(viewAdminPhotographers);
@@ -2002,6 +2004,42 @@ function r2Cost(bytes) {
 }
 const fmtUsd = n => `US$ ${n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+// Uso del mes de cada servicio que cobra, contra lo que entra gratis (worker/src/costs.js).
+async function viewAdminCosts(fresh = false) {
+  $('#view').innerHTML = '<h1>Costos</h1><div class="spinner"></div>';
+  let d;
+  try { d = await apiGet(`/admin/costs${fresh ? '?fresh=1' : ''}`); }
+  catch (e) { $('#view').innerHTML = `<h1>Costos</h1><div class="notice danger">${esc(errMsg(e))}</div>`; return; }
+  const n = v => Number(v || 0).toLocaleString('es-AR');
+  const usd = v => `US$ ${Number(v || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const P = d.prices;
+  const bar = (v, max) => { const pct = Math.min(100, max ? v / max * 100 : 0); return `<div class="meter"><span style="width:${pct}%;background:${pct >= 100 ? 'var(--danger)' : pct >= 80 ? 'var(--warn)' : 'var(--ok)'}"></span></div>`; };
+  const err = x => x?.error ? `<div class="notice warn small">${esc(x.error)}</div>` : '';
+  const row = (label, used, free, unit, note = '') => `<div class="stack" style="gap:4px"><div class="row" style="justify-content:space-between"><span>${label}</span><span class="small"><strong>${n(used)}</strong> / ${n(free)} ${unit}</span></div>${bar(used, free)}${note ? `<span class="muted small">${note}</span>` : ''}</div>`;
+  const maxDay = (arr, k) => Math.max(0, ...(arr || []).map(r => r[k] || 0));
+  const fs = d.firestore || {};
+  const days = (fs.daily || []).length || 1;
+  $('#view').innerHTML = `
+    <div class="row" style="justify-content:space-between"><h1>Costos</h1><button class="btn" id="co-fresh">🔄 Actualizar</button></div>
+    <div class="notice ${d.usd > 0 ? 'warn' : 'ok'}">Este mes (${esc(d.month)}): <strong>${usd(d.usd)}</strong> estimado · proyección a fin de mes <strong>${usd(d.projectedUsd)}</strong>.
+      <span class="muted small">Precios de lista en dólares; la factura de Google y Cloudflare manda. Actualizado ${esc(new Date(d.at).toLocaleString('es-AR'))}.</span></div>
+    <div class="card stack"><h2 style="margin:0">🔥 Firebase · base de datos</h2>${err(fs)}
+      ${fs.error ? '' : `<span class="muted small">El cupo gratis es por día. Peor día del mes contra el cupo diario:</span>
+      ${row('Lecturas', maxDay(fs.daily, 'read'), P.firestore.read.free, 'por día', `Promedio ${n(Math.round(fs.totals.read / days))}/día · pagas este mes: ${n(fs.over.read)}`)}
+      ${row('Escrituras', maxDay(fs.daily, 'write'), P.firestore.write.free, 'por día', `Promedio ${n(Math.round(fs.totals.write / days))}/día · pagas este mes: ${n(fs.over.write)}`)}
+      ${row('Borrados', maxDay(fs.daily, 'delete'), P.firestore.delete.free, 'por día', `Pagos este mes: ${n(fs.over.delete)}`)}
+      <div>Costo estimado: <strong>${usd(fs.usd)}</strong></div>`}</div>
+    <div class="card stack"><h2 style="margin:0">☁️ Cloudflare · servidor</h2>${err(d.workers)}
+      ${d.workers.error ? '' : `${row('Pedidos (peor día)', d.workers.maxDay, d.workers.freePerDay, 'por día', `Total del mes: ${n(d.workers.total)}. En el plan gratis, pasado el tope los pedidos fallan (no se cobra): si se acerca, conviene el plan de US$ 5/mes.`)}`}</div>
+    <div class="card stack"><h2 style="margin:0">🖼️ Cloudflare · fotos (R2)</h2>${err(d.storage)}${err(d.r2ops)}
+      ${d.storage.error ? '' : row('Espacio (promedio del mes)', d.storage.avgGB, d.storage.freeGB, 'GB', `Hoy: ${d.storage.nowGB} GB · costo ${usd(d.storage.usd)}. Detalle por fotógrafo en <a href="#/admin/almacenamiento">Almacenamiento</a>.`)}
+      ${d.r2ops.error ? '' : `${row('Operaciones clase A (subir, listar)', d.r2ops.classA, P.r2.classA.free, 'en el mes')}${row('Operaciones clase B (ver fotos)', d.r2ops.classB, P.r2.classB.free, 'en el mes')}<div>Costo de operaciones: <strong>${usd(d.r2ops.usd)}</strong></div>`}</div>
+    <div class="card stack"><h2 style="margin:0">🤖 Cloudflare · IA de dorsales</h2>${err(d.ai)}
+      ${d.ai.error ? '' : `${row('Neuronas (peor día)', d.ai.maxDay, d.ai.freePerDay, 'por día', `Total del mes: ${n(d.ai.total)}`)}<div>Costo estimado: <strong>${usd(d.ai.usd)}</strong></div>`}</div>
+    <p class="muted small">Sin costo hoy: inicio de sesión (Firebase Auth), notificaciones (FCM), web en GitHub Pages. Se revisa solo todos los días y te avisa si algo pasa lo gratis (Plataforma → Avisos para vos).</p>`;
+  $('#co-fresh').onclick = () => viewAdminCosts(true);
+}
+
 async function viewAdminStorage() {
   const [snap, bsnap] = await Promise.all([getDoc(doc(db, 'adminStats', 'storage')), getDoc(doc(db, 'adminStats', 'backup')).catch(() => null)]);
   const st = snap.exists() ? snap.data() : null;
@@ -2264,6 +2302,7 @@ const SUPER_PUSH = [
   ['membership', '⭐ Un fotógrafo paga su membresía'],
   ['album', '📸 Se publica un álbum'],
   ['sale', '💰 Se vende una foto'],
+  ['costos', '🧾 Algún servicio pasa lo gratis (Firebase, Cloudflare): revisión diaria'],
 ];
 async function drawSuperPush() {
   const box = $('#a-push');

@@ -23,6 +23,7 @@
 //   GET    /dl/{token}                                                        descarga del original
 //   GET    /w/{slug}  ·  {slug}.quieromisfotos.com.ar  ·  dominio propio           web personal del fotógrafo (planes Web)
 //   POST   /admin/storage/scan         Bearer (superadmin)                    recalcula el uso de R2 (también corre a diario)
+//   GET    /admin/costs[?fresh=1]      Bearer (superadmin)                    uso del mes y costo estimado (costs.js; aviso diario)
 //   POST   /extensions/checkout        Bearer (fotógrafo) {eventId, planId}    extensión paga del plazo -> { initPoint }
 //   POST   /extensions/{id}/sync       Bearer (fotógrafo)                     consulta el pago a MP
 //   POST   /plans/subscribe · /plans/sync · /plans/cancel   Bearer (fotógrafo)   suscripción mensual a un plan (MP)
@@ -54,6 +55,7 @@ import { checkDomains, requestDomain, activateDomain, domainStatus, checkPending
 import { renderSite } from './site.js';
 import { scanRequest, scanStorage } from './storage.js';
 import { runBackup, backupRequest } from './backup.js';
+import { costsRequest, checkCosts } from './costs.js';
 import { notifyFollowersOnce, drainPushQueue } from './push.js';
 import { extensionCheckout, extensionSync } from './extensions.js';
 import { subscribe, syncRequest, cancelSubscription, syncDueSubscriptions, changeSeats, platformAccount, adminSyncSubscription } from './subscriptions.js';
@@ -90,7 +92,10 @@ export default {
         .then(sent => (sent > 5 ? null : syncDueSubscriptions(env))).catch(e => console.error('subs', e)));
       return;
     }
-    ctx.waitUntil(scanStorage(env).finally(() => checkPendingDomains(env).catch(e => console.error('dominios', e))));
+    ctx.waitUntil(scanStorage(env).finally(() => Promise.all([
+      checkPendingDomains(env).catch(e => console.error('dominios', e)),
+      checkCosts(env).catch(e => console.error('costos', e)),
+    ])));
   },
 };
 
@@ -152,6 +157,7 @@ async function route(req, env, ctx) {
   if (m === 'POST' && url.pathname === '/admin/domains/activate') return activateDomain(req, env);
   if (m === 'POST' && url.pathname === '/admin/domains/status') return domainStatus(req, env);
   if (m === 'POST' && url.pathname === '/admin/storage/scan') return scanRequest(req, env);
+  if (m === 'GET' && url.pathname === '/admin/costs') return costsRequest(req, env, ctx);
   if (m === 'POST' && url.pathname === '/admin/backup') return backupRequest(req, env);
   if (m === 'POST' && url.pathname === '/extensions/checkout') return extensionCheckout(req, env);
   if (m === 'POST' && url.pathname === '/plans/subscribe') return subscribe(req, env);
