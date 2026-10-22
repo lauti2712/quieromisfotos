@@ -232,6 +232,8 @@ free_fee = str(plans['free']['fee']).replace('.', ',')
 FAQ = [
     ('¿Cuánto cuesta vender fotos en Quiero Mis Fotos?', f'Podés empezar gratis: sin costo fijo, solo una comisión del {free_fee}% por venta más la comisión de Mercado Pago. Los planes pagos bajan la comisión y suman álbumes ilimitados, web propia y dominio.'),
     ('¿Cómo cobro las fotos que vendo?', 'Cada venta se paga con Mercado Pago y la plata entra directo a tu cuenta. Vos elegís en Mercado Pago el plazo de acreditación: al instante o a más días, con menos comisión.'),
+    *([('¿Puedo cobrar por transferencia?', f'Sí, en {", ".join(n for i, n in PLAN_IDS if i in (st.get("transfer") or {}).get("plans", []))}. Tus clientes te transfieren a tu alias de Mercado Pago y la venta se acredita sola: no pagás la comisión de Mercado Pago. La comisión de Quiero Mis Fotos se acumula y la pagás aparte por transferencia.')]
+      if (st.get('transfer') or {}).get('plans') else []),
     ('¿Qué deportes y eventos puedo subir?', 'Fútbol, rugby, hockey, básquet, vóley, running, maratones, ciclismo, triatlón, eventos escolares y cualquier evento deportivo o social donde la gente quiera sus fotos.'),
     ('¿Tengo que poner la marca de agua a mano?', 'No. Subís las fotos y la plataforma les pone tu marca de agua, arma la galería y guarda los originales. El comprador descarga la foto en alta calidad y sin marca después de pagar.'),
     ('¿Cómo encuentran sus fotos los deportistas?', 'Por evento, por horario y, en carreras, por número de dorsal: la plataforma lee los dorsales de las fotos. Vos compartís un link por evento en WhatsApp o Instagram.'),

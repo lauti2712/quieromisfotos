@@ -36,6 +36,8 @@ export async function renderPhotographerLanding(app) {
   const mpPlans = st.mpFeePlans?.length ? st.mpFeePlans : DEFAULT_SETTINGS.mpFeePlans;
 
   const sp = id => planSpec(id, st);
+  const PLAN_NAMES = { lite: 'Profesional Lite', web: 'Profesional', webdomain: 'Profesional Premium', empresa: 'Empresas' };
+  const trPlans = (st.transfer?.plans || []).filter(id => PLAN_NAMES[id]).map(id => PLAN_NAMES[id]);
   const plans = [
     { id: 'free', name: 'Gratis', price: 0, cta: 'Empezar gratis', items: planFeatures('free', st) },
     { id: 'lite', name: 'Profesional Lite', price: sp('lite').price, year: sp('lite').year, cta: 'Quiero este plan', items: planFeatures('lite', st) },
@@ -146,6 +148,7 @@ export async function renderPhotographerLanding(app) {
     <section class="lp-sec lp-faq">
       <h2 class="reveal">Preguntas frecuentes</h2>
       <details class="reveal"><summary>¿Cuándo cobro?</summary><p>Cada venta se paga con Mercado Pago y entra directo a tu cuenta. El plazo de acreditación lo elegís vos en Mercado Pago (al instante o más adelante, con menos comisión de MP).</p></details>
+      ${trPlans.length ? `<details class="reveal"><summary>¿Puedo cobrar por transferencia?</summary><p>Sí, en ${trPlans.join(', ')}. Tus clientes te transfieren a tu alias de Mercado Pago y la venta se acredita sola: <strong>no pagás la comisión de Mercado Pago</strong>. La comisión de Quiero Mis Fotos se acumula y la pagás aparte por transferencia.</p></details>` : ''}
       <details class="reveal"><summary>¿Las fotos pierden calidad?</summary><p>No. El comprador descarga la foto en alta resolución y sin marca de agua. Las muestras de la galería son livianas y llevan la marca para que nadie se las lleve sin pagar.</p></details>
       <details class="reveal"><summary>¿Cuánto tiempo quedan las fotos?</summary><p>Cada álbum se vende entre ${planSpec('free', st).days} y ${planSpec('webdomain', st).days} días, según tu plan, desde que subís la primera foto. Si querés seguir vendiendo, lo extendés desde el panel.</p></details>
       <details class="reveal"><summary>¿Puedo subir desde el celular?</summary><p>Sí. La marca de agua se aplica en tu dispositivo y la subida se retoma sola si se corta la conexión.</p></details>

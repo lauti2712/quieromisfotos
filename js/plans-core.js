@@ -56,13 +56,15 @@ export function planFeatures(id, st) {
   const fee = `Comisión ${String(p.fee).replace('.', ',')}% por venta + la de Mercado Pago`;
   const gb = `${p.albumPhotos.toLocaleString('es-AR')} fotos por álbum`;
   const days = `Cada álbum se vende ${p.days} días`;
+  // Cobro por transferencia: solo en los planes elegidos en Plataforma.
+  const tr = (st?.transfer?.plans || []).includes(id) ? ['Cobrá por transferencia a tu Mercado Pago y ahorrate la comisión de MP'] : [];
   if (id === 'free') return ['Vendé tus fotos en eventos', '1 álbum activo a la vez', `Hasta ${gb}`, days, `Portfolio de ${p.portfolio} fotos`, 'Estadísticas básicas', fee];
   if (id === 'lite') return ['Álbumes ilimitados', `${gb} (ampliable)`, days, `Portfolio de ${p.portfolio} fotos`, 'Estadísticas por evento', 'Foto de portada en tu perfil',
-    ...(p.featured ? ['Destacado en el directorio'] : []), fee];
+    ...(p.featured ? ['Destacado en el directorio'] : []), ...tr, fee];
   if (id === 'web') return ['Todo lo de Lite', `${gb} (ampliable)`, days, `Portfolio de ${p.portfolio} fotos`, 'Tu web: tunombre.quieromisfotos.com.ar',
-    'Fotos de tu web sin marca de agua', 'Links cortos para tus eventos', 'Estadísticas completas', ...(p.featured ? ['Destacado en el directorio'] : []), fee];
+    'Fotos de tu web sin marca de agua', 'Links cortos para tus eventos', 'Estadísticas completas', ...(p.featured ? ['Destacado en el directorio'] : []), ...tr, fee];
   if (id === 'empresa') return ['Todo lo de Premium', `Equipo de ${p.team} fotógrafos (cada uno con su cuenta)`, 'Suben a tus álbumes; vos cobrás todo', 'Ventas por fotógrafo para liquidarles',
-    `${gb} (ampliable)`, days, `Lugar extra: ${'$'}${Number(p.seatPrice).toLocaleString('es-AR')}/mes`, fee];
+    `${gb} (ampliable)`, days, `Lugar extra: ${'$'}${Number(p.seatPrice).toLocaleString('es-AR')}/mes`, ...tr, fee];
   return ['Todo lo de Profesional', 'Tu dominio .com.ar incluido (lo registramos y conectamos nosotros)', `${gb} (ampliable)`, days, `Portfolio de ${p.portfolio} fotos`,
-    ...(p.featured ? ['Destacado en el directorio'] : []), 'Estadísticas avanzadas', 'Atención prioritaria', fee];
+    ...(p.featured ? ['Destacado en el directorio'] : []), 'Estadísticas avanzadas', 'Atención prioritaria', ...tr, fee];
 }
