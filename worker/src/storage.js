@@ -10,6 +10,7 @@ import { json, httpError } from './http.js';
 import { setAvailableUntil } from './orders.js';
 import { notifyUser, notifyFollowersOnce } from './push.js';
 import { cleanOrphans } from './cleanup.js';
+import { keepSamples, SAMPLE_COUNT } from './samples.js';
 
 const GRACE_DAYS = 7;
 
@@ -80,6 +81,16 @@ export async function scanStorage(env) {
     s.priv = 0; s.n = 0;
   }
   retention.upcoming.sort((a, b) => a.deleteAt - b.deleteAt).splice(40);
+  // Álbumes vencidos: quedan 10 fotos de muestra (las recién borradas y, de a 3 por día, las que se borraron antes).
+  if (deleting) {
+    const todo = ids.filter((id, i) => sets[id].deleted || (docs[i]?.originalsDeleted && !docs[i].samplesKept && (docs[i].photoCount || 0) > SAMPLE_COUNT));
+    let old = 0;
+    for (const id of todo) {
+      if (!sets[id].deleted && ++old > 3) continue;
+      const [eid, uid] = id.split('/');
+      await keepSamples(env, eid, uid).catch(e => console.error('muestras', id, e));
+    }
+  }
   const warnUpd = await sendWarnings(env, warnings).catch(e => { console.error('avisos', e); return {}; });
   // Avisos a seguidores pendientes (álbumes con menos de 20 fotos o eventos publicados después de subir).
   // De a 3 por día como máximo (cada uno son varios pedidos); los demás quedan para el día siguiente.
@@ -156,7 +167,7 @@ async function sendWarnings(env, warnings) {
     const [eid, uid] = w.id.split('/');
     const msg = w.type === 'expiry'
       ? { title: `⏳ Tu álbum deja de venderse en ${w.days} día${w.days === 1 ? '' : 's'}`, body: `${name[eid] || 'Tu evento'}: extendé el plazo desde el panel para seguir vendiendo.` }
-      : { title: '🗑️ Se borran los originales de tu álbum', body: `${name[eid] || 'Tu evento'}: en 2 días se eliminan los originales. Extendé el plazo si querés conservarlos.` };
+      : { title: '🗑️ Se borran los originales de tu álbum', body: `${name[eid] || 'Tu evento'}: en 2 días se eliminan los originales y quedan ${SAMPLE_COUNT} fotos de muestra. Extendé el plazo si querés seguir vendiendo.` };
     await notifyUser(env, uid, { ...msg, link: `${panel}#/evento/${eid}` }).catch(e => console.error('aviso', e));
     out[w.id] = w.type === 'expiry' ? { warnedExpiry: new Date(w.until) } : { warnedDelete: new Date(w.deleteAt) };
   }

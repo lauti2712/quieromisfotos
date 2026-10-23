@@ -139,7 +139,7 @@ export const feePercentFor = (user, settings) => rulesFor(user, settings).fee;
 export const setActive = set => !!set && (set.photoCount || 0) > 0 && !set.originalsDeleted && (!setDeleteAt(set) || setDeleteAt(set) > Date.now());
 
 // Qué incluye cada plan: en plans-core.js (lo usa también la página estática de Google, tools/build-seo.py).
-export { planFeatures, TRANSFER_FEATURE } from './plans-core.js';
+export { planFeatures, TRANSFER_FEATURE, promoOf } from './plans-core.js';
 
 // Dorsales: se leen solos en carreras (running, ciclismo, triatlón…). El fotógrafo lo puede cambiar en su álbum.
 const ENDURANCE = /run|marat|carrera|calle|ciclis|bici|mtb|rural|triat|duat|trail|aventura|aguas abiertas|nataci|cross/i;
