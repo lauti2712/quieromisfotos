@@ -252,7 +252,7 @@ dialog .dlg-foot { padding: 14px 18px; border-top: 1px solid var(--border); disp
 @media (hover: hover) { .lb-hint { display: none; } }
 /* Celular: botón de carrito grande, al alcance del pulgar */
 @media (max-width: 640px) {
-  .lightbox .lb-bottom { flex-direction: column; align-items: stretch; gap: 8px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+  .lightbox .lb-bottom { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 8px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
   .lightbox .lb-bottom > .row { display: grid; grid-template-columns: auto auto 1fr; gap: 8px; }
   .lightbox .lb-bottom #lb-add, .lightbox .lb-bottom button[disabled] { grid-column: 1 / -1; order: -1; padding: 14px; font-size: 1.05rem; }
 }
