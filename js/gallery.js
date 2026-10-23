@@ -312,7 +312,8 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
         <a class="btn sm" href="#/carrito">Ver carrito</a>
         ${forSale(p.photographerUid)
           ? `<button class="btn ${inCart ? '' : 'primary'}" id="lb-add">${inCart ? '✓ En el carrito' : '🛒 Agregar al carrito'}</button>`
-          : '<button class="btn" disabled>Ya no está a la venta</button>'}</span>`;
+          : '<button class="btn" disabled>Ya no está a la venta</button>'}</span>
+      ${forSale(p.photographerUid) ? '<span class="lb-note">🛡️ <strong>Vista previa con marca de agua.</strong> Al comprar descargás la foto original en alta calidad, sin marca.</span>' : ''}`;
     $('#lb-add', el)?.addEventListener('click', () => { toggleCart(p); rerender(); });
     $('#lb-fav', el).onclick = () => { toggleFav(p); rerender(); };
     $('#lb-share', el).onclick = () => shareLink({
