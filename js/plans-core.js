@@ -10,7 +10,23 @@ export function planOf(user, now = Date.now()) {
   return PAID_PLANS.includes(user?.plan) && t > now ? user.plan : 'free';
 }
 
-export function planSpec(planId, st) {
+// Promo de comisión (Plataforma): hasta promoUntil (inclusive, hora Argentina) la comisión de todos los planes
+// baja a promoFee si es menor. 0 o sin fecha = sin promo. Por defecto: 3% hasta el 15/11/2026 (lanzamiento).
+export function promoOf(st, now = Date.now()) {
+  st = st || {};
+  const fee = 'promoFee' in st ? Number(st.promoFee) || 0 : 3;
+  const until = 'promoUntil' in st ? String(st.promoUntil || '') : '2026-11-15';
+  if (!(fee > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(until)) return null;
+  return now <= Date.parse(`${until}T23:59:59-03:00`) ? { fee, until } : null;
+}
+
+export function planSpec(planId, st, now = Date.now()) {
+  const p = basePlanSpec(planId, st);
+  const promo = promoOf(st, now);
+  return promo && promo.fee < p.fee ? { ...p, baseFee: p.fee, fee: promo.fee, promoUntil: promo.until } : { ...p, baseFee: p.fee };
+}
+
+function basePlanSpec(planId, st) {
   st = st || {};
   const base = st.retentionDays ?? 14;
   switch (planId) {
@@ -56,7 +72,10 @@ export const TRANSFER_FEATURE = 'Cobrá por transferencia a tu Mercado Pago y ah
 // Qué incluye cada plan: mismo texto en "Soy fotógrafo", en el panel y en la página estática para Google.
 export function planFeatures(id, st) {
   const p = planSpec(id, st);
-  const fee = `Comisión ${String(p.fee).replace('.', ',')}% por venta + la de Mercado Pago`;
+  const pct = n => String(n).replace('.', ',');
+  const fee = p.promoUntil
+    ? `Comisión ${pct(p.fee)}% por venta hasta el ${p.promoUntil.slice(8, 10)}/${p.promoUntil.slice(5, 7)} (después ${pct(p.baseFee)}%) + la de Mercado Pago`
+    : `Comisión ${pct(p.fee)}% por venta + la de Mercado Pago`;
   const gb = `${p.albumPhotos.toLocaleString('es-AR')} fotos por álbum`;
   const days = `Cada álbum se vende ${p.days} días`;
   // Cobro por transferencia: solo en los planes elegidos en Plataforma.

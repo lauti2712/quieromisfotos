@@ -39,7 +39,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
   const expired = withPhotos.filter(p => !setForSale(sets.get(p.uid)) && setUntil(sets.get(p.uid)));
   const noPay = withPhotos.filter(p => setForSale(sets.get(p.uid)) && !canCharge(p.uid));
   box.innerHTML = `
-    ${expired.length ? `<div class="notice warn stack" style="gap:8px"><span>${expired.length === withPhotos.length ? 'Las fotos de este evento' : `Las fotos de ${expired.map(p => esc(p.displayName)).join(', ')}`} ya no están a la venta en la plataforma (venció el plazo de disponibilidad). Si querés alguna, escribile al fotógrafo: puede que todavía las tenga.</span>
+    ${expired.length ? `<div class="notice warn stack" style="gap:8px"><span>${expired.length === withPhotos.length ? 'Las fotos de este evento' : `Las fotos de ${expired.map(p => esc(p.displayName)).join(', ')}`} ya no están a la venta en la plataforma (venció el plazo de disponibilidad)${expired.some(p => sets.get(p.uid)?.samplesKept) ? '. Quedan algunas fotos de muestra para que veas el trabajo' : ''}. Si querés alguna, escribile al fotógrafo: puede que todavía las tenga.</span>
       <span class="row">${expired.map(p => { const u = byUid.get(p.uid); return u?.socials?.whatsapp
         ? `<a class="btn sm primary" target="_blank" rel="noopener" href="${esc(waLink(u.socials.whatsapp, `¡Hola ${u.displayName || ''}! Vi tus fotos de "${ev.name}" en Quiero Mis Fotos y quería pedirte una.`))}">💬 Escribirle a ${esc(p.displayName)}</a>`
         : u?.slug ? `<a class="btn sm" href="#/f/${esc(u.slug)}">Ver contacto de ${esc(p.displayName)}</a>` : ''; }).join('')}</span></div>` : ''}

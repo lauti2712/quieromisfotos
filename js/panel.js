@@ -2220,7 +2220,7 @@ async function viewAdminStorage() {
       <div class="row"><button type="button" class="btn sm" id="lim-add">+ Agregar pack</button><span class="spacer" style="flex:1"></span><button class="btn primary">Guardar</button></div>
     </form>
     <div class="card stack"><h2 style="margin:0">Borrado de originales</h2>
-      <p class="muted small" style="margin:0">Los álbumes se venden ${S.settings.retentionDays} días desde la primera foto (más las extensiones pagas). Después quedan ${GRACE_DAYS} días para descargas y para extender, y se borran los originales (las muestras quedan).
+      <p class="muted small" style="margin:0">Los álbumes se venden ${S.settings.retentionDays} días desde la primera foto (más las extensiones pagas). Después quedan ${GRACE_DAYS} días para descargas y para extender, y se borran los originales: quedan 10 fotos de muestra con marca de agua (las más vendidas), sin venta.
         ${ret.mode === 'on' ? '<strong>Borrado activo.</strong>' : '<strong>Modo simulación:</strong> todavía no borra nada, solo informa.'}</p>
       ${retTable('Para borrar ahora', ret.due || [], 'deleteAt')}
       ${retTable('Próximos a borrarse', ret.upcoming || [], 'deleteAt')}
@@ -2531,13 +2531,18 @@ async function viewAdminConfig() {
               <td>${id === 'free' ? '—' : `<span class="hint">Mensual</span>${num('price', p.price)}
                 ${PLANS[id]?.domain ? `<span class="hint">Primer mes</span>${num('first', p.first)}` : ''}
                 <span class="hint">Anual</span>${num('year', p.year)}`}</td>
-              <td>${num('fee', p.fee, 0.1)}</td>
+              <td>${num('fee', p.baseFee ?? p.fee, 0.1)}</td>
               <td>${num('portfolio', p.portfolio)}</td>
               <td>${num('albumPhotos', p.albumPhotos, 50)}</td>
               <td>${num('days', p.days)}</td>
               <td>${id === 'free' ? '—' : `<input type="checkbox" data-k="featured" ${p.featured ? 'checked' : ''}>`}</td></tr>`;
           }).join('')}
         </table></div>
+        <div class="row" style="align-items:flex-end;gap:10px">
+          <label class="field" style="max-width:200px">Promo: comisión % para todos<input type="number" id="a-promo-fee" min="0" step="0.1" value="${esc(String('promoFee' in st ? st.promoFee : 3))}"></label>
+          <label class="field" style="max-width:200px">hasta el (inclusive)<input type="date" id="a-promo-until" value="${esc('promoUntil' in st ? st.promoUntil || '' : '2026-11-15')}"></label>
+          <span class="hint" style="flex:1">Mientras dure, se cobra esta comisión en todos los planes (si es menor que la del plan) y se muestra en Soy fotógrafo. 0 = sin promo.</span>
+        </div>
         <label class="field" style="max-width:320px">Prueba gratis de Profesional para fotógrafos nuevos (días)<input type="number" id="a-trial" min="0" max="90" step="1" value="${st.trialDays ?? 30}">
           <span class="hint">Se da al aprobar al fotógrafo, una sola vez. 0 = sin prueba. Rige con los planes nuevos.</span></label>
         <div class="row"><button type="button" class="btn sm" id="a-mpacc">💳 Ver la cuenta que cobra los planes</button><span class="small" id="a-mpacc-out"></span></div>
@@ -2589,6 +2594,7 @@ async function viewAdminConfig() {
     try {
       await setDoc(doc(db, 'settings', 'platform'), {
         showDirectory: $('#a-dir').checked, trialDays: Math.round(Number($('#a-trial').value) || 0), ...readPlanCfg(),
+        promoFee: Number($('#a-promo-fee').value) || 0, promoUntil: $('#a-promo-until').value || '',
         retentionDays: Math.round(Number($('#a-ret').value)),
         extensionPlans: clean,
         mpFeePlans: $$('#a-mp [data-mp]').map(i => ({ id: i.dataset.mp, label: i.dataset.label, percent: Math.round(Number(i.value) * 100) / 100 })),

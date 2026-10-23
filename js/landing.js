@@ -1,6 +1,6 @@
 // Página "Soy fotógrafo": explica cómo funciona la plataforma para fotógrafos, con animaciones.
 import { $, $$, esc, fmtMoney } from './util.js';
-import { loadSettings, DEFAULT_SETTINGS, planSpec, rulesFor, planFeatures, TRANSFER_FEATURE } from './data.js';
+import { loadSettings, DEFAULT_SETTINGS, planSpec, rulesFor, planFeatures, TRANSFER_FEATURE, promoOf } from './data.js';
 import { sellerNet } from './pricing.js';
 
 // Fotos de la animación (Pexels, licencia libre): una disciplina por ciclo.
@@ -36,6 +36,8 @@ export async function renderPhotographerLanding(app) {
   const mpPlans = st.mpFeePlans?.length ? st.mpFeePlans : DEFAULT_SETTINGS.mpFeePlans;
 
   const sp = id => planSpec(id, st);
+  const promo = promoOf(st);
+  const promoDate = promo ? new Date(`${promo.until}T12:00:00-03:00`).toLocaleDateString('es-AR', { day: 'numeric', month: 'long' }) : '';
   const PLAN_NAMES = { lite: 'Profesional Lite', web: 'Profesional', webdomain: 'Profesional Premium', empresa: 'Empresas' };
   const trPlans = (st.transfer?.plans || []).filter(id => PLAN_NAMES[id]).map(id => PLAN_NAMES[id]);
   const plans = [
@@ -117,6 +119,7 @@ export async function renderPhotographerLanding(app) {
 
     <section id="planes" class="lp-sec">
       <h2 class="reveal">Planes</h2>
+      ${promo ? `<div class="lp-promo reveal">🎉 <strong>Promo de lanzamiento: comisión del ${esc(String(promo.fee).replace('.', ','))}% en todos los planes</strong> hasta el ${esc(promoDate)}. Registrate ahora y vendé pagando menos.</div>` : ''}
       <div class="lp-plans four">${plans.map(planCard).join('')}
       </div>
       <p class="muted small lp-note reveal">A la comisión de cada plan se suma la de Mercado Pago, que depende del plazo de cobro que elijas en tu cuenta de MP. En todos los planes elegís quién paga la comisión de Quiero Mis Fotos: la absorbés vos o se le suma al comprador como costo de servicio. Los planes pagos se cobran por Mercado Pago y los cancelás cuando quieras.</p>

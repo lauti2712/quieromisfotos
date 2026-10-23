@@ -229,6 +229,11 @@ js = ("import { planSpec, planFeatures } from './js/plans-core.js';"
 plans = json.loads(subprocess.check_output(['node', '--input-type=module', '-e', js, json.dumps(st, default=str)], cwd=ROOT))
 money = lambda n: '$' + f'{int(n):,}'.replace(',', '.')
 free_fee = str(plans['free']['fee']).replace('.', ',')
+# Promo de comisión vigente (la calcula plans-core.js): se muestra arriba de los planes.
+promo_until = plans['lite'].get('promoUntil') or plans['free'].get('promoUntil')
+MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+promo_html = (f'<div class="lp-promo">🎉 <strong>Promo de lanzamiento: comisión del {free_fee}% en todos los planes</strong> hasta el '
+              f'{int(promo_until[8:10])} de {MESES[int(promo_until[5:7]) - 1]}. Registrate ahora y vendé pagando menos.</div>') if promo_until else ''
 FAQ = [
     ('¿Cuánto cuesta vender fotos en Quiero Mis Fotos?', f'Podés empezar gratis: sin costo fijo, solo una comisión del {free_fee}% por venta más la comisión de Mercado Pago. Los planes pagos bajan la comisión y suman álbumes ilimitados, web propia y dominio.'),
     ('¿Cómo cobro las fotos que vendo?', 'Cada venta se paga con Mercado Pago y la plata entra directo a tu cuenta. Vos elegís en Mercado Pago el plazo de acreditación: al instante o a más días, con menos comisión.'),
@@ -266,7 +271,7 @@ soy_body = f'''<div class="lp">
   <li><strong>Tu propia web</strong> (tunombre.quieromisfotos.com.ar) o tu dominio .com.ar, con los planes Profesional.</li>
   <li><strong>Plan Empresas</strong> para productoras y equipos de fotógrafos: cada uno sube a tus álbumes y vos cobrás todo.</li>
 </ul></section>
-<section class="lp-sec" id="planes"><h2>Planes para fotógrafos</h2><div class="lp-plans four">{plan_cards}</div>
+<section class="lp-sec" id="planes"><h2>Planes para fotógrafos</h2>{promo_html}<div class="lp-plans four">{plan_cards}</div>
   <p class="muted small">A la comisión de cada plan se suma la de Mercado Pago, que depende del plazo de cobro que elijas. Los planes pagos se cobran por Mercado Pago y los cancelás cuando quieras.</p></section>
 <section class="lp-sec lp-faq"><h2>Preguntas frecuentes</h2>{''.join(f'<details><summary>{e(q)}</summary><p>{e(a)}</p></details>' for q, a in FAQ)}</section>
 <section class="lp-final"><h2>¿Arrancamos?</h2><p>Creá tu cuenta en un minuto, subí tu primer evento y compartí el link hoy mismo.</p>
