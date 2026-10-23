@@ -3,7 +3,7 @@ import { db, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, que
 import { $, $$, esc, fmtMoney, fmtTs, toast, errMsg, parseHash } from './util.js';
 import { apiPost, apiGet } from './api.js';
 import { auth } from './fb.js';
-import { PLANS, planOf, hasWeb, siteUrlOf, planSpec, planFeatures } from './data.js';
+import { PLANS, planOf, hasWeb, siteUrlOf, planSpec, planFeatures, TRANSFER_FEATURE } from './data.js';
 import { shareLink } from './share.js';
 
 const TEMPLATES = [
@@ -56,7 +56,7 @@ export async function viewWeb(view, { uid, profile, settings }) {
           <div class="plan-price">${price(p.id)}</div>
           ${first(p.id) ? `<div class="muted small">Primer mes ${fmtMoney(first(p.id))} (incluye el registro de tu dominio)</div>` : ''}
           ${p.id !== 'free' && planSpec(p.id, settings).year ? `<div class="muted small">o ${fmtMoney(planSpec(p.id, settings).year)}/año (2 meses gratis)</div>` : ''}
-          <ul>${p.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>
+          <ul>${p.items.map(i => i === TRANSFER_FEATURE ? `<li class="plan-hl">🏦 <strong>${esc(i)}</strong></li>` : `<li>${esc(i)}</li>`).join('')}</ul>
           ${p.id !== 'free' && p.id !== plan ? `<button class="btn ${p.id === 'web' ? 'primary' : ''} sm" data-sub="${p.id}">${plan === 'free' ? 'Suscribirme' : 'Cambiar a este plan'}</button>` : ''}
         </div>`).join('')}
     </div>

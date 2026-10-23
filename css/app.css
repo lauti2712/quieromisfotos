@@ -573,6 +573,10 @@ body:has(.lightbox, .intro, dialog[open]) .wa-bubble { display: none; }
 .lp-price { font-size: 1.8rem; font-weight: 800; margin: 6px 0 10px; }
 .lp-price small { font-size: .9rem; color: var(--muted); font-weight: 500; }
 .lp-plan ul { margin: 0; padding-left: 18px; line-height: 1.8; }
+/* Beneficio destacado en las tarjetas de planes (cobro por transferencia) */
+li.plan-hl { list-style: none; margin: 8px 0; padding: 8px 10px; border-radius: 10px; background: var(--ok-soft); border: 1px solid var(--ok); line-height: 1.35; }
+li.plan-hl strong { color: var(--text); }
+.lp-plan li.plan-hl { margin-left: -18px; }
 .lp-plans.two { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 760px; margin: 0 auto; }
 .lp-plans.four { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 @media (max-width: 1100px) { .lp-plans.four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

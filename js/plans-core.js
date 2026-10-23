@@ -50,6 +50,9 @@ export function teamSeats(user, st) {
   return r.team ? r.team + (user?.teamExtraSeats || 0) + (user?.teamPaidSeats || 0) : 0;
 }
 
+// Beneficio destacado de los planes con cobro por transferencia (se muestra resaltado en las tarjetas de planes).
+export const TRANSFER_FEATURE = 'Cobrá por transferencia a tu Mercado Pago y ahorrate la comisión de MP';
+
 // Qué incluye cada plan: mismo texto en "Soy fotógrafo", en el panel y en la página estática para Google.
 export function planFeatures(id, st) {
   const p = planSpec(id, st);
@@ -57,7 +60,7 @@ export function planFeatures(id, st) {
   const gb = `${p.albumPhotos.toLocaleString('es-AR')} fotos por álbum`;
   const days = `Cada álbum se vende ${p.days} días`;
   // Cobro por transferencia: solo en los planes elegidos en Plataforma.
-  const tr = (st?.transfer?.plans || []).includes(id) ? ['Cobrá por transferencia a tu Mercado Pago y ahorrate la comisión de MP'] : [];
+  const tr = (st?.transfer?.plans || []).includes(id) ? [TRANSFER_FEATURE] : [];
   if (id === 'free') return ['Vendé tus fotos en eventos', '1 álbum activo a la vez', `Hasta ${gb}`, days, `Portfolio de ${p.portfolio} fotos`, 'Estadísticas básicas', fee];
   if (id === 'lite') return ['Álbumes ilimitados', `${gb} (ampliable)`, days, `Portfolio de ${p.portfolio} fotos`, 'Estadísticas por evento', 'Foto de portada en tu perfil',
     ...(p.featured ? ['Destacado en el directorio'] : []), ...tr, fee];

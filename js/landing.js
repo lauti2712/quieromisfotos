@@ -1,6 +1,6 @@
 // Página "Soy fotógrafo": explica cómo funciona la plataforma para fotógrafos, con animaciones.
 import { $, $$, esc, fmtMoney } from './util.js';
-import { loadSettings, DEFAULT_SETTINGS, planSpec, rulesFor, planFeatures } from './data.js';
+import { loadSettings, DEFAULT_SETTINGS, planSpec, rulesFor, planFeatures, TRANSFER_FEATURE } from './data.js';
 import { sellerNet } from './pricing.js';
 
 // Fotos de la animación (Pexels, licencia libre): una disciplina por ciclo.
@@ -55,7 +55,7 @@ export async function renderPhotographerLanding(app) {
           <div class="lp-price">${p.price ? `${fmtMoney(p.price)}<small>/mes</small>` : '$0'}</div>
           ${p.first ? `<p class="muted small">Primer mes ${fmtMoney(p.first)} (incluye el dominio)</p>` : ''}
           ${p.year ? `<p class="muted small">o ${fmtMoney(p.year)}/año (2 meses gratis)</p>` : ''}
-          <ul>${p.items.map(t => `<li>${esc(t)}</li>`).join('')}</ul>
+          <ul>${p.items.map(t => t === TRANSFER_FEATURE ? `<li class="plan-hl">🏦 <strong>${esc(t)}</strong></li>` : `<li>${esc(t)}</li>`).join('')}</ul>
           <a class="btn ${p.hot ? 'primary' : ''} lp-plan-cta" href="panel.html?plan=${p.id}">${esc(p.cta)}</a>
         </div>`;
 

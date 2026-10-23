@@ -247,7 +247,7 @@ STEPS = [('📸', 'Subís las fotos', 'Desde la compu o el celular, de a cientos
 plan_cards = ''.join(f'''<div class="lp-plan{' hot' if pid == 'web' else ''}"><h3>{e(name)}</h3>
   <div class="lp-price">{money(plans[pid]['price']) + '<small>/mes</small>' if plans[pid]['price'] else '$0'}</div>
   {f'<p class="muted small">o {money(plans[pid]["year"])}/año</p>' if plans[pid].get('year') else ''}
-  <ul>{''.join(f'<li>{e(t)}</li>' for t in plans[pid]['items'])}</ul>
+  <ul>{''.join(f'<li class="plan-hl">🏦 <strong>{e(t)}</strong></li>' if t.startswith('Cobrá por transferencia') else f'<li>{e(t)}</li>' for t in plans[pid]['items'])}</ul>
   <a class="btn{' primary' if pid == 'web' else ''}" href="/panel.html?plan={pid}">{'Empezar gratis' if pid == 'free' else 'Quiero este plan'}</a></div>''' for pid, name in PLAN_IDS)
 soy_body = f'''<div class="lp">
 <section class="lp-hero"><div class="lp-hero-txt">
