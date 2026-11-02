@@ -223,11 +223,19 @@ async function renderEvent(id) {
     </div>
     ${tags.length ? `<div class="pills" style="margin-bottom:18px">${tags.map(t => `<span class="pill accent">${esc(t.name)}</span>`).join('')}</div>` : ''}
     ${ev.demo ? '<div class="notice warn">👀 <strong>Evento de ejemplo.</strong> Está para que veas cómo funciona la plataforma: podés ver las fotos y armar el carrito, pero no se pueden comprar.</div>' : ''}
-    <section class="card">
+    <section class="card gallery-card">
       <h2>Fotos</h2>
       <div id="gallery"></div>
     </section>`;
-  mountGallery($('#gallery'), { ev, photographers, sets, initialUid: parseHash().query.get('f') || '', initialPhoto: parseHash().query.get('foto') || '', initialBib: parseHash().query.get('dorsal') || '' });
+  mountGallery($('#gallery'), {
+    ev, photographers, sets, initialUid: parseHash().query.get('f') || '', initialPhoto: parseHash().query.get('foto') || '', initialBib: parseHash().query.get('dorsal') || '',
+    // Sin portada cargada: se usa la primera foto del álbum en vez del degradado.
+    onFirstPhoto: p => {
+      const c = $('.event-hero .cover');
+      if (ev.coverUrl || !c || c.querySelector('img') || !p.previewUrl) return;
+      c.insertAdjacentHTML('afterbegin', `<img src="${esc(p.previewUrl)}" alt="">`);
+    },
+  });
   $('#ev-share').onclick = () => shareLink({ title: ev.name, text: `📸 Fotos de ${ev.name} en Quiero Mis Fotos:`, url: eventUrl(ev.id) });
   // Aviso cuando suban las fotos.
   const fb = $('#ev-follow');

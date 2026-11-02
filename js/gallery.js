@@ -10,7 +10,7 @@ import { trackPhotoView, trackCartAdd } from './stats.js';
 
 const PAGE = 60;
 
-export function mountGallery(box, { ev, photographers, sets, initialUid = '', initialPhoto = '', initialBib = '' }) {
+export function mountGallery(box, { ev, photographers, sets, initialUid = '', initialPhoto = '', initialBib = '', onFirstPhoto }) {
   const byUid = new Map(photographers.map(p => [p.uid, p]));
   const withPhotos = photographers.filter(p => (sets.get(p.uid)?.photoCount || 0) > 0);
   const state = { uid: '', sub: '', hour: 0, fav: false, bib: '', photos: [], cursor: null, done: false, loading: false };
@@ -146,6 +146,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
       const seen = new Set(state.photos.map(p => p.id));
       const fresh = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => byUid.has(p.photographerUid) && !seen.has(p.id));
       const start = state.photos.length;
+      if (!start && fresh[0] && onFirstPhoto) { onFirstPhoto(fresh[0]); onFirstPhoto = null; }
       if (state.noTime && fresh.length && !state.noTimeShown) {
         state.noTimeShown = true;
         $('#g-grid', box).insertAdjacentHTML('beforeend', '<div class="g-notime muted small" style="grid-column:1/-1;padding:10px 2px 2px">🕒 Fotos sin hora de cámara: pueden ser de cualquier momento del evento.</div>');
@@ -279,6 +280,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
     openViewer({
       index,
       src: i => state.photos[i].previewUrl,
+      thumb: i => state.photos[i].thumbUrl,
       count: () => state.photos.length,
       total: () => `${state.photos.length}${state.done ? '' : '+'}`,
       // Cuenta la foto vista una vez (el visor también redibuja al tocar ♥ o carrito).
@@ -289,7 +291,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
 
   // Foto suelta (link compartido de una foto).
   function openSingle(p) {
-    openViewer({ index: 0, src: () => p.previewUrl, count: () => 1, total: () => '1', footer: (i, el, rerender) => viewerFooter(p, el, rerender) });
+    openViewer({ index: 0, src: () => p.previewUrl, thumb: () => p.thumbUrl, count: () => 1, total: () => '1', footer: (i, el, rerender) => viewerFooter(p, el, rerender) });
   }
 
   // Crédito: en el plan Empresas, quién sacó la foto ("Juan Pérez para Productora X").
@@ -309,7 +311,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
       <span class="row">
         <button class="btn sm" id="lb-fav" title="Favorita">${fav ? '♥' : '♡'}</button>
         <button class="btn sm" id="lb-share" title="Compartir esta foto">🔗</button>
-        <a class="btn sm" href="#/carrito">Ver carrito</a>
+        <a class="btn sm" href="#/carrito">${cart.count() ? `🛒 Ver carrito (${cart.count()})` : 'Ver carrito'}</a>
         ${forSale(p.photographerUid)
           ? `<button class="btn ${inCart ? '' : 'primary'}" id="lb-add">${inCart ? '✓ En el carrito' : '🛒 Agregar al carrito'}</button>`
           : '<button class="btn" disabled>Ya no está a la venta</button>'}</span>
