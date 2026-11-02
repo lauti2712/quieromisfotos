@@ -232,7 +232,7 @@ async function renderEvent(id) {
     // Sin portada cargada: se usa la primera foto del álbum en vez del degradado.
     onFirstPhoto: p => {
       const c = $('.event-hero .cover');
-      if (ev.coverUrl || !c || c.querySelector('img') || !p.previewUrl) return;
+      if (ev.coverUrl || !c || c.querySelector(':scope > img') || !p.previewUrl) return;
       c.insertAdjacentHTML('afterbegin', `<img src="${esc(p.previewUrl)}" alt="">`);
     },
   });
