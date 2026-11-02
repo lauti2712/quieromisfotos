@@ -3,7 +3,8 @@ import { db, collection, getDocs, query, where, orderBy, limit, startAfter, Time
 import { $, $$, esc, fmtMoney, toast, errMsg, todayIso, fmtDate, waLink } from './util.js';
 import { cart } from './cart.js';
 import { openViewer } from './viewer.js';
-import { setForSale, setUntil } from './data.js';
+import { setForSale, setUntil, loadSettings, feePercentFor } from './data.js';
+import { computeTotals, splitPhotos, bestPrice } from './pricing.js';
 import { favs } from './favs.js';
 import { shareLink, eventUrl } from './share.js';
 import { trackPhotoView, trackCartAdd } from './stats.js';
@@ -61,6 +62,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
     <div class="filter-row" id="g-sub"></div>
     <div class="filter-row" id="g-hour"></div>
     <div class="filter-row" id="g-fav"></div>
+    <div class="g-tools" id="g-tools"></div>
     <div class="gallery" id="g-grid"></div>
     <div id="g-sentinel" style="height:1px"></div>
     <div class="row" style="justify-content:center;margin-top:14px" id="g-more"></div>
@@ -187,6 +189,32 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
     }
   }
 
+  // Herramientas: elegir varias (tocar agrega/quita del carrito) y 2 o 3 columnas (se recuerda en el dispositivo).
+  function drawTools() {
+    const sale = withPhotos.some(p => forSale(p.uid));
+    $('#g-tools', box).innerHTML = `
+      ${sale ? `<button class="chip ${state.pick ? 'on' : ''}" id="g-pick">${state.pick ? '✓ Listo' : '☑️ Elegir varias'}</button>` : ''}
+      <span class="g-cols" role="group" aria-label="Tamaño de las fotos">
+        <button class="chip ${cols === 2 ? 'on' : ''}" data-cols="2" title="Fotos grandes">▢▢</button><button class="chip ${cols === 3 ? 'on' : ''}" data-cols="3" title="Fotos chicas">▫▫▫</button>
+      </span>`;
+    $('#g-pick', box)?.addEventListener('click', () => {
+      state.pick = !state.pick;
+      $('#g-grid', box).classList.toggle('picking', state.pick);
+      if (state.pick) toast('Tocá las fotos que querés: se van sumando al carrito');
+      drawTools(); syncCartBar();
+    });
+    $$('[data-cols]', box).forEach(b => b.onclick = () => {
+      cols = Number(b.dataset.cols);
+      try { localStorage.setItem('qmf-cols', String(cols)); } catch { /* nada */ }
+      $('#g-grid', box).classList.toggle('cols3', cols === 3);
+      drawTools();
+    });
+  }
+  let cols = 2;
+  try { cols = localStorage.getItem('qmf-cols') === '3' ? 3 : 2; } catch { /* nada */ }
+  $('#g-grid', box).classList.toggle('cols3', cols === 3);
+  drawTools();
+
   function itemHtml(p, i) {
     return `<div class="g-item ${cart.has(p.id) ? 'in-cart' : ''}" data-i="${i}" data-id="${p.id}" role="button" tabindex="0" aria-label="Ver foto">
       <img src="${esc(p.thumbUrl)}" alt="" loading="lazy" decoding="async">
@@ -212,6 +240,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
     const add = e.target.closest('[data-add]');
     if (add) { toggleCart(state.photos[+add.dataset.add]); return; }
     const b = e.target.closest('.g-item');
+    if (b && state.pick) { const p = state.photos[+b.dataset.i]; if (p && forSale(p.photographerUid)) toggleCart(p); return; }
     if (b) openGalleryViewer(+b.dataset.i);
   });
   $('#g-grid', box).addEventListener('keydown', e => {
@@ -223,15 +252,46 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
     if (!p) return;
     const added = cart.toggle(p);
     if (added) trackCartAdd(ev.id, p.photographerUid);
-    toast(added ? 'Foto agregada al carrito' : 'Foto quitada del carrito');
+    if (!state.pick) toast(added ? 'Foto agregada al carrito' : 'Foto quitada del carrito'); // eligiendo varias, alcanza con la barra
     syncCartMarks();
   }
   // Barra fija abajo con lo que lleva en el carrito (en el celular el botón del carrito queda lejos).
+  // Total estimado del carrito (packs y costo de servicio aplicados; lo confirma el carrito al pagar) y sugerencia de pack.
+  let settings = null;
+  loadSettings().then(s => { settings = s; if (document.body.contains(box)) syncCartBar(); }).catch(() => {});
+  function cartSummary() {
+    let total = 0, tip = '';
+    for (const g of cart.groups()) {
+      const set = sets.get(g.photographerUid), ph = byUid.get(g.photographerUid);
+      if (g.eventId !== ev.id || !set?.price || !settings) {
+        total += g.items.reduce((a, it) => a + (it.price || set?.price || 0), 0);
+        continue;
+      }
+      const split = splitPhotos(g.items, set.price);
+      const t = computeTotals({ ...split, price: set.price, packs: set.packs, feeMode: set.feeMode, feePercent: feePercentFor(ph, settings) });
+      total += t.total;
+      tip ||= packTip(split.count, set);
+    }
+    return { n: cart.count(), total, tip };
+  }
+  // "Con 1 más llevás 5 por $6.000" si el pack siguiente sale casi lo mismo.
+  function packTip(n, set) {
+    const now = bestPrice(n, set.price, set.packs).subtotal;
+    for (const p of (set.packs || []).filter(k => k.qty > n).sort((a, b) => a.qty - b.qty)) {
+      const extra = p.qty - n;
+      if (extra > 3) break;
+      const then = bestPrice(p.qty, set.price, set.packs).subtotal;
+      if (then - now < set.price * extra) return `💡 Con ${extra} más llevás ${p.qty} por ${fmtMoney(then)} (solo ${fmtMoney(then - now)} más)`;
+    }
+    return '';
+  }
   function syncCartBar() {
-    const n = cart.count();
+    const { n, total, tip } = cartSummary();
     const bar = $('#g-cartbar', box);
-    bar.classList.toggle('hidden', !n);
-    bar.innerHTML = `<span>🛒 <strong>${n}</strong> foto${n === 1 ? '' : 's'} en el carrito</span><span class="g-cartbar-go">Ver carrito y pagar</span>`;
+    bar.classList.toggle('hidden', !n && !state.pick);
+    bar.innerHTML = n
+      ? `<span class="g-cartbar-txt"><span>🛒 <strong>${n}</strong> foto${n === 1 ? '' : 's'} · <strong>${fmtMoney(total)}</strong></span>${tip ? `<small>${esc(tip)}</small>` : ''}</span><span class="g-cartbar-go">Ver carrito y pagar</span>`
+      : '<span>☑️ Tocá las fotos que querés comprar</span>';
   }
   function syncCartMarks() {
     syncCartBar();
@@ -318,11 +378,12 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
       <span class="row">
         <button class="btn sm" id="lb-fav" title="Favorita">${fav ? '♥' : '♡'}</button>
         <button class="btn sm" id="lb-share" title="Compartir esta foto">🔗</button>
-        <a class="btn sm" href="#/carrito">${cart.count() ? `🛒 Ver carrito (${cart.count()})` : 'Ver carrito'}</a>
+        <a class="btn sm" href="#/carrito">${cart.count() ? `🛒 ${cart.count()} · ${fmtMoney(cartSummary().total)}` : 'Ver carrito'}</a>
         ${forSale(p.photographerUid)
           ? `<button class="btn ${inCart ? '' : 'primary'}" id="lb-add">${inCart ? '✓ En el carrito' : '🛒 Agregar al carrito'}</button>`
           : '<button class="btn" disabled>Ya no está a la venta</button>'}</span>
-      ${forSale(p.photographerUid) ? '<span class="lb-note">🛡️ <strong>Vista previa con marca de agua.</strong> Al comprar descargás la foto original en alta calidad, sin marca. · 🔒 Pago seguro con Mercado Pago</span>' : ''}`;
+      ${forSale(p.photographerUid) ? '<span class="lb-note">🛡️ <strong>Vista previa con marca de agua.</strong> Al comprar descargás la foto original en alta calidad, sin marca. · 🔒 Pago seguro con Mercado Pago</span>' : ''}
+      ${forSale(p.photographerUid) && cartSummary().tip ? `<span class="lb-note lb-tip">${esc(cartSummary().tip)}</span>` : ''}`;
     $('#lb-add', el)?.addEventListener('click', () => { toggleCart(p); rerender(); });
     $('#lb-fav', el).onclick = () => { toggleFav(p); rerender(); };
     $('#lb-share', el).onclick = () => shareLink({

@@ -701,3 +701,25 @@ body:not(.with-tabbar) .up-fab { bottom: calc(16px + env(safe-area-inset-bottom)
 .tr-amount { display: grid; justify-items: center; gap: 4px; padding: 10px; border-radius: 12px; background: var(--accent-soft); color: var(--text); text-align: center; }
 .tr-amount > strong { font-size: 2.2rem; line-height: 1.1; letter-spacing: -.5px; }
 .tr-cents { color: var(--accent); font-size: 1.15em; text-decoration: underline; text-underline-offset: 4px; }
+
+/* ---------- galería: elegir varias, 2/3 columnas, barra del carrito con total ---------- */
+.g-tools { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.g-tools:empty { display: none; }
+.g-cols { display: inline-flex; gap: 4px; margin-left: auto; }
+.g-cols .chip { padding: 4px 10px; letter-spacing: -1px; }
+.gallery.cols3 { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 5px; }
+.gallery.cols3 .g-fav { display: none; }
+.gallery.cols3 .g-add { width: 26px; height: 26px; font-size: 14px; right: 4px; bottom: 4px; }
+@media (max-width: 640px) { .gallery.cols3 { grid-template-columns: repeat(3, 1fr); gap: 3px; } .gallery.cols3 .g-item { border-radius: 6px; } }
+.gallery.picking .g-fav, .gallery.picking .g-add { display: none; }
+.gallery.picking .g-item { cursor: pointer; }
+.gallery.picking .g-item::after { content: ""; position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border-radius: 50%; border: 2px solid #fff; background: rgba(0,0,0,.35); box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+.gallery.picking .g-item.in-cart::after { content: "✓"; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 15px; background: var(--accent); border-color: var(--accent); }
+.gallery.picking .g-item.in-cart img { opacity: .8; }
+.g-cartbar-txt { display: grid; gap: 2px; min-width: 0; }
+.g-cartbar-txt small { font-size: .78rem; opacity: .9; white-space: normal; }
+/* Dorsal: la búsqueda principal cuando el evento la tiene */
+.g-bib label { font-size: 1.05rem; }
+@media (max-width: 640px) { .g-bib input { max-width: none; } }
+.lightbox .lb-note.lb-tip { color: #ffd2bf; }
+.gallery.cols3.picking .g-item::after { width: 22px; height: 22px; top: 4px; right: 4px; font-size: 13px; }

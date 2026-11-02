@@ -25,7 +25,7 @@ export const cart = {
   has: photoId => items.some(i => i.photoId === photoId),
   add(p) {
     if (this.has(p.id) || items.length >= MAX_ITEMS) return false;
-    items.push({ photoId: p.id, eventId: p.eventId, photographerUid: p.photographerUid, thumbUrl: p.thumbUrl, addedAt: Date.now() });
+    items.push({ photoId: p.id, eventId: p.eventId, photographerUid: p.photographerUid, thumbUrl: p.thumbUrl, price: p.price > 0 ? p.price : 0, noPack: !!p.noPack, addedAt: Date.now() });
     save();
     return true;
   },
