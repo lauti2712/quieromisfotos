@@ -723,3 +723,19 @@ body:not(.with-tabbar) .up-fab { bottom: calc(16px + env(safe-area-inset-bottom)
 @media (max-width: 640px) { .g-bib input { max-width: none; } }
 .lightbox .lb-note.lb-tip { color: #ffd2bf; }
 .gallery.cols3.picking .g-item::after { width: 22px; height: 22px; top: 4px; right: 4px; font-size: 13px; }
+
+/* ---------- panel: álbum nuevo, subida y compartir ---------- */
+.wizard-steps { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+.wizard-steps .ws { padding: 6px 12px; border-radius: 999px; background: var(--surface-2); font-weight: 700; font-size: .85rem; color: var(--muted); }
+.wizard-steps .ws.done { background: var(--ok-soft); color: var(--ok); }
+.wizard-steps .ws.now { background: var(--accent); color: var(--accent-ink); }
+.up-big { display: grid; gap: 2px; padding: 12px 14px; border-radius: 12px; background: var(--accent-soft); color: var(--text); }
+.up-big strong { font-size: 1.15rem; }
+.up-big span { font-size: .85rem; }
+.up-big.done { background: var(--ok-soft); }
+.share-card .share-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.share-card.flash { animation: shareFlash 1.6s ease 2; }
+@keyframes shareFlash { 50% { box-shadow: 0 0 0 4px var(--accent); } }
+@media (prefers-reduced-motion: reduce) { .share-card.flash { animation: none; outline: 3px solid var(--accent); } }
+/* Menú de abajo: botón central para subir */
+.tabbar a.tab-up span { display: grid; place-items: center; width: 40px; height: 40px; margin-top: -14px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-size: 1.5rem; font-weight: 800; box-shadow: 0 4px 12px rgba(255,90,31,.4); }
