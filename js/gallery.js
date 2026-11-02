@@ -26,9 +26,16 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
   if (initialUid && withPhotos.some(p => p.uid === initialUid)) state.uid = initialUid;
 
   if (!withPhotos.length) {
-    box.innerHTML = ev.date > todayIso()
-      ? `<div class="empty">📅 Este evento es el <strong>${esc(fmtDate(ev.date, { weekday: 'long', day: 'numeric', month: 'long' }))}</strong>.<br>Tocá <strong>🔔 Avisarme</strong> arriba y te avisamos apenas suban las fotos.</div>`
-      : '<div class="empty">📷 Las fotos de este evento van a estar disponibles muy pronto.<br>Tocá <strong>🔔 Avisarme</strong> arriba y te avisamos.</div>';
+    // Sin fotos todavía: lo principal es que se anote para el aviso (botón grande que usa el 🔔 de arriba).
+    box.innerHTML = `<div class="empty stack" style="gap:14px;justify-items:center">
+      <span>${ev.date > todayIso()
+        ? `📅 Este evento es el <strong>${esc(fmtDate(ev.date, { weekday: 'long', day: 'numeric', month: 'long' }))}</strong>.`
+        : '📷 Las fotos de este evento van a estar disponibles muy pronto.'}</span>
+      <button class="btn primary big-cta" id="g-follow-cta">🔔 Avisarme cuando estén las fotos</button>
+      <span class="muted small">Te mandamos una notificación apenas el fotógrafo las sube.</span></div>`;
+    const cta = $('#g-follow-cta', box), top = document.getElementById('ev-follow');
+    const sync = () => { const on = top?.classList.contains('on'); cta.textContent = on ? '✅ Te vamos a avisar' : '🔔 Avisarme cuando estén las fotos'; cta.classList.toggle('primary', !on); };
+    if (top) { new MutationObserver(sync).observe(top, { attributes: true, attributeFilter: ['class'] }); sync(); cta.onclick = () => top.click(); } else cta.remove();
     return;
   }
 
@@ -315,7 +322,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
         ${forSale(p.photographerUid)
           ? `<button class="btn ${inCart ? '' : 'primary'}" id="lb-add">${inCart ? '✓ En el carrito' : '🛒 Agregar al carrito'}</button>`
           : '<button class="btn" disabled>Ya no está a la venta</button>'}</span>
-      ${forSale(p.photographerUid) ? '<span class="lb-note">🛡️ <strong>Vista previa con marca de agua.</strong> Al comprar descargás la foto original en alta calidad, sin marca.</span>' : ''}`;
+      ${forSale(p.photographerUid) ? '<span class="lb-note">🛡️ <strong>Vista previa con marca de agua.</strong> Al comprar descargás la foto original en alta calidad, sin marca. · 🔒 Pago seguro con Mercado Pago</span>' : ''}`;
     $('#lb-add', el)?.addEventListener('click', () => { toggleCart(p); rerender(); });
     $('#lb-fav', el).onclick = () => { toggleFav(p); rerender(); };
     $('#lb-share', el).onclick = () => shareLink({

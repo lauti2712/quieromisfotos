@@ -3,7 +3,7 @@ import { db, doc, getDoc } from './fb.js';
 import { $, $$, esc, fmtMoney, fmtDate, toast, errMsg } from './util.js';
 import { cart } from './cart.js';
 import { computeTotals, bestPrice, splitPhotos } from './pricing.js';
-import { loadSettings, setForSale, feePercentFor, planOf } from './data.js';
+import { loadSettings, setForSale, feePercentFor, planOf, setUntil, GRACE_DAYS } from './data.js';
 import { currentUser, openLogin } from './account.js';
 import { apiPost } from './api.js';
 
@@ -33,7 +33,8 @@ export async function renderCart(app) {
 
   app.innerHTML = `
     <h1>Carrito</h1>
-    <p class="muted">Cada fotógrafo cobra por separado: vas a hacer un pago por cada bloque.</p>
+    ${groups.length > 1 ? '<p class="muted">Cada fotógrafo cobra por separado: vas a hacer un pago por cada bloque.</p>' : ''}
+    ${currentUser() ? '' : '<div class="notice small">🛒 Armá tu carrito tranquilo: <strong>ingresás solo para pagar</strong> y tus fotos quedan guardadas en Mis compras.</div>'}
     ${data.map(g => groupHtml(g, settings)).join('')}`;
 
   $$('[data-pay]', app).forEach(b => b.onclick = async () => {
@@ -94,6 +95,10 @@ function groupHtml(g, settings) {
         <div class="bd-row total"><span>Total</span><span>${fmtMoney(t.total)}</span></div>
       </div>
       ${tip ? `<div class="notice small">💡 ${tip}</div>` : ''}
+      <div class="cart-assure small">
+        <span>⚡ <strong>Descarga inmediata</strong> en alta calidad, sin marca de agua${availableUntil(g.set) ? `. Disponibles hasta el ${esc(fmtDate(availableUntil(g.set)))}` : ''}.</span>
+        <span>${MP_SECURE}</span>
+      </div>
       ${g.ev.demo ? '<div class="notice warn small">👀 Son fotos de un evento de ejemplo: no se pueden comprar.</div>' : ''}
       <div class="row end">
         ${g.ev.demo
@@ -102,10 +107,18 @@ function groupHtml(g, settings) {
           ? `<span class="muted small">Pagás con Mercado Pago: tarjeta, débito o dinero en cuenta${transferOk(g.ph, settings) ? ', o por transferencia al alias del fotógrafo' : ''}. Al pagar aceptás los <a href="terminos/" target="_blank">términos</a>.</span>
              ${transferOk(g.ph, settings) ? `<button class="btn" data-pay="${g.key}" data-method="transfer">🏦 Pagar por transferencia</button>` : ''}
              <button class="btn primary" data-pay="${g.key}">Pagar ${fmtMoney(t.total)}</button>`
-          : `<span class="muted small">Ingresá para comprar: tus fotos quedan siempre en Mis compras.</span><button class="btn primary" data-login>Ingresar para pagar</button>`}
+          : `<span class="muted small">Con Google o tu email, en un paso.</span><button class="btn primary" data-login>Ingresar para pagar</button>`}
       </div>
     </section>`;
 }
+
+// Hasta cuándo se pueden descargar si compra hoy (mientras exista el original, mínimo 7 días; igual que el Worker).
+function availableUntil(set) {
+  const u = setUntil(set);
+  if (!u) return '';
+  return new Date(Math.max(Date.now() + 7 * 86400000, u + GRACE_DAYS * 86400000)).toISOString().slice(0, 10);
+}
+export const MP_SECURE = '<span class="mp-secure">🔒 Pago seguro con <strong>Mercado Pago</strong></span>';
 
 // Cobro por transferencia: lo habilita el fotógrafo, su plan tiene que estar entre los elegidos en Plataforma y el superadmin no se lo bloqueó.
 function transferOk(ph, settings) {

@@ -48,11 +48,21 @@ export async function renderOrder(app, orderId, query) {
 function transferBox(o) {
   const amount = Number(o.transferAmount || 0);
   const txt = amount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const [ent, dec] = txt.split(',');
+  // Cuánto falta para que venza (se recalcula cada vez que la página se actualiza).
+  const left = Math.max(0, (o.transferExpiresAt?.toMillis?.() || 0) - Date.now());
+  const h = Math.floor(left / 3600000), m = Math.floor((left % 3600000) / 60000);
+  const leftTxt = left ? (h ? `${h} h ${m} min` : `${m} min`) : 'vencido';
   return `<div class="card stack" style="margin:0;border:2px solid var(--accent)">
+    <div class="tr-amount">
+      <span class="small muted">Transferí exactamente</span>
+      <strong>$ ${esc(ent)}<span class="tr-cents">,${esc(dec)}</span></strong>
+      <span class="small">⏳ Te quedan <strong>${esc(leftTxt)}</strong> para transferir</span>
+    </div>
     <div class="row" style="justify-content:space-between"><span>Alias</span><span class="row" style="gap:6px"><strong style="font-size:1.1rem">${esc(o.transferAlias)}</strong><button class="btn sm" data-copy="${esc(o.transferAlias)}">📋 Copiar</button></span></div>
     ${o.transferHolder ? `<div class="row" style="justify-content:space-between"><span>Titular</span><span>${esc(o.transferHolder)}</span></div>` : ''}
-    <div class="row" style="justify-content:space-between"><span>Monto exacto</span><span class="row" style="gap:6px"><strong style="font-size:1.3rem">$ ${esc(txt)}</strong><button class="btn sm" data-copy="${esc(amount.toFixed(2).replace('.', ','))}">📋 Copiar</button></span></div>
-    <div class="notice warn small" style="margin:0">⚠️ Transferí <strong>exactamente $ ${esc(txt)}, con los centavos</strong>: así reconocemos tu pago automáticamente. Si mandás otro monto, el fotógrafo lo tiene que confirmar a mano.</div>
+    <div class="row" style="justify-content:space-between"><span>Monto exacto</span><span class="row" style="gap:6px"><strong>$ ${esc(txt)}</strong><button class="btn sm" data-copy="${esc(amount.toFixed(2).replace('.', ','))}">📋 Copiar monto</button></span></div>
+    <div class="notice warn small" style="margin:0">⚠️ <strong>Los centavos (,${esc(dec)}) son importantes:</strong> así reconocemos tu pago solo, en minutos. Si mandás otro monto, el fotógrafo lo tiene que confirmar a mano y puede tardar.</div>
     <div class="row end"><button class="btn primary" id="tr-done">✅ Ya transferí</button></div>
   </div>`;
 }

@@ -550,14 +550,16 @@ async function viewHome() {
     orders = (os?.docs || []).map(d => ({ id: d.id, ...d.data() })).filter(o => o.status === 'approved');
   }
   const totalPhotos = sets.reduce((a, x) => a + (x?.photoCount || 0), 0);
+  // Primero lo que deja vender (Mercado Pago, precio, álbum, fotos); después lo que ayuda a vender más.
   const steps = [
-    { ok: !!(p.displayName && p.zone && p.bio && p.avatarUrl), label: 'Completá tu perfil', hint: 'Foto, zona y una bio corta: es lo primero que ven los clientes.', href: '#/perfil' },
+    { ok: !!p.mpConnected, label: 'Vinculá Mercado Pago', hint: 'Obligatorio para vender: la plata te llega directo a tu cuenta.', href: '#/mp', sell: true },
+    { ok: (p.defaults?.price || 0) > 0, label: 'Definí tu precio y tu marca de agua', hint: 'Precio por foto, packs y tu logo (opcional).', href: '#/config', sell: true },
+    // La aprobación solo aparece si está activada la revisión manual y la cuenta todavía espera.
+    ...(approved || S.settings.autoApprove ? [] : [{ ok: false, label: 'Aprobación de tu cuenta', hint: 'La revisamos a mano. Mientras tanto podés completar todo lo demás.', href: '', sell: true }]),
+    { ok: evs.length > 0, label: 'Creá tu primer álbum', hint: 'Un álbum por partido, torneo o carrera (o sumate a un evento general).', href: approved ? '#/eventos' : '', sell: true },
+    { ok: totalPhotos > 0, label: 'Subí tus fotos', hint: `La marca de agua se aplica sola. Se venden durante ${myRules().days} días.`, href: approved ? (evs[0] ? `#/evento/${evs[0].id}` : '#/eventos') : '', sell: true },
     { ok: !!p.socials?.whatsapp, label: 'Cargá tu WhatsApp', hint: 'Para que te pidan presupuestos desde tu perfil.', href: '#/perfil' },
-    { ok: (p.defaults?.price || 0) > 0, label: 'Definí tu precio y tu marca de agua', hint: 'Precio por foto, packs y tu logo (opcional).', href: '#/config' },
-    { ok: !!p.mpConnected, label: 'Vinculá Mercado Pago', hint: 'Obligatorio para vender: la plata te llega directo a tu cuenta.', href: '#/mp' },
-    { ok: approved, label: 'Aprobación de tu cuenta', hint: 'La revisamos a mano. Mientras tanto podés completar todo lo demás.', href: '' },
-    { ok: evs.length > 0, label: 'Creá tu primer evento o sumate a uno', hint: 'Un evento por partido, torneo o carrera.', href: approved ? '#/eventos' : '' },
-    { ok: totalPhotos > 0, label: 'Subí tus fotos', hint: `La marca de agua se aplica sola. Se venden durante ${myRules().days} días.`, href: approved ? (evs[0] ? `#/evento/${evs[0].id}` : '#/eventos') : '' },
+    { ok: !!(p.displayName && p.zone && p.bio && p.avatarUrl), label: 'Completá tu perfil', hint: 'Foto, zona y una bio corta: es lo primero que ven los clientes.', href: '#/perfil' },
     { ok: pushOn(), label: 'Activá los avisos de venta', hint: 'Te llega una notificación cada vez que vendés.', href: '#push' },
   ];
   const done = steps.filter(x => x.ok).length;
@@ -570,9 +572,10 @@ async function viewHome() {
     ${installCardHtml()}
     ${p.status === 'pending' ? `<div class="notice warn"><strong>Tu cuenta está pendiente de aprobación.</strong><br>Mientras tanto podés completar tu perfil, subir tu foto y tu portfolio, y configurar precios y marca de agua.</div>` : ''}
     ${done < steps.length ? `<div class="card stack">
-      <div class="row" style="justify-content:space-between"><h2 style="margin:0">🚀 Primeros pasos</h2><span class="muted small">${done} de ${steps.length}</span></div>
+      <div class="row" style="justify-content:space-between"><h2 style="margin:0">🚀 Primeros pasos</h2><strong class="small">${done} de ${steps.length} listos</strong></div>
+      ${steps.filter(x => x.sell).every(x => x.ok) ? '<div class="notice ok small" style="margin:0">✅ Ya podés vender. Lo que falta te ayuda a vender más.</div>' : ''}
       <div class="meter"><span style="width:${Math.round((done / steps.length) * 100)}%"></span></div>
-      ${steps.map((x, i) => `<div class="item-row step ${x.ok ? 'ok' : ''}">
+      ${steps.map((x, i) => `${i === 0 ? '<div class="muted small" style="font-weight:700">Para empezar a vender</div>' : !x.sell && steps[i - 1].sell ? '<div class="muted small" style="font-weight:700;margin-top:6px">Para vender más</div>' : ''}<div class="item-row step ${x.ok ? 'ok' : ''}">
         <span class="step-n">${x.ok ? '✓' : i + 1}</span>
         <span class="grow"><strong>${x.label}</strong>${x.ok ? '' : `<br><span class="muted small">${x.hint}</span>`}</span>
         ${x.ok || !x.href ? '' : x.href === '#push' ? '<button class="btn sm primary" data-push-on>Activar</button>' : `<a class="btn sm ${steps.findIndex(y => !y.ok) === i ? 'primary' : ''}" href="${x.href}">Hacerlo</a>`}
@@ -869,7 +872,8 @@ function packsEditor(el, packs, getFeeMode = () => 'absorb', getUnit = () => 0) 
             <span class="hint" data-hint="${i}">${hint(r)}</span></label>
           <button type="button" class="btn sm danger" data-del="${i}" title="Quitar">✕</button>
         </div>`).join('')}
-      <button type="button" class="btn sm" data-add style="justify-self:start">+ Agregar pack</button>`;
+      <div class="row"><button type="button" class="btn sm" data-add>+ Agregar pack</button>
+        <button type="button" class="btn sm" data-suggest title="5 fotos con 20% de descuento y 10 con 30%">✨ Usar packs sugeridos</button></div>`;
     el.querySelectorAll('input').forEach(inp => inp.oninput = () => {
       const r = rows[inp.dataset.i];
       r[inp.dataset.k] = Number(inp.value);
@@ -877,6 +881,14 @@ function packsEditor(el, packs, getFeeMode = () => 'absorb', getUnit = () => 0) 
     });
     el.querySelectorAll('[data-del]').forEach(btn => btn.onclick = () => { rows.splice(btn.dataset.del, 1); draw(); });
     el.querySelector('[data-add]').onclick = () => { rows.push({ qty: (rows.at(-1)?.qty || 1) + 2, price: 0 }); draw(); };
+    // Packs típicos según el precio por foto: 5 con 20% menos y 10 con 30% menos (redondeado).
+    el.querySelector('[data-suggest]')?.addEventListener('click', () => {
+      const unit = getUnit(), step = unit >= 1000 ? 500 : 100;
+      if (!(unit > 0)) return toast('Primero poné tu precio por foto.', 'error');
+      const r = (n, off) => Math.max(step, Math.round((unit * n * (1 - off)) / step) * step);
+      rows = [{ qty: 5, price: r(5, 0.2) }, { qty: 10, price: r(10, 0.3) }];
+      draw();
+    });
   };
   el.classList.add('stack');
   draw();
@@ -1500,7 +1512,7 @@ async function viewEvent(id) {
           ${tags.length ? `<div class="pills" style="margin-top:8px">${tags.map(t => `<span class="pill">${esc(t.name)}</span>`).join('')}</div>` : ''}
         </div>
         <div class="row">
-          ${ev.status === 'published' ? `<a class="btn sm" target="_blank" href="index.html#/evento/${ev.id}">Ver público</a>` : ''}
+          <a class="btn sm" target="_blank" href="index.html#/evento/${ev.id}?f=${esc(S.user.uid)}" title="Abre la galería tal como la ve el comprador">👁️ Ver como cliente</a>
           <button class="btn sm share-btn" id="ev-share">🔗 Compartir</button>
           ${canEdit ? `<button class="btn sm" id="ev-edit">Editar</button>` : ''}
           ${canEdit ? `<button class="btn sm" id="ev-toggle">${ev.status === 'published' ? 'Despublicar' : 'Publicar'}</button>` : ''}
