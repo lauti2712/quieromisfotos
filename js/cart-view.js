@@ -107,7 +107,7 @@ function groupHtml(g, settings) {
           ? `<span class="muted small">Pagás con Mercado Pago: tarjeta, débito o dinero en cuenta${transferOk(g.ph, settings) ? ', o por transferencia al alias del fotógrafo' : ''}. Al pagar aceptás los <a href="terminos/" target="_blank">términos</a>.</span>
              ${transferOk(g.ph, settings) ? `<button class="btn" data-pay="${g.key}" data-method="transfer">🏦 Pagar por transferencia</button>` : ''}
              <button class="btn primary" data-pay="${g.key}">Pagar ${fmtMoney(t.total)}</button>`
-          : `<span class="muted small">Ingresá para comprar: tus fotos quedan siempre en Mis compras.</span><button class="btn primary" data-login>Ingresar para pagar</button>`}
+          : `<span class="muted small">Con Google o tu email, en un paso.</span><button class="btn primary" data-login>Ingresar para pagar</button>`}
       </div>
     </section>`;
 }
