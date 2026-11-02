@@ -37,7 +37,8 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
         <span class="muted small">o tocá para elegirlas · JPG, PNG o WEBP · la marca de agua se aplica en tu dispositivo</span>
       </label>
       <div id="up-cut"></div>
-      <p class="muted small mobile-only" style="margin:6px 0 0">📱 Desde el celular: dejá esta pantalla abierta mientras sube (no la bloquees ni cambies de app). Si se corta la conexión, sigue sola cuando vuelve.</p>
+      <p class="muted small mobile-only" style="margin:6px 0 0">📱 Desde el celular: dejá esta pantalla abierta mientras sube (si bloqueás el celular o cambiás de app, se pausa). Si se corta la conexión o volvés después, sigue sola desde donde quedó.</p>
+      <div id="up-big" class="up-big hidden"></div>
       <div id="up-status" class="hidden">
         <div class="row" style="justify-content:space-between">
           <span id="up-summary" class="small"></span>
@@ -278,13 +279,25 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
   const scheduleDraw = () => { clearTimeout(drawT); drawT = setTimeout(() => document.body.contains(box) && draw(), 400); };
 
   const LABEL = { queued: 'En cola', processing: 'Procesando…', uploading: 'Subiendo…', retrying: 'Reintentando…', done: 'Lista', error: 'Error' };
-  let renderT = 0;
+  let renderT = 0, wasActive = false;
   function renderQueue(s) {
     if (!document.body.contains(box)) return;
     const now = performance.now();
     if (now - renderT < 150 && s.active) return; // limitar re-render
     renderT = now;
     $('#up-status').classList.toggle('hidden', !s.total);
+    // Resumen grande: mientras sube y, al terminar, el festejo (una vez por tanda).
+    const big = $('#up-big');
+    if (s.total && s.active) {
+      big.className = 'up-big';
+      big.innerHTML = `<strong>📤 ${s.done} de ${s.total} fotos subidas</strong><span>${s.pct}% · ya podés compartir el link: la gente ve las fotos a medida que se suben</span>`;
+      wasActive = true;
+    } else if (s.total && wasActive && !s.active) {
+      wasActive = false;
+      big.className = 'up-big done';
+      big.innerHTML = `<strong>🎉 ¡Listo! Subiste ${s.done} foto${s.done === 1 ? '' : 's'}${s.failed ? ` (${s.failed} con error)` : ''}</strong><span>Ahora compartí el link para empezar a vender.</span>`;
+      window.onqmfUploadDone?.({ eventId: ev.id, count: set.photoCount || s.done });
+    } else if (!s.total) big.className = 'up-big hidden';
     $('#up-summary').textContent = `${s.done} de ${s.total} subidas${s.failed ? ` · ${s.failed} con error` : ''} · ${s.pct}%`;
     $('#up-bar').style.width = `${s.pct}%`;
     $('#up-retry').classList.toggle('hidden', !s.failed);

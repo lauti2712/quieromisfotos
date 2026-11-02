@@ -56,6 +56,8 @@ export async function commitPhoto(req, env, s, eid, pid, publicBase) {
   const ops = [
     { set: `photos/${pid}`, data: photo, mustNotExist: true },
     { inc: setPath, fields: { photoCount: 1, bytesOriginal: orig.size, bytesPublic, [`hourCounts.${hourOf(takenAt)}`]: 1 } },
+    // La galería pública muestra "subiendo fotos…" mientras llegan fotos nuevas.
+    { update: setPath, data: { lastUploadAt: new Date(now) }, mask: ['lastUploadAt'] },
   ];
   // El plazo de venta arranca con la primera foto (una sola vez), según el plan del fotógrafo.
   let expiresAt = set.expiresAt?.getTime?.() || null;

@@ -46,6 +46,8 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
   const forSale = uid => setForSale(sets.get(uid)) && canCharge(uid);
   const expired = withPhotos.filter(p => !setForSale(sets.get(p.uid)) && setUntil(sets.get(p.uid)));
   const noPay = withPhotos.filter(p => setForSale(sets.get(p.uid)) && !canCharge(p.uid));
+  // Subida en curso: llegó una foto en los últimos 15 minutos (lo marca el Worker en el set).
+  const uploading = withPhotos.filter(p => Date.now() - (sets.get(p.uid)?.lastUploadAt?.toMillis?.() || 0) < 15 * 60000);
   box.innerHTML = `
     ${expired.length ? `<div class="notice warn stack" style="gap:8px"><span>${expired.length === withPhotos.length ? 'Las fotos de este evento' : `Las fotos de ${expired.map(p => esc(p.displayName)).join(', ')}`} ya no están a la venta en la plataforma (venció el plazo de disponibilidad)${expired.some(p => sets.get(p.uid)?.samplesKept) ? '. Quedan algunas fotos de muestra para que veas el trabajo' : ''}. Si querés alguna, escribile al fotógrafo: puede que todavía las tenga.</span>
       <span class="row">${expired.map(p => { const u = byUid.get(p.uid); return u?.socials?.whatsapp
@@ -56,6 +58,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
       <div class="row"><input id="g-bib-in" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="Ej: 1234" autocomplete="off" value="${esc(state.bib)}">
       <button class="btn primary">Buscar</button><button type="button" class="btn hidden" id="g-bib-x">Ver todas</button></div>
     </form>` : ''}
+    ${uploading.length ? `<div class="notice ok small">📤 <strong>${uploading.map(p => esc(p.displayName)).join(', ')} está${uploading.length > 1 ? 'n' : ''} subiendo fotos ahora</strong> (van ${uploading.reduce((a, p) => a + (sets.get(p.uid)?.photoCount || 0), 0)}). Volvé en un rato o tocá <strong>🔔 Avisarme</strong> arriba.</div>` : ''}
     ${noPay.length ? `<div class="notice">⏳ ${noPay.length === withPhotos.length ? 'Las fotos de este evento todavía no están a la venta' : `Las fotos de ${noPay.map(p => esc(p.displayName)).join(', ')} todavía no están a la venta`}: el fotógrafo está terminando de configurar los pagos. Tocá <strong>🔔 Avisarme</strong> arriba y te avisamos.</div>` : ''}
     <div class="g-price" id="g-price"></div>
     <div class="filter-row" id="g-ph"></div>

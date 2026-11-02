@@ -24,6 +24,7 @@ import { loadMyTeams, viewTeam, viewTeams, viewTeamEvent, viewJoin, teamSalesHtm
 import { initRefresh } from './refresh.js';
 import { pushAvailable, pushOn, pushBlocked, enablePush, disablePush, isIos, isStandalone, listenForeground } from './push.js';
 import { shareLink, eventUrl } from './share.js';
+import { mountShareCard } from './panel-share.js';
 
 const root = $('#root');
 const S = { user: null, profile: null, isSuper: false, settings: { ...DEFAULT_SETTINGS }, tax: null };
@@ -356,7 +357,8 @@ function navItems() {
   ];
   return [
     { href: '#/inicio', label: '🏠 Inicio' },
-    { href: '#/eventos', label: '🏟️ Mis eventos', need: true },
+    { href: '#/eventos', label: '🏟️ Mis álbumes', need: true },
+    { href: '#/subir', label: '＋ Subir fotos', need: true },
     ...(PLANS[planOf(S.profile)]?.team ? [{ href: '#/equipo', label: '👥 Mi equipo' }] : []),
     ...((S.teams || []).length ? [{ href: '#/equipos', label: '🤝 Equipos' }] : []),
     { href: '#/ventas', label: '💰 Ventas', need: true },
@@ -501,6 +503,7 @@ function route() {
   if (a === 'mp' && !S.isSuper) return run(viewMp);
   if (a === 'evento' && b && (isApproved() || S.isSuper)) return run(() => viewEvent(b));
   if (a === 'eventos' && isApproved() && !S.isSuper) return run(viewMyEvents);
+  if (a === 'subir' && isApproved() && !S.isSuper) return run(viewUploadPicker);
   if (a === 'ventas' && isApproved()) return run(viewSales);
   if (a === 'web' && !S.isSuper) return run(() => viewWeb($('#view'), { uid: S.user.uid, profile: S.profile, settings: S.settings }));
   if (a === 'portfolio' && !S.isSuper) return run(() => viewPortfolio($('#view'), { uid: S.user.uid, profile: S.profile, settings: S.settings }));
@@ -514,14 +517,16 @@ function drawTabbar(key) {
   if (!bar) return;
   const nav = $('#nav');
   nav.classList.remove('open');
+  // Inicio · Álbumes · ＋ Subir (central) · Ventas · Más (el resto de las secciones: perfil, precios, MP, web…).
   const tabs = [
     { href: '#/inicio', icon: '🏠', label: 'Inicio' },
-    ...(isApproved() ? [{ href: '#/eventos', icon: '🏟️', label: 'Eventos', also: '#/evento/' }, { href: '#/ventas', icon: '💰', label: 'Ventas' }] : []),
-    { href: '#/perfil', icon: '👤', label: 'Perfil' },
+    ...(isApproved()
+      ? [{ href: '#/eventos', icon: '🏟️', label: 'Álbumes', also: '#/evento/' }, { href: '#/subir', icon: '＋', label: 'Subir', cls: 'tab-up' }, { href: '#/ventas', icon: '💰', label: 'Ventas' }]
+      : [{ href: '#/perfil', icon: '👤', label: 'Perfil' }]),
   ];
   const cur = '#/' + key;
   const inTabs = tabs.some(t => cur.startsWith(t.href) || (t.also && cur.startsWith(t.also)));
-  bar.innerHTML = tabs.map(t => `<a href="${t.href}" class="${cur.startsWith(t.href) || (t.also && cur.startsWith(t.also)) ? 'on' : ''}"><span>${t.icon}</span>${t.label}</a>`).join('')
+  bar.innerHTML = tabs.map(t => `<a href="${t.href}" class="${t.cls || ''} ${cur.startsWith(t.href) || (t.also && cur.startsWith(t.also)) ? 'on' : ''}"><span>${t.icon}</span>${t.label}</a>`).join('')
     + `<button type="button" id="tab-more" class="${inTabs ? '' : 'on'}" aria-expanded="false"><span>☰</span>Más</button>`;
   $('#tab-more').onclick = e => {
     e.stopPropagation();
@@ -1210,6 +1215,19 @@ async function viewSales() {
   });
 }
 
+// ＋ Subir: elegir a qué álbum (los más recientes) o crear uno nuevo.
+async function viewUploadPicker() {
+  const snap = await getDocs(query(collection(db, 'events'), where('photographerUids', 'array-contains', S.user.uid), orderBy('date', 'desc'), limit(6)));
+  const evs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  $('#view').innerHTML = `
+    <h1>Subir fotos</h1>
+    <button class="btn primary big-cta" id="up-new" style="width:100%">➕ Álbum nuevo</button>
+    ${evs.length ? `<h2 style="margin-top:22px">O a un álbum que ya tenés</h2>
+      <div class="stack">${evs.map(ev => `<a class="item-row card" href="#/evento/${ev.id}" style="text-decoration:none">
+        <div class="grow"><strong>${esc(ev.name)}</strong><br><span class="muted small">${esc(fmtDate(ev.date))}${ev.location ? ` · ${esc(ev.location)}` : ''}</span></div>${statusPill(ev)}</a>`).join('')}</div>` : ''}`;
+  $('#up-new').onclick = () => eventDialog(null);
+}
+
 // ================================================================ eventos (fotógrafo)
 async function viewMyEvents() {
   const snap = await getDocs(query(collection(db, 'events'), where('photographerUids', 'array-contains', S.user.uid), orderBy('date', 'desc'), limit(200)));
@@ -1223,8 +1241,8 @@ async function viewMyEvents() {
   evs.forEach((ev, i) => { ev.mySet = sets[i] && { ...sets[i], soldPhotos: sold.get(ev.id) || 0 }; });
   $('#view').innerHTML = `
     <div class="row" style="justify-content:space-between;margin-bottom:14px">
-      <h1 style="margin:0">Mis eventos</h1>
-      <div class="row"><button class="btn" id="join">Sumarme a un evento</button><button class="btn primary" id="new">+ Crear evento</button></div>
+      <h1 style="margin:0">Mis álbumes</h1>
+      <div class="row"><button class="btn" id="join">Sumarme a un evento</button><button class="btn primary" id="new">＋ Álbum nuevo</button></div>
     </div>
     ${evs.length ? `<div class="events-grid">${evs.map(ev => panelEventCard(ev)).join('')}</div>`
       : `<div class="card"><div class="empty">Todavía no estás en ningún evento.<br>Creá uno nuevo o sumate a un evento general.</div></div>`}`;
@@ -1386,10 +1404,12 @@ function newSetData() {
 function eventDialog(ev, onSaved) {
   const isNew = !ev;
   const general = isNew ? S.isSuper : ev.kind === 'general';
-  ev = ev || { name: '', date: todayIso(), location: '', tagIds: [], status: 'draft', openToJoin: general, coverUrl: '' };
+  // Álbum nuevo: publicado desde el principio, así ya tiene link para compartir mientras se suben las fotos
+  // (sin correo confirmado no se puede publicar: arranca en borrador).
+  ev = ev || { name: '', date: todayIso(), location: '', tagIds: [], status: needsVerify() ? 'draft' : 'published', openToJoin: general, coverUrl: '' };
   const tax = S.tax;
   const sel = new Set(ev.tagIds || []);
-  const dlg = openDialog(isNew ? (general ? 'Nuevo evento general' : 'Nuevo evento') : 'Editar evento', `
+  const dlg = openDialog(isNew ? (general ? 'Nuevo evento general' : 'Nuevo álbum') : 'Editar evento', `
     <label class="field">Nombre<input type="text" id="ev-name" required maxlength="100" value="${esc(ev.name)}" placeholder="Ej: Torneo Apertura Sub-14 — Fecha 3"></label>
     <div class="grid2">
       <label class="field">Fecha<input type="date" id="ev-date" required value="${esc(ev.date)}">
@@ -1411,7 +1431,7 @@ function eventDialog(ev, onSaved) {
           <label class="btn sm">Subir imagen<input type="file" id="ev-cover-file" accept="image/*" hidden></label>
           ${ev.coverUrl ? '<button type="button" class="btn sm ghost" id="ev-cover-rm">Quitar</button>' : ''}</div>`}
     </div>
-    <label class="field">Estado<select id="ev-status"><option value="draft" ${ev.status !== 'published' ? 'selected' : ''}>Borrador (no visible al público)</option><option value="published" ${ev.status === 'published' ? 'selected' : ''}>Publicado</option></select></label>
+    <label class="field">Estado<select id="ev-status"><option value="draft" ${ev.status !== 'published' ? 'selected' : ''}>Borrador (no visible al público)</option><option value="published" ${ev.status === 'published' ? 'selected' : ''}>Publicado (ya tiene link para compartir)</option></select></label>
     ${general ? '<p class="muted small" style="margin:0">Los eventos generales siempre están abiertos para que se sumen fotógrafos.</p>'
       : `<label class="check"><input type="checkbox" id="ev-open" ${ev.openToJoin ? 'checked' : ''}> Permitir que otros fotógrafos se sumen a este evento</label>`}
   `, `<button class="btn" data-close>Cancelar</button><button class="btn primary" id="ev-save">${isNew ? 'Crear' : 'Guardar'}</button>`);
@@ -1479,7 +1499,7 @@ function eventDialog(ev, onSaved) {
         await b.commit();
         dlg.close();
         toast('Evento creado');
-        location.hash = `#/evento/${ref.id}`;
+        location.hash = `#/evento/${ref.id}${general ? '' : '?nuevo=1'}`;
       } else {
         await updateDoc(doc(db, 'events', ev.id), data);
         dlg.close();
@@ -1519,6 +1539,8 @@ async function viewEvent(id) {
         </div>
       </div>
     </div>
+    <div id="ev-steps"></div>
+    <div id="ev-share-card"></div>
     <div id="ev-sets"></div>
     <div class="row end" style="margin-top:14px" id="ev-danger"></div>`;
 
@@ -1566,10 +1588,38 @@ async function viewEvent(id) {
     return;
   }
   renderSetEditor(ev, sets.get(me) || null, reload);
+  // Álbum propio: pasos (si es nuevo) y tarjeta para compartir arriba de todo.
+  const mySet = sets.get(me);
+  if (mySet) {
+    const nuevo = parseHash().query.get('nuevo') === '1';
+    const drawSteps = (n = mySet.photoCount || 0) => {
+      $('#ev-steps').innerHTML = nuevo || !n ? `<div class="card wizard-steps">
+        <span class="ws done">✓ Álbum creado</span><span class="ws ${n ? 'done' : 'now'}">${n ? '✓' : '2'} Subí las fotos</span><span class="ws ${n ? 'now' : ''}">3 Compartí el link</span>
+        ${n ? '' : `<div class="row" style="flex-basis:100%;margin-top:6px"><span class="muted small grow">🔗 El link ya funciona: mandalo ahora y la gente ve las fotos a medida que se suben.</span>
+          <button class="btn sm" id="ws-copy">Copiar link</button><a class="btn sm primary" id="ws-wa" target="_blank" rel="noopener">💬 WhatsApp</a></div>`}</div>` : '';
+      if (!n && $('#ws-copy')) {
+        const url = eventUrl(ev.id, (ev.photographerUids || []).length > 1 ? me : '');
+        $('#ws-copy').onclick = async () => { try { await navigator.clipboard.writeText(url); toast('Link copiado'); } catch { toast(url); } };
+        $('#ws-wa').href = `https://wa.me/?text=${encodeURIComponent(`📸 Estoy subiendo las fotos de ${ev.name}. Buscate y descargalas acá 👉 ${url}`)}`;
+      }
+      // Sin fotos, primero va la subida; la tarjeta completa para compartir queda abajo hasta que haya fotos.
+      const card = $('#ev-share-card'), sets = $('#ev-sets');
+      if (card && sets) (n ? sets.before(card) : sets.after(card));
+    };
+    const share = highlight => mountShareCard($('#ev-share-card'), { ev, set: mySet, uid: me, displayName: S.profile.displayName, multi: (ev.photographerUids || []).length > 1, highlight });
+    share(false);
+    drawSteps();
+    $('#ev-share').onclick = () => $('#ev-share-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Al terminar una subida: festejo y tarjeta de compartir a la vista.
+    window.onqmfUploadDone = ({ eventId, count }) => {
+      if (eventId !== ev.id || !document.body.contains($('#ev-share-card'))) return;
+      drawSteps(count); share(true);
+      $('#ev-share-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+  }
   if (PLANS[planOf(S.profile)]?.team) {
     getDoc(doc(db, 'teams', me)).then(t => teamSalesHtml(id, me, t.data())).then(html => { if (html && $('#ev-sets')) $('#ev-sets').insertAdjacentHTML('afterbegin', html); }).catch(() => {});
   }
-  const mySet = sets.get(me);
   $('#ext-btn')?.addEventListener('click', () => extensionDialog(ev, mySet));
   $('#space-btn')?.addEventListener('click', () => extensionDialog(ev, mySet, 'space'));
   // La subida avisa cuando el álbum se llenó.
