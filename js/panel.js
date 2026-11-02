@@ -5,10 +5,11 @@ import {
   query, where, orderBy, limit, serverTimestamp, arrayUnion, arrayRemove, Timestamp,
   onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword,
   createUserWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification, signOut, updateProfile,
+  RecaptchaVerifier, signInWithPhoneNumber,
 } from './fb.js';
 import {
   $, $$, esc, inAppNotice, bindInAppNotice, slugify, SLUG_RE, searchTokens, fmtMoney, fmtDate, fmtTs, todayIso, parseHash,
-  toast, errMsg, avatarHtml, coverHtml, SOCIALS, newId, normalize, fmtBytes, setBytes, waLink,
+  toast, errMsg, avatarHtml, coverHtml, SOCIALS, newId, normalize, fmtBytes, setBytes, waLink, waNumber,
 } from './util.js';
 const waOf = (u, priv) => priv?.whatsapp || u.socials?.whatsapp || '';
 import { initTheme } from './theme.js';
@@ -80,7 +81,7 @@ onAuthStateChanged(auth, async user => {
   S.user = user;
   $('#logout').style.display = user ? '' : 'none';
   if (!user) $('#public-profile').style.display = 'none';
-  $('#who').textContent = user ? (user.displayName || user.email) : '';
+  $('#who').textContent = user ? (user.displayName || user.email || user.phoneNumber || '') : '';
   if (!user) { S.profile = null; return renderLogin(); }
   S.isSuper = user.email === SUPERADMIN_EMAIL && user.emailVerified;
   root.innerHTML = '<div class="spinner"></div>';
@@ -101,7 +102,7 @@ onAuthStateChanged(auth, async user => {
   }
   if (!S.profile) return renderOnboarding();
   if (!S.isSuper) {
-    if (user.emailVerified) markVerified();
+    if (isVerified(user)) markVerified();
     else setDoc(doc(db, 'userPrivate', user.uid), { provider: providerOf(user) }, { merge: true }).catch(() => {});
   }
   await autoApprove();
@@ -158,6 +159,12 @@ function renderLogin() {
           <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>
           Continuar con Google
         </button>
+        <button class="btn block" id="ph-login">📱 Entrar con mi celular</button>
+        <form id="ph-form" class="stack hidden">
+          <label class="field">Tu celular (con código de área)<input type="tel" id="ph-num" inputmode="tel" autocomplete="tel" placeholder="Ej: 342 555-1234"><span class="hint">Te mandamos un código por SMS. No hace falta tener mail.</span></label>
+          <label class="field hidden" id="ph-code-f">Código que te llegó por SMS<input type="text" id="ph-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456"></label>
+          <button class="btn primary block" type="submit" id="ph-send">Enviarme el código</button>
+        </form>
         <div class="divider">o con email</div>
         <form id="e-form" class="stack">
           <label class="field">Email<input type="email" id="e-mail" required autocomplete="email"></label>
@@ -174,6 +181,32 @@ function renderLogin() {
   bindInAppNotice();
   $('#g-login').onclick = async () => {
     try { await signInWithPopup(auth, new GoogleAuthProvider()); } catch (e) { toast(errMsg(e), 'error'); }
+  };
+  // Celular: código por SMS (Firebase Auth). El reCAPTCHA es invisible y va atado al botón.
+  let confirmation = null, verifier = null;
+  $('#ph-login').onclick = () => { $('#ph-form').classList.remove('hidden'); $('#ph-login').classList.add('hidden'); $('#ph-num').focus(); };
+  $('#ph-form').onsubmit = async e => {
+    e.preventDefault();
+    const btn = $('#ph-send');
+    btn.disabled = true;
+    try {
+      if (!confirmation) {
+        const d = waNumber($('#ph-num').value);
+        if (d.length < 12) throw new Error('Escribí tu celular con código de área (ej: 342 555-1234).');
+        verifier ||= new RecaptchaVerifier(auth, 'ph-send', { size: 'invisible' });
+        auth.languageCode = 'es';
+        confirmation = await signInWithPhoneNumber(auth, `+${d}`, verifier);
+        $('#ph-code-f').classList.remove('hidden'); $('#ph-num').disabled = true;
+        btn.textContent = 'Entrar'; $('#ph-code').focus();
+        toast('Te mandamos el código por SMS');
+      } else {
+        await confirmation.confirm($('#ph-code').value.trim());
+      }
+    } catch (err) {
+      toast(errMsg(err), 'error');
+      if (!confirmation) { try { verifier?.clear(); } catch { /* nada */ } verifier = null; }
+    }
+    btn.disabled = false;
   };
   $('#toggle-mode').onclick = () => {
     mode = mode === 'login' ? 'signup' : 'login';
@@ -223,7 +256,8 @@ async function autoApprove() {
 // Cuentas con email y contraseña: hasta confirmar el correo no pueden publicar eventos, sumarse a eventos ni vincular
 // Mercado Pago (lo controlan las reglas y el Worker). Las de Google ya vienen confirmadas.
 const PANEL_URL = `${location.origin}${location.pathname}`;
-const needsVerify = () => !!S.user && !S.user.emailVerified && !S.isSuper;
+const isVerified = u => !!(u?.emailVerified || u?.phoneNumber);
+const needsVerify = () => !!S.user && !isVerified(S.user) && !S.isSuper;
 async function sendVerification(user, silent) {
   try {
     auth.languageCode = 'es';
@@ -233,7 +267,8 @@ async function sendVerification(user, silent) {
 }
 // Vuelve a leer la cuenta (y el token) por si ya confirmó el correo en otra pestaña o en el celular.
 async function refreshVerified() {
-  if (!S.user || S.user.emailVerified) return true;
+  if (!S.user || isVerified(S.user)) return true;
+  // Puede haberla confirmado el superadmin a mano: se relee la cuenta y se pide un token nuevo.
   try { await S.user.reload(); if (auth.currentUser?.emailVerified) await auth.currentUser.getIdToken(true); } catch { /* nada */ }
   S.user = auth.currentUser;
   if (S.user?.emailVerified) markVerified();
@@ -243,11 +278,11 @@ async function refreshVerified() {
 function markVerified() {
   setDoc(doc(db, 'userPrivate', S.user.uid), { emailVerified: true, provider: providerOf(S.user) }, { merge: true }).catch(() => {});
 }
-const providerOf = u => (u.providerData || []).some(p => p.providerId === 'google.com') ? 'google' : 'password';
+const providerOf = u => (u.providerData || []).some(p => p.providerId === 'google.com') ? 'google' : u.phoneNumber ? 'phone' : 'password';
 function verifyBarHtml() {
   if (!needsVerify()) return '';
   return `<div class="notice warn row" id="verify-bar" style="justify-content:space-between;gap:8px;margin:12px 16px 0">
-    <span>✉️ <strong>Confirmá tu correo</strong> (${esc(S.user.email)}): tocá el link del mail que te mandamos. Hasta entonces podés armar tu perfil y subir fotos, pero no publicar eventos ni vincular Mercado Pago.</span>
+    <span>✉️ <strong>Confirmá tu correo</strong> (${esc(S.user.email)}): tocá el link del mail que te mandamos. Hasta entonces podés armar tu perfil y subir fotos, pero no publicar eventos ni vincular Mercado Pago. ¿No te llega? Escribinos por WhatsApp y la confirmamos nosotros.</span>
     <span class="row" style="gap:6px"><button class="btn sm" id="vb-check">Ya lo confirmé</button><button class="btn sm ghost" id="vb-send">Reenviar mail</button></span></div>`;
 }
 function bindVerifyBar() {
@@ -280,7 +315,7 @@ function renderOnboarding() {
           <span class="hint" id="ob-slug-hint">quieromisfotos/#/f/<strong>${esc(slugify(name) || '...')}</strong></span>
         </label>
         <label class="field">Zona<input type="text" id="ob-zone" maxlength="60" placeholder="Ej: Rosario, Santa Fe"></label>
-        ${S.isSuper ? '' : `<label class="field">WhatsApp<input type="tel" id="ob-wa" required maxlength="30" inputmode="tel" autocomplete="tel" placeholder="Ej: 341 555-1234 (con código de área)">
+        ${S.isSuper ? '' : `<label class="field">WhatsApp<input type="tel" id="ob-wa" required maxlength="30" inputmode="tel" autocomplete="tel" placeholder="Ej: 341 555-1234 (con código de área)" value="${esc((u.phoneNumber || '').replace(/^\+549?/, ''))}">
           <span class="hint">Para avisarte novedades de tu cuenta. También se muestra en tu perfil para que te pidan presupuestos (lo podés sacar después).</span></label>`}
         <button class="btn primary" type="submit">Crear perfil</button>
       </form>
@@ -313,7 +348,7 @@ function renderOnboarding() {
       const b = writeBatch(db);
       if (!taken.exists()) b.set(doc(db, 'slugs', slug), { uid: u.uid });
       b.set(doc(db, 'users', u.uid), profile);
-      b.set(doc(db, 'userPrivate', u.uid), { email: u.email || '', ...(wa ? { whatsapp: wa } : {}), ...(u.emailVerified ? { emailVerified: true } : {}), provider: providerOf(u), createdAt: serverTimestamp() });
+      b.set(doc(db, 'userPrivate', u.uid), { email: u.email || '', ...(u.phoneNumber ? { phone: u.phoneNumber } : {}), ...(wa ? { whatsapp: wa } : {}), ...(isVerified(u) ? { emailVerified: true } : {}), provider: providerOf(u), createdAt: serverTimestamp() });
       await b.commit();
       if (!u.displayName) updateProfile(u, { displayName }).catch(() => {});
       S.profile = (await getDoc(doc(db, 'users', u.uid))).data();
@@ -1870,10 +1905,10 @@ async function viewAdminPhotographers() {
       ${avatarHtml(u)}
       <div class="grow">
         <strong>${esc(u.displayName)}</strong> <span class="muted small">/${esc(u.slug)}</span><br>
-        <span class="muted small">${esc(privs[i].email || '')}${u.zone ? ' · ' + esc(u.zone) : ''} · alta ${esc(fmtTs(u.createdAt))}</span>
+        <span class="muted small">${esc(privs[i].email || privs[i].phone || '')}${u.zone ? ' · ' + esc(u.zone) : ''} · alta ${esc(fmtTs(u.createdAt))}</span>
         ${waOf(u, privs[i]) ? `<a class="small" target="_blank" rel="noopener" href="${esc(waLink(waOf(u, privs[i])))}">💬 ${esc(waOf(u, privs[i]))}</a>` : ''}<br>
-        ${privs[i].provider ? `<span class="pill" title="Cómo se registró">${privs[i].provider === 'google' ? 'Ingresa con Google' : 'Ingresa con email y contraseña'}</span>` : ''}
-        ${privs[i].emailVerified ? '' : '<span class="pill warn" title="Todavía no tocó el link del mail de confirmación: no puede publicar ni vincular Mercado Pago">✉️ Correo sin confirmar</span>'}
+        ${privs[i].provider ? `<span class="pill" title="Cómo se registró">${privs[i].provider === 'google' ? 'Ingresa con Google' : privs[i].provider === 'phone' ? 'Ingresa con el celular (SMS)' : 'Ingresa con email y contraseña'}</span>` : ''}
+        ${privs[i].emailVerified ? '' : `<span class="pill warn" title="Todavía no tocó el link del mail de confirmación: no puede publicar ni vincular Mercado Pago">✉️ Correo sin confirmar</span> <button class="btn sm" data-verify="${u.uid}" title="Para quien no puede abrir el mail: lo confirmás vos">✅ Confirmar cuenta</button>`}
         ${u.mpConnected ? '<span class="pill ok">MP vinculado</span>' : `<span class="pill ${u.status === 'approved' ? 'danger' : ''}">MP sin vincular</span>`}
         ${planOf(u) !== 'free' ? `<span class="pill accent">⭐ ${esc(PLANS[planOf(u)].label)} ${u.courtesy ? '· cortesía, sin vencimiento' : `hasta ${esc(fmtTs(u.proUntil))}`}</span>` : '<span class="pill">Gratis</span>'}
         ${reqs[i] && reqs[i].plan !== planOf(u) ? `<span class="pill warn">Pidió: ${esc(PLANS[reqs[i].plan]?.label || reqs[i].plan)}</span>` : ''}
@@ -1921,6 +1956,14 @@ async function viewAdminPhotographers() {
       toast(`${u.displayName}: plan ${PLANS[plan].label} de cortesía`);
       viewAdminPhotographers();
     } catch (e) { toast(errMsg(e), 'error'); }
+  });
+  // Confirmación manual de la cuenta (no puede abrir el mail de confirmación).
+  $$('[data-verify]').forEach(b => b.onclick = async () => {
+    const u = users.find(x => x.uid === b.dataset.verify);
+    if (!confirm(`¿Confirmar la cuenta de ${u.displayName}? Va a poder publicar y vincular Mercado Pago sin abrir el mail.`)) return;
+    b.disabled = true;
+    try { await apiPost('/admin/users/verify', { uid: u.uid }); toast('Cuenta confirmada. Le avisamos al fotógrafo.'); viewAdminPhotographers(); }
+    catch (e) { b.disabled = false; toast(errMsg(e), 'error'); }
   });
   // Cobro por transferencia de un fotógrafo: saldo, pagos avisados (confirmar / rechazar), registrar un pago y bloquear la opción.
   $$('[data-fees]').forEach(b => b.onclick = () => {
