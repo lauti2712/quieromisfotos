@@ -693,3 +693,11 @@ body:not(.with-tabbar) .up-fab { bottom: calc(16px + env(safe-area-inset-bottom)
   .gallery-card .g-price { padding: 8px 10px; margin-bottom: 8px; font-size: .9rem; }
   .g-add, .g-fav { width: 30px; height: 30px; font-size: 16px; background: rgba(0,0,0,.4); }
 }
+
+/* Carrito: tranquilidad antes de pagar */
+.cart-assure { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 14px; padding: 8px 10px; border-radius: 10px; background: var(--ok-soft); color: var(--text); }
+.mp-secure { white-space: nowrap; }
+/* Transferencia: monto grande con los centavos resaltados */
+.tr-amount { display: grid; justify-items: center; gap: 4px; padding: 10px; border-radius: 12px; background: var(--accent-soft); color: var(--text); text-align: center; }
+.tr-amount > strong { font-size: 2.2rem; line-height: 1.1; letter-spacing: -.5px; }
+.tr-cents { color: var(--accent); font-size: 1.15em; text-decoration: underline; text-underline-offset: 4px; }
