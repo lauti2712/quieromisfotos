@@ -1595,11 +1595,20 @@ async function viewEvent(id) {
     const drawSteps = (n = mySet.photoCount || 0) => {
       $('#ev-steps').innerHTML = nuevo || !n ? `<div class="card wizard-steps">
         <span class="ws done">✓ Álbum creado</span><span class="ws ${n ? 'done' : 'now'}">${n ? '✓' : '2'} Subí las fotos</span><span class="ws ${n ? 'now' : ''}">3 Compartí el link</span>
-        ${n ? '' : '<p class="muted small" style="margin:6px 0 0;flex-basis:100%">Tip: el link ya funciona. Podés mandarlo al grupo ahora y la gente ve las fotos a medida que se suben.</p>'}</div>` : '';
+        ${n ? '' : `<div class="row" style="flex-basis:100%;margin-top:6px"><span class="muted small grow">🔗 El link ya funciona: mandalo ahora y la gente ve las fotos a medida que se suben.</span>
+          <button class="btn sm" id="ws-copy">Copiar link</button><a class="btn sm primary" id="ws-wa" target="_blank" rel="noopener">💬 WhatsApp</a></div>`}</div>` : '';
+      if (!n && $('#ws-copy')) {
+        const url = eventUrl(ev.id, (ev.photographerUids || []).length > 1 ? me : '');
+        $('#ws-copy').onclick = async () => { try { await navigator.clipboard.writeText(url); toast('Link copiado'); } catch { toast(url); } };
+        $('#ws-wa').href = `https://wa.me/?text=${encodeURIComponent(`📸 Estoy subiendo las fotos de ${ev.name}. Buscate y descargalas acá 👉 ${url}`)}`;
+      }
+      // Sin fotos, primero va la subida; la tarjeta completa para compartir queda abajo hasta que haya fotos.
+      const card = $('#ev-share-card'), sets = $('#ev-sets');
+      if (card && sets) (n ? sets.before(card) : sets.after(card));
     };
-    drawSteps();
     const share = highlight => mountShareCard($('#ev-share-card'), { ev, set: mySet, uid: me, displayName: S.profile.displayName, multi: (ev.photographerUids || []).length > 1, highlight });
     share(false);
+    drawSteps();
     $('#ev-share').onclick = () => $('#ev-share-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
     // Al terminar una subida: festejo y tarjeta de compartir a la vista.
     window.onqmfUploadDone = ({ eventId, count }) => {
