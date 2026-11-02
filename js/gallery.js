@@ -252,7 +252,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
     if (!p) return;
     const added = cart.toggle(p);
     if (added) trackCartAdd(ev.id, p.photographerUid);
-    toast(added ? 'Foto agregada al carrito' : 'Foto quitada del carrito');
+    if (!state.pick) toast(added ? 'Foto agregada al carrito' : 'Foto quitada del carrito'); // eligiendo varias, alcanza con la barra
     syncCartMarks();
   }
   // Barra fija abajo con lo que lleva en el carrito (en el celular el botón del carrito queda lejos).

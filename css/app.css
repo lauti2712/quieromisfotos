@@ -722,3 +722,4 @@ body:not(.with-tabbar) .up-fab { bottom: calc(16px + env(safe-area-inset-bottom)
 .g-bib label { font-size: 1.05rem; }
 @media (max-width: 640px) { .g-bib input { max-width: none; } }
 .lightbox .lb-note.lb-tip { color: #ffd2bf; }
+.gallery.cols3.picking .g-item::after { width: 22px; height: 22px; top: 4px; right: 4px; font-size: 13px; }
