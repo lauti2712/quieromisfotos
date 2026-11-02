@@ -673,3 +673,23 @@ body:not(.with-tabbar) .up-fab { bottom: calc(16px + env(safe-area-inset-bottom)
 
 /* alertas del superadmin */
 .alerts-bar { padding: 0 16px; }
+
+/* ---------- galería del evento en el celular: que las fotos aparezcan en la primera pantalla ---------- */
+.lightbox { background: #050608; }
+.lightbox .lb-stage img.lb-low { filter: blur(1.5px); }
+@media (max-width: 640px) {
+  .event-hero { margin-bottom: 12px; }
+  .event-hero .cover { min-height: 190px; }
+  .event-hero .meta { bottom: 12px; left: 14px; right: 14px; }
+  .event-hero .meta h1 { font-size: 1.2rem; }
+  .event-hero .meta > div { font-size: .85rem; }
+  .hero-people { margin-top: 8px; }
+  .hero-person small { display: none; }
+  .gallery-card { padding: 12px 8px; }
+  .gallery-card > h2 { display: none; }
+  .gallery-card .filter-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-bottom: 8px; padding-bottom: 2px; }
+  .gallery-card .filter-row::-webkit-scrollbar { display: none; }
+  .gallery-card .filter-row > * { flex: 0 0 auto; white-space: nowrap; }
+  .gallery-card .g-price { padding: 8px 10px; margin-bottom: 8px; font-size: .9rem; }
+  .g-add, .g-fav { width: 30px; height: 30px; font-size: 16px; background: rgba(0,0,0,.4); }
+}
