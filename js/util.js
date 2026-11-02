@@ -108,6 +108,13 @@ export function errMsg(e) {
     'auth/configuration-not-found': 'El inicio de sesión todavía no está habilitado en Firebase.',
     'auth/operation-not-allowed': 'Ese método de inicio de sesión no está habilitado.',
     'auth/unauthorized-domain': 'Este dominio no está autorizado en Firebase Auth.',
+    'auth/invalid-phone-number': 'Revisá el número de celular: con código de área y sin el 15 (ej: 342 555-1234).',
+    'auth/missing-phone-number': 'Escribí tu número de celular.',
+    'auth/invalid-verification-code': 'El código no es correcto. Revisá el SMS y probá de nuevo.',
+    'auth/code-expired': 'El código venció. Volvé a pedir uno.',
+    'auth/quota-exceeded': 'Se mandaron demasiados SMS. Probá en un rato o entrá con email.',
+    'auth/captcha-check-failed': 'No se pudo verificar que no seas un robot. Recargá la página y probá de nuevo.',
+    'auth/billing-not-enabled': 'El ingreso con celular todavía no está habilitado.',
     unavailable: 'Sin conexión. Probá de nuevo.',
   };
   return map[code] || e?.message || String(e);

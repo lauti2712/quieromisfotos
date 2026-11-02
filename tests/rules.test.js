@@ -141,6 +141,10 @@ test('sin correo confirmado: crea borradores pero no publica ni se suma a evento
   await assertFails(setDoc(doc(db, 'events/uv2'), { name: 'U', status: 'published', kind: 'own', createdBy: 'beto', photographerUids: ['beto'] }));
   await assertFails(updateDoc(doc(db, 'events/pub'), { photographerUids: ['ana', 'beto'] }));
   await assertSucceeds(updateDoc(doc(user('beto'), 'events/uv'), { status: 'published' }));
+  // Ingreso con el celular (sin mail): cuenta confirmada.
+  const phone = as({ uid: 'beto', token: { phone_number: '+5493425551234' } });
+  await assertSucceeds(updateDoc(doc(phone, 'events/uv'), { status: 'draft' }));
+  await assertSucceeds(updateDoc(doc(phone, 'events/uv'), { status: 'published' }));
 });
 
 test('fotógrafo aprobado crea evento propio con su set; pendiente no', async () => {

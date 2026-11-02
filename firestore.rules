@@ -19,7 +19,8 @@ service cloud.firestore {
       return signedIn() && exists(userPath(uid())) && get(userPath(uid())).data.status in ['approved', 'pending'];
     }
     // Correo confirmado (las cuentas de Google ya vienen confirmadas): necesario para publicar y sumarse a eventos.
-    function verified() { return request.auth.token.email_verified == true; }
+    // Cuenta confirmada: correo verificado o ingreso con el celular (SMS).
+    function verified() { return request.auth.token.email_verified == true || ('phone_number' in request.auth.token); }
     function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
     function slugOwnedAfter(id) {
       return getAfter(/databases/$(database)/documents/slugs/$(request.resource.data.slug)).data.uid == id;
