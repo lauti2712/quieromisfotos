@@ -764,3 +764,13 @@ body:not(.with-tabbar) .up-fab { bottom: calc(16px + env(safe-area-inset-bottom)
 .crumbs a { color: inherit; }
 .guide h2 { margin-top: 24px; }
 .guide p, .guide li { line-height: 1.6; }
+
+/* Buscador de localidades (js/places.js) */
+.place-wrap { position: relative; }
+.place-wrap > input { width: 100%; }
+.place-list { position: absolute; z-index: 60; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px; list-style: none;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.18); max-height: 260px; overflow-y: auto; }
+.place-list li { padding: 9px 10px; border-radius: 8px; cursor: pointer; font-size: .95rem; }
+.place-list li.on, .place-list li[data-i]:hover { background: var(--surface-2); }
+.place-list li.none { color: var(--muted); cursor: default; font-size: .88rem; }
+.field input:invalid:not(:placeholder-shown):not(:focus) { border-color: #d33; }

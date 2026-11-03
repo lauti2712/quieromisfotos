@@ -28,6 +28,7 @@ import { pushAvailable, pushOn, pushBlocked, enablePush, disablePush, isIos, isS
 import { shareLink, eventUrl } from './share.js';
 import { mountShareCard } from './panel-share.js';
 import { cropImage } from './cropper.js';
+import { placeInput, canonicalPlace } from './places.js';
 
 const root = $('#root');
 const S = { user: null, profile: null, isSuper: false, settings: { ...DEFAULT_SETTINGS }, tax: null };
@@ -317,7 +318,7 @@ function renderOnboarding() {
           <input type="text" id="ob-slug" required maxlength="40" value="${esc(slugify(name))}">
           <span class="hint" id="ob-slug-hint">quieromisfotos/#/f/<strong>${esc(slugify(name) || '...')}</strong></span>
         </label>
-        <label class="field">Zona<input type="text" id="ob-zone" maxlength="60" placeholder="Ej: Rosario, Santa Fe"></label>
+        <label class="field">Localidad<input type="text" id="ob-zone" maxlength="80" required placeholder="Empezá a escribir y elegí de la lista"></label>
         ${S.isSuper ? '' : `<label class="field">WhatsApp<input type="tel" id="ob-wa" required maxlength="30" inputmode="tel" autocomplete="tel" placeholder="Ej: 341 555-1234 (con código de área)" value="${esc((u.phoneNumber || '').replace(/^\+549?/, ''))}">
           <span class="hint">Para avisarte novedades de tu cuenta. También se muestra en tu perfil para que te pidan presupuestos (lo podés sacar después).</span></label>`}
         <button class="btn primary" type="submit">Crear perfil</button>
@@ -327,6 +328,7 @@ function renderOnboarding() {
   $('#ob-name').oninput = e => { if (!slugTouched) { $('#ob-slug').value = slugify(e.target.value); slugHint(); } };
   $('#ob-slug').oninput = () => { slugTouched = true; slugHint(); };
   const slugHint = () => { $('#ob-slug-hint strong').textContent = $('#ob-slug').value || '...'; };
+  placeInput($('#ob-zone'));
 
   $('#ob').onsubmit = async e => {
     e.preventDefault();
@@ -334,6 +336,8 @@ function renderOnboarding() {
     const slug = slugify($('#ob-slug').value);
     if (!SLUG_RE.test(slug)) return toast('La dirección debe tener entre 3 y 40 letras, números o guiones.', 'error');
     const wa = $('#ob-wa')?.value.trim() || '';
+    const zone = await canonicalPlace($('#ob-zone').value);
+    if (!zone && !S.isSuper) return toast('Elegí tu localidad de la lista (empezá a escribir y tocá una opción).', 'error');
     if (!S.isSuper && wa.replace(/\D/g, '').length < 8) return toast('Escribí tu WhatsApp con código de área (ej: 341 555-1234).', 'error');
     try {
       const taken = await getDoc(doc(db, 'slugs', slug));
@@ -341,7 +345,7 @@ function renderOnboarding() {
       const profile = {
         role: S.isSuper ? 'superadmin' : 'photographer',
         status: S.isSuper ? 'approved' : 'pending',
-        displayName, slug, zone: $('#ob-zone').value.trim(),
+        displayName, slug, zone: zone || $('#ob-zone').value.trim(),
         avatarUrl: u.photoURL || '', bio: '', socials: wa ? { whatsapp: wa } : {},
         mpConnected: false, mpUserId: null,
         defaults: { price: 0, packs: [], feeMode: 'absorb' },
@@ -646,6 +650,11 @@ async function viewHome() {
     <div id="home-push"></div>
     <div class="card"><h2>Tu perfil público</h2><p class="muted">Así te ven los compradores.</p><a class="btn" target="_blank" href="index.html#/f/${esc(p.slug)}">Ver mi perfil</a></div>`;
 
+  // ---- localidad escrita a mano (antes de la lista oficial): se pide elegirla de la lista
+  if (p.zone !== undefined && !S.isSuper) canonicalPlace(p.zone).then(c => {
+    if (!c) $('#home-alerts')?.insertAdjacentHTML('beforebegin', `<div class="notice warn row" style="justify-content:space-between"><span>📍 Elegí tu localidad de la lista para aparecer en "Fotógrafos en tu zona".</span><a class="btn sm" href="#/perfil">Elegir</a></div>`);
+  }).catch(() => {});
+
   // ---- álbumes por vencer
   const rows = evs.map((ev, i) => ({ ev, r: retentionState(sets[i]) })).filter(({ r }) => (r.k === 'active' && r.days <= 3) || r.k === 'grace');
   bindInstallCard();
@@ -826,7 +835,7 @@ function viewProfile() {
         <label class="field">Dirección del perfil<input type="text" id="pf-slug" required maxlength="40" value="${esc(p.slug)}"><span class="hint">#/f/<span id="pf-slug-prev">${esc(p.slug)}</span></span></label>
       </div>
       <div class="grid2">
-        <label class="field">Zona<input type="text" id="pf-zone" maxlength="60" value="${esc(p.zone)}" placeholder="Ciudad, provincia"></label>
+        <label class="field">Localidad<input type="text" id="pf-zone" maxlength="80" required value="${esc(p.zone)}" placeholder="Empezá a escribir y elegí de la lista"><span class="hint">Elegila de la lista: así te encuentran en "Fotógrafos en tu zona".</span></label>
         <label class="field">Zonas donde trabajás<input type="text" id="pf-workzones" maxlength="120" value="${esc(p.workZones || '')}" placeholder="Ej: Rosario, Funes, Roldán"></label>
       </div>
       <label class="field">Bio<textarea id="pf-bio" maxlength="600" placeholder="Contá qué actividades cubrís, tu experiencia…">${esc(p.bio)}</textarea></label>
@@ -922,14 +931,17 @@ function viewProfile() {
   $('#pf-sport-add')?.addEventListener('click', addSport);
   $('#pf-sport-new')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addSport(); } });
   $('#pf-slug').oninput = e => { $('#pf-slug-prev').textContent = slugify(e.target.value); };
+  placeInput($('#pf-zone'));
   $('#pf').onsubmit = async e => {
     e.preventDefault();
+    const zone = await canonicalPlace($('#pf-zone').value);
+    if (!zone) return toast('Elegí tu localidad de la lista (empezá a escribir y tocá una opción).', 'error');
     const slug = slugify($('#pf-slug').value);
     if (!SLUG_RE.test(slug)) return toast('La dirección debe tener entre 3 y 40 letras, números o guiones.', 'error');
     const socials = {};
     $$('[data-social]').forEach(i => { if (i.value.trim()) socials[i.dataset.social] = i.value.trim(); });
     const upd = {
-      displayName: $('#pf-name').value.trim(), slug, zone: $('#pf-zone').value.trim(),
+      displayName: $('#pf-name').value.trim(), slug, zone,
       bio: $('#pf-bio').value.trim(), avatarUrl: $('#pf-avatar').value.trim(), socials,
       workZones: $('#pf-workzones').value.trim(),
       specialties: $$('#pf-sports .chip.on').map(c => c.dataset.v),
@@ -1517,8 +1529,9 @@ function eventDialog(ev, onSaved) {
     <div class="grid2">
       <label class="field">Fecha<input type="date" id="ev-date" required value="${esc(ev.date)}">
         <span class="hint">Podés crear eventos futuros: aparecen en "Próximos eventos" y en el calendario, y la gente puede activar 🔔 para que le avisemos cuando subas las fotos.</span></label>
-      <label class="field">Sede / dirección<input type="text" id="ev-loc" maxlength="100" value="${esc(ev.location)}" placeholder="Ej: Cancha de Querandí, Santa Fe"></label>
+      <label class="field">Localidad<input type="text" id="ev-city" maxlength="80" required value="${esc(ev.city || '')}" placeholder="Empezá a escribir y elegí de la lista"></label>
     </div>
+    <label class="field">Lugar (opcional)<input type="text" id="ev-loc" maxlength="100" value="${esc(ev.city ? ev.venue || '' : ev.location || '')}" placeholder="Ej: Cancha de Querandí, Hipódromo, Parque Independencia"></label>
     ${tax.types.map(t => {
       const tags = tax.tags.filter(g => g.typeId === t.id);
       const canAdd = USER_TAG_TYPES.includes(t.id);
@@ -1541,6 +1554,7 @@ function eventDialog(ev, onSaved) {
       : `<label class="check"><input type="checkbox" id="ev-open" ${ev.openToJoin ? 'checked' : ''}> Permitir que otros fotógrafos se sumen a este evento</label>`}
   `, `<button class="btn" data-close>Cancelar</button><button class="btn primary" id="ev-save">${isNew ? 'Crear' : 'Guardar'}</button>`);
 
+  placeInput($('#ev-city', dlg));
   // Portada: se encuadra (16:9) y se sube. Puede venir de un archivo o de una foto del álbum (desde el original, sin marca).
   const setCover = async blob => {
     const cropped = await cropImage(blob);
@@ -1602,12 +1616,17 @@ function eventDialog(ev, onSaved) {
   $$('[data-addtag]', dlg).forEach(b => b.onclick = () => addTag(b.dataset.addtag));
   $$('[data-newtag]', dlg).forEach(i => i.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); addTag(i.dataset.newtag); } });
   $('#ev-save', dlg).onclick = async () => {
-    const name = $('#ev-name', dlg).value.trim(), date = $('#ev-date', dlg).value, loc = $('#ev-loc', dlg).value.trim();
+    const name = $('#ev-name', dlg).value.trim(), date = $('#ev-date', dlg).value, venue = $('#ev-loc', dlg).value.trim();
     if (!name || !date) return toast('Completá nombre y fecha.', 'error');
+    const city = await canonicalPlace($('#ev-city', dlg).value);
+    if (!city) return toast('Elegí la localidad del evento de la lista (empezá a escribir y tocá una opción).', 'error');
+    // "location" (lo que se muestra en todos lados) = lugar + localidad, sin repetir la ciudad si ya está en el lugar.
+    const cityName = city.split(',')[0];
+    const loc = !venue ? city : normalize(venue).includes(normalize(cityName)) ? venue : `${venue}, ${city}`;
     if ($('#ev-status', dlg).value === 'published' && ev?.status !== 'published' && !await requireVerified()) return;
     const tagNames = [...sel].map(id => tax.tagById.get(id)?.name || '');
     const data = {
-      name, date, location: loc, tagIds: [...sel].filter(id => tax.tagById.has(id)),
+      name, date, location: loc, venue, city, tagIds: [...sel].filter(id => tax.tagById.has(id)),
       coverUrl: $('#ev-cover', dlg).value.trim(),
       status: $('#ev-status', dlg).value,
       openToJoin: general ? true : $('#ev-open', dlg).checked,
