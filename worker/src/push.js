@@ -1,4 +1,5 @@
 // Notificaciones push (Firebase Cloud Messaging) a los dispositivos que el usuario activó (userPrivate/{uid}.fcmTokens).
+import { sendPendingFaceHits } from './faces.js';
 import { adminGet, adminUpdate, accessToken, adminQuery, adminDelete, adminGetMany, adminSet } from './admin.js';
 import { sendMany, mailLayout, authEmails } from './mail.js';
 
@@ -53,6 +54,7 @@ export async function notifyFollowersOnce(env, eid, uid) {
   const [ev, ph] = await adminGetMany(env, [`events/${eid}`, `users/${uid}`]);
   if (!ev || ev.status !== 'published') return false; // en borrador: se reintenta en el escaneo diario
   await adminUpdate(env, `events/${eid}/sets/${uid}`, { followersNotifiedAt: new Date() });
+  await sendPendingFaceHits(env, eid).catch(e => console.error('caras pendientes', e));
   const site0 = env.SITE_URL || 'https://quieromisfotos.com.ar/';
   await notifySuper(env, 'album', { title: '📸 Se publicó un álbum', body: `${ph?.displayName || 'Un fotógrafo'} · ${ev.name || 'Evento'}`, link: `${site0}#/evento/${eid}?f=${uid}` });
   const [a, b] = await Promise.all([
@@ -85,7 +87,7 @@ export async function drainPushQueue(env) {
     await sendMany(env, Object.values(emails).map(to => ({
       to, subject: job.title.replace(/^📸\s*/, '📸 '),
       html: mailLayout({ title: job.title.replace(/^📸\s*/, ''), intro: esc(job.body), cta: { label: '📸 Ver las fotos', url: job.link },
-        foot: 'Te llega este mail porque tocaste 🔔 Avisarme en Quiero Mis Fotos. Para no recibir más avisos, tocá de nuevo 🔔 en el evento o en el perfil del fotógrafo.' }),
+        foot: job.foot || 'Te llega este mail porque tocaste 🔔 Avisarme en Quiero Mis Fotos. Para no recibir más avisos, tocá de nuevo 🔔 en el evento o en el perfil del fotógrafo.' }),
     }))).catch(e => console.error('mail seguidores', e));
   }
   const at = await accessToken(env);

@@ -153,10 +153,12 @@ export async function renderAccount(app) {
     <div id="orders"><div class="spinner"></div></div>
     <h2 style="margin-top:26px">🔔 Mis avisos</h2>
     <div id="follows"><div class="spinner"></div></div>
+    <div id="myface"></div>
     <p class="muted small" style="margin-top:24px" id="photog-hint">¿Sos fotógrafo? <a href="#/soy-fotografo">Mirá cómo vender tus fotos</a>.</p>`;
   $('#logout').onclick = async () => { await signOut(auth); location.hash = '#/'; };
 
   drawFollows(u).catch(() => { $('#follows').innerHTML = ''; });
+  drawMyFace().catch(() => {});
 
   // Un fotógrafo que entra a "Mis compras" no ve la invitación a vender.
   if (isPhotographer) $('#photog-hint')?.remove();
@@ -214,4 +216,17 @@ async function drawFollows(u) {
   $('#push-on')?.addEventListener('click', async () => { try { await enablePush(u.uid); toast('🔔 Notificaciones activadas'); drawFollows(u); } catch (e) { toast(errMsg(e), 'error'); } });
   box.querySelectorAll('[data-unf-e]').forEach(b => b.onclick = async () => { await toggleFollow('events', b.dataset.unfE); drawFollows(u); });
   box.querySelectorAll('[data-unf-p]').forEach(b => b.onclick = async () => { await toggleFollow('photographers', b.dataset.unfP); drawFollows(u); });
+}
+
+// Cara guardada para los avisos de "aparecés en fotos nuevas" (se guarda desde la búsqueda por selfie).
+async function drawMyFace() {
+  const { apiGet, apiPost } = await import('./api.js');
+  const r = await apiGet('/faces/me');
+  const box = $('#myface');
+  if (!box || !r.saved) return;
+  box.innerHTML = `<div class="card row" style="justify-content:space-between;margin-top:8px"><span style="flex:1;min-width:0"><strong>🤳 Aviso por mi cara</strong><br><span class="muted small">Te avisamos cuando aparezcas en fotos nuevas. Guardamos solo la huella numérica de tu cara, nunca la selfie.</span></span><button class="btn sm ghost" id="face-del">Borrar mi cara</button></div>`;
+  $('#face-del').onclick = async () => {
+    if (!confirm('¿Borrar la huella de tu cara? Ya no te vamos a avisar cuando aparezcas en fotos nuevas.')) return;
+    try { await apiPost('/faces/me/delete'); box.innerHTML = ''; toast('Listo, borramos la huella de tu cara.'); } catch (e) { toast(errMsg(e), 'error'); }
+  };
 }

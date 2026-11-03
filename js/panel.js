@@ -577,6 +577,23 @@ function drawTabbar(key) {
   }
 }
 
+// Novedades para los fotógrafos en Inicio, hasta que la cierra (por dispositivo) o vence.
+const NEWS = { id: '2026-11-video-portada-selfie', until: '2026-12-03', items: [
+  ['🎬', 'Video para historias', 'En cada álbum, en <strong>Compartir</strong>, se arma solo un video con tus mejores fotos, más texto para WhatsApp, QR y cartel para la cancha.'],
+  ['🖼️', 'Elegí la portada de tu evento', 'Usá una de tus fotos (sin marca de agua) o subí una imagen, y encuadrala. Ahora tu nombre aparece en cada evento.'],
+  ['🤳', 'Búsqueda por selfie', 'Tus clientes se buscan con una selfie. En álbumes subidos antes, tocá <strong>Prepararlas ahora</strong>.'],
+  ['💡', 'Tip: precio especial', 'Una foto del equipo completo la compra uno y la comparte con todos: subile el precio. Elegí esas fotos en el álbum y tocá <strong>💲 Precio</strong>.'],
+] };
+function newsCardHtml() {
+  let seen = false;
+  try { seen = localStorage.getItem('qmf-news') === NEWS.id; } catch { /* nada */ }
+  if (seen || todayIso() > NEWS.until) return '';
+  return `<div class="card stack news-card" id="news-card">
+    <div class="row" style="justify-content:space-between"><h2 style="margin:0">✨ Novedades</h2><button class="btn ghost sm" type="button" aria-label="Cerrar novedades" onclick="try{localStorage.setItem('qmf-news','${NEWS.id}')}catch{};this.closest('#news-card').remove()">✕</button></div>
+    ${NEWS.items.map(([i, t, d]) => `<div class="item-row"><span style="font-size:1.3rem">${i}</span><span class="grow"><strong>${t}</strong><br><span class="muted small">${d}</span></span></div>`).join('')}
+  </div>`;
+}
+
 // ================================================================ fotógrafo: inicio
 // Guía de primeros pasos + avisos de vencimiento + tablero de ventas + avisos push.
 async function viewHome() {
@@ -610,6 +627,7 @@ async function viewHome() {
   $('#view').innerHTML = `
     <h1>Hola, ${esc(p.displayName)}</h1>
     ${planCardHtml(p)}
+    ${newsCardHtml()}
     <div id="home-alerts"></div>
     ${approved && !p.mpConnected && totalPhotos > 0 ? `<div class="notice danger"><strong>💳 Tus fotos se ven pero no se pueden comprar.</strong><br>Falta vincular Mercado Pago: los compradores ven "todavía no está a la venta". <a href="#/mp">Vincular ahora</a></div>` : ''}
     ${installCardHtml()}

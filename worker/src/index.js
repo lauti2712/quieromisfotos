@@ -10,6 +10,7 @@
 //   DELETE /photo/{eid}/{pid}          X-Upload-Token                         (versión anterior del panel) borra los archivos
 //   PUT    /bibs/{eid}/{pid}           X-Upload-Token  (jpeg sin marca)       lee los dorsales con IA -> { bibs }
 //   POST   /faces/{eid}[/mine|/match]  búsqueda por selfie (faces.js)
+//   GET|POST /faces/me[/delete]        Bearer   cara guardada del comprador para avisarle (faces.js)
 //   GET    /public/{key}                                                      sirve qmf-public (si no hay dominio público)
 //
 // Fase 4 — pagos (Mercado Pago marketplace):
@@ -51,7 +52,7 @@ import { connectUrl, callback, disconnect } from './mp.js';
 import { checkout, webhook, syncOrder, retryCheckout, downloadLinks, download, reviewOriginal } from './orders.js';
 import { createTag } from './tags.js';
 import { scanBibsRequest } from './bibs.js';
-import { addFaces, myFaces, matchFaces } from './faces.js';
+import { addFaces, myFaces, matchFaces, myFace } from './faces.js';
 import { commitPhoto, deletePhotos, orderDownloadUntil } from './photos.js';
 import { statsHit } from './stats.js';
 import { sharePage } from './share.js';
@@ -139,6 +140,7 @@ async function route(req, env, ctx) {
     if (parts[2] === 'delete') return deletePhotos(req, env, s, parts[1]);
     if (ID_RE.test(parts[2])) return commitPhoto(req, env, s, parts[1], parts[2], publicBase(req, env));
   }
+  if (parts[0] === 'faces' && parts[1] === 'me') return myFace(req, env, parts[2]);
   if (parts[0] === 'faces' && ID_RE.test(parts[1] || '')) {
     if (m === 'POST' && parts.length === 2) return addFaces(req, env, await session(req, env), parts[1]);
     if (m === 'GET' && parts[2] === 'mine') return myFaces(req, env, await session(req, env), parts[1]);

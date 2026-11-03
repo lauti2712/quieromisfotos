@@ -9,7 +9,7 @@ import { favs } from './favs.js';
 import { shareLink, eventUrl } from './share.js';
 import { trackPhotoView, trackCartAdd } from './stats.js';
 import { API_BASE, apiPost } from './api.js';
-import { currentUser } from './account.js';
+import { currentUser, requireLogin } from './account.js';
 
 const PAGE = 60;
 
@@ -143,7 +143,8 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
         ? `<div class="g-bib-found"><span>🤳 Encontramos <strong>${list.length}</strong> foto${list.length === 1 ? '' : 's'} donde parecés estar (de la más parecida a la menos)</span><button type="button" class="btn sm" id="g-selfie-x">Ver todas</button></div>${list.map((p, i) => itemHtml(p, i)).join('')}`
         : `<div class="empty" style="grid-column:1/-1">No encontramos fotos tuyas con esa selfie.<br>Puede que no estés de frente en ninguna: probá con otra selfie con buena luz, o buscá por horario.<br><button type="button" class="btn sm" id="g-selfie-x" style="margin-top:8px">Ver todas</button></div>`;
       $('#g-selfie-x', box).onclick = () => { state.selfie = null; reset(); };
-      $('#g-more', box).innerHTML = '';
+      $('#g-more', box).innerHTML = state.selfieD ? `<div class="notice row" id="g-face-save" style="justify-content:space-between;margin-top:12px"><span>🔔 ¿Querés que te avisemos cuando aparezcas en fotos nuevas de cualquier evento?</span><button type="button" class="btn sm primary">Avisarme</button></div>` : '';
+      $('#g-face-save button', box)?.addEventListener('click', () => saveMyFace(state.selfieD));
       return;
     }
     if (state.fav) {
@@ -481,12 +482,45 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
       // Las fotos encontradas, en el orden de parecido (las borradas u ocultas se saltean).
       const docs = await Promise.all((r.photos || []).map(x => getDoc(doc(db, 'photos', x.p)).then(s => (s.exists() ? { id: s.id, ...s.data() } : null)).catch(() => null)));
       state.selfie = docs.filter(p => p && !p.hidden && p.eventId === ev.id && byUid.has(p.photographerUid));
+      state.selfieD = Array.from(d);
       Object.assign(state, { fav: false, bib: '', hour: 0 });
       reset();
       $('#g-grid', box).scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (err) { toast(errMsg(err), 'error'); }
     btn.disabled = false; btn.textContent = '🤳 Buscarme con una selfie';
   });
+
+  // Guardar la cara (con consentimiento aparte) para avisarle cuando aparezca en fotos nuevas. Se borra desde Mi cuenta.
+  function saveMyFace(d) {
+    const dlg = document.createElement('dialog');
+    dlg.innerHTML = `<div class="dlg-head"><h2>🔔 Avisarme cuando aparezca</h2><button class="btn ghost sm" data-close>✕</button></div>
+      <div class="dlg-body stack">
+        <p style="margin:0">Guardamos la huella numérica de tu cara en tu cuenta y, cuando un fotógrafo sube fotos donde parecés estar, te avisamos.</p>
+        <ul class="small" style="margin:0;padding-left:18px">
+          <li>Se guarda solo la huella numérica, <strong>nunca la selfie</strong>.</li>
+          <li>Es un dato biométrico: lo usamos solo para avisarte. No lo compartimos con nadie.</li>
+          <li>La podés borrar cuando quieras desde <strong>Mi cuenta</strong>. Más info en <a href="privacidad/" target="_blank">Privacidad</a>.</li>
+        </ul>
+        <label class="check"><input type="checkbox" id="fs-ok"> Acepto que se guarde la huella de mi cara para avisarme</label>
+      </div>
+      <div class="dlg-foot"><button class="btn primary" id="fs-go" disabled>Guardar y avisarme</button></div>`;
+    document.body.appendChild(dlg);
+    dlg.addEventListener('close', () => dlg.remove());
+    dlg.querySelector('[data-close]').onclick = () => dlg.close();
+    dlg.querySelector('#fs-ok').onchange = e => { dlg.querySelector('#fs-go').disabled = !e.target.checked; };
+    dlg.querySelector('#fs-go').onclick = async () => {
+      dlg.close();
+      try {
+        await requireLogin('Ingresá para que te avisemos cuando aparezcas en fotos nuevas.');
+        await apiPost('/faces/me', { d });
+        $('#g-face-save', box)?.remove();
+        toast('🔔 Listo. Te avisamos cuando aparezcas en fotos nuevas.');
+        const { pushAvailable, pushOn, enablePush } = await import('./push.js');
+        if (!pushOn() && await pushAvailable()) enablePush(currentUser().uid).catch(() => {});
+      } catch (err) { toast(errMsg(err), 'error'); }
+    };
+    dlg.showModal();
+  }
 
   const bibForm = $('#g-bib', box);
   if (bibForm) {
