@@ -19,7 +19,7 @@ import { viewWeb } from './panel-web.js';
 import { sellerNet } from './pricing.js';
 import { viewPortfolio } from './panel-portfolio.js';
 import { drawWatermark, drawSampleScene, DEFAULT_WATERMARK, wantsLogo } from './watermark.js';
-import { uploadAsset, apiPost, apiGet } from './api.js';
+import { uploadAsset, apiPost, apiGet, uploadSession, postWithToken, API_BASE } from './api.js';
 import { resizeToJpeg } from './image-proc.js';
 import { mountPhotos, uploadsInProgress } from './panel-photos.js';
 import { loadMyTeams, viewTeam, viewTeams, viewTeamEvent, viewJoin, teamSalesHtml } from './panel-team.js';
@@ -1841,9 +1841,13 @@ function renderSetEditor(ev, set, reload) {
       ${S.settings.bibsEnabled === false ? '' : `<label class="check"><input type="checkbox" id="st-bibs" ${bibsOn(set, ev, S.tax) ? 'checked' : ''}> 🔢 Leer los dorsales automáticamente al subir</label>
       <p class="muted small" style="margin:0">Para carreras (running, ciclismo, triatlón…): cada participante busca su número y ve solo sus fotos. Se aplica a las fotos que subas desde ahora; si alguno no se leyó bien, lo corregís con “🔢 Dorsales” en tus fotos.</p>
       <p class="muted small" style="margin:0">🔗 Link directo para cada corredor (cambiá el número al final): <code style="word-break:break-all">${esc(`${location.origin}/e/${ev.id}/?s=1&dorsal=123`)}</code></p>`}
+      ${S.settings.selfieEnabled === false ? '' : `<label class="check"><input type="checkbox" id="st-selfie" ${set.selfie !== false ? 'checked' : ''}> 🤳 Búsqueda por selfie</label>
+      <p class="muted small" style="margin:0">Cada uno se saca una selfie y ve las fotos donde aparece. Las caras se procesan en tu dispositivo al subir y solo se guarda una huella numérica (nunca imágenes de caras).</p>
+      <div id="st-selfie-status"></div>`}
       <div class="row end"><button class="btn primary" type="submit">Guardar set</button></div>
     </form>
     <div id="set-photos"></div>`;
+  if (S.settings.selfieEnabled !== false && set.selfie !== false && (set.photoCount || 0) > 0) drawSelfieStatus(ev);
   mountPhotos($('#set-photos'), { ev, set, uid: S.user.uid, profile: S.profile, settings: S.settings, bibs: bibsOn(set, ev, S.tax) })
     .catch(e => { $('#set-photos').innerHTML = `<div class="notice danger">${esc(errMsg(e))}</div>`; });
 
@@ -1904,12 +1908,52 @@ function renderSetEditor(ev, set, reload) {
         subalbums: clean,
         showHours: $('#st-hours').checked,
         ...($('#st-bibs') ? { detectBibs: $('#st-bibs').checked } : {}),
+        ...($('#st-selfie') ? { selfie: $('#st-selfie').checked } : {}),
         updatedAt: serverTimestamp(),
       });
       toast('Set guardado');
       reload();
     } catch (err) { toast(errMsg(err), 'error'); }
   };
+}
+
+// Búsqueda por selfie: cuántas fotos ya tienen las caras procesadas y botón para preparar las que faltan
+// (fotos subidas antes de activarla o si se cerró la página antes de terminar). Usa las muestras (ya subidas).
+async function drawSelfieStatus(ev) {
+  const box = $('#st-selfie-status');
+  if (!box) return;
+  try {
+    const s = await uploadSession(ev.id);
+    const r = await fetch(`${API_BASE}/faces/${ev.id}/mine`, { headers: { 'X-Upload-Token': s.token } }).then(x => x.json());
+    const done = new Set(r.ids || []);
+    const snap = await getDocs(query(collection(db, 'photos'), where('eventId', '==', ev.id), where('photographerUid', '==', S.user.uid), where('hidden', '==', false), limit(5000)));
+    const todo = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => !done.has(p.id) && (!p.uploadedBy || p.uploadedBy === S.user.uid));
+    if (!todo.length) { box.innerHTML = `<p class="small" style="margin:0">✅ Las ${done.size} fotos ya están listas para la búsqueda por selfie.</p>`; return; }
+    box.innerHTML = `<div class="notice small stack" style="margin:0"><span>🤳 ${todo.length} foto${todo.length === 1 ? '' : 's'} todavía no ${todo.length === 1 ? 'está lista' : 'están listas'} para la búsqueda por selfie.</span>
+      <div><button type="button" class="btn sm primary" id="sf-go">Prepararlas ahora</button> <span class="muted" id="sf-pct"></span></div></div>`;
+    $('#sf-go').onclick = async e => {
+      e.target.disabled = true;
+      const { photoFaces } = await import('./faces.js');
+      const batch = [];
+      const flush = async () => { if (!batch.length) return; const t = await uploadSession(ev.id); await postWithToken(`/faces/${ev.id}`, { items: batch.splice(0) }, t.token); };
+      try {
+        for (const [i, p] of todo.entries()) {
+          if (!document.body.contains(box)) return; // salió de la pantalla: lo que falta queda para después
+          $('#sf-pct').textContent = `${i + 1} de ${todo.length}… dejá esta pantalla abierta`;
+          try {
+            const img = new Image(); img.crossOrigin = 'anonymous';
+            img.src = `${API_BASE}/public/${new URL(p.previewUrl).pathname.replace(/^\//, '')}`;
+            await img.decode();
+            batch.push({ p: p.id, f: await photoFaces(img) });
+          } catch (err) { console.warn('caras', err); }
+          if (batch.length >= 20) await flush();
+        }
+        await flush();
+        toast('Listo: ya se pueden buscar con una selfie');
+        drawSelfieStatus(ev);
+      } catch (err) { e.target.disabled = false; toast(errMsg(err), 'error'); }
+    };
+  } catch (err) { box.innerHTML = ''; console.warn('selfie', err); }
 }
 
 // ================================================================ superadmin: fotógrafos
@@ -2399,6 +2443,8 @@ async function viewAdminStorage() {
       <p class="muted small" style="margin:0">La cantidad de fotos por álbum de cada plan se define en Plataforma → Planes. Referencia: una foto ocupa ~${fmtBytes(top.length ? top.reduce((a, t) => a + t.bytes, 0) / Math.max(1, top.reduce((a, t) => a + (t.photos || 0), 0)) : 12e6)}.</p>
       <label class="check"><input type="checkbox" id="lim-opt" ${S.settings.optimizeOriginals !== false ? 'checked' : ''}> Optimizar los originales al subir (todos los fotógrafos)</label>
       <p class="muted small" style="margin:0">Se guardan a la misma resolución con calidad JPEG 92%: no se nota a simple vista ni impresa, ocupan ~40-50% y la subida es más rápida. Si lo destildás, se guarda el archivo exacto de la cámara.</p>
+      <label class="check"><input type="checkbox" id="lim-selfie" ${S.settings.selfieEnabled !== false ? 'checked' : ''}> 🤳 Búsqueda por selfie (todos los fotógrafos)</label>
+      <p class="muted small" style="margin:0">Las caras se procesan en el dispositivo del fotógrafo al subir y la comparación en el servidor: sin costo. Cada fotógrafo la puede apagar en su álbum.</p>
       <label class="check"><input type="checkbox" id="lim-bibs" ${S.settings.bibsEnabled !== false ? 'checked' : ''}> 🔢 Lectura automática de dorsales (todos los fotógrafos)</label>
       <p class="muted small" style="margin:0">Con IA de Cloudflare (Workers AI): las primeras ~200 fotos por día son gratis; después cuesta ~US$ 0,55 cada 1.000 fotos. Cada fotógrafo la activa en su álbum (viene activada en running, ciclismo, triatlón…).</p>
       <h3 style="margin:4px 0 0">Packs adicionales para un álbum</h3>
@@ -2465,7 +2511,7 @@ async function viewAdminStorage() {
       photos: Math.round(Number(p.photos) || 0), price: Math.round(p.price) }));
     if (clean.some(p => !(p.photos > 0) || !(p.price > 0))) return toast('Cada pack necesita cantidad de fotos y precio.', 'error');
     try {
-      await setDoc(doc(db, 'settings', 'platform'), { optimizeOriginals: $('#lim-opt').checked, bibsEnabled: $('#lim-bibs').checked, storagePlans: clean, updatedAt: serverTimestamp() }, { merge: true });
+      await setDoc(doc(db, 'settings', 'platform'), { optimizeOriginals: $('#lim-opt').checked, bibsEnabled: $('#lim-bibs').checked, selfieEnabled: $('#lim-selfie').checked, storagePlans: clean, updatedAt: serverTimestamp() }, { merge: true });
       S.settings = await loadSettings(true);
       toast('Límite guardado');
     } catch (err) { toast(errMsg(err), 'error'); }

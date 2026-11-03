@@ -19,6 +19,7 @@ export async function scanStorage(env) {
   const profiles = {};  // uid -> bytes (avatar, logo, portfolio)
   const profileObjs = {}, coverObjs = {}; // para la limpieza de archivos sueltos
   let covers = 0, other = 0;
+  const faceKeys = {}; // "eid/uid" -> índices de caras (búsqueda por selfie)
   const totals = { pub: 0, priv: 0, objects: 0 };
 
   for (const [bucket, kind] of [[env.PUBLIC, 'pub'], [env.PRIVATE, 'priv']]) {
@@ -40,6 +41,7 @@ export async function scanStorage(env) {
           profiles[k[1]] = (profiles[k[1]] || 0) + o.size;
           (profileObjs[k[1]] ||= []).push({ key: o.key, size: o.size, uploaded: o.uploaded?.getTime?.() || 0, kind });
         }
+        else if (k[0] === 'faces' && kind === 'priv') (faceKeys[`${k[1]}/${k[2]}`] ||= []).push(o.key);
         else other += o.size;
       }
       cursor = r.truncated ? r.cursor : undefined;
@@ -81,6 +83,13 @@ export async function scanStorage(env) {
     s.priv = 0; s.n = 0;
   }
   retention.upcoming.sort((a, b) => a.deleteAt - b.deleteAt).splice(40);
+  // Índices de caras de álbumes que ya no existen o cuyos originales se borraron (Privacidad: se borran con el álbum).
+  const fids = Object.keys(faceKeys);
+  if (fids.length) {
+    const fdocs = await adminGetMany(env, fids.map(id => `events/${id.replace('/', '/sets/')}`));
+    const stale = fids.filter((id, i) => !fdocs[i] || fdocs[i].originalsDeleted || sets[id]?.deleted).flatMap(id => faceKeys[id]);
+    for (let j = 0; j < stale.length; j += 1000) await env.PRIVATE.delete(stale.slice(j, j + 1000));
+  }
   // Álbumes vencidos: quedan 10 fotos de muestra (las recién borradas y, de a 3 por día, las que se borraron antes).
   if (deleting) {
     const todo = ids.filter((id, i) => sets[id].deleted || (docs[i]?.originalsDeleted && !docs[i].samplesKept && (docs[i].photoCount || 0) > SAMPLE_COUNT));

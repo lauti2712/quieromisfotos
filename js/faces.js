@@ -37,7 +37,7 @@ export function faceDistance(a, b) {
 // Todas las caras de una foto que se ven lo suficientemente grandes para reconocerlas (en px del lado menor de la cara).
 export async function photoFaces(source, { minSize = 36, max = 15 } = {}) {
   const api = await loadFaceApi();
-  const det = await api.detectAllFaces(source, new api.TinyFaceDetectorOptions({ inputSize: 608, scoreThreshold: 0.45 }))
+  const det = await api.detectAllFaces(source, new api.TinyFaceDetectorOptions({ inputSize: 608, scoreThreshold: 0.55 }))
     .withFaceLandmarks(true).withFaceDescriptors();
   return det.filter(d => Math.min(d.detection.box.width, d.detection.box.height) >= minSize)
     .sort((a, b) => b.detection.box.height - a.detection.box.height).slice(0, max)
@@ -55,7 +55,7 @@ export async function selfieFace(source) {
 }
 
 // Fotos donde aparece la cara: distancia menor al umbral, de la más parecida a la menos. index = [[photoId, huella], …]
-export const MATCH = 0.5;
+export const MATCH = 0.55;
 export function matchFaces(selfie, index, threshold = MATCH) {
   const best = new Map();
   for (const [pid, s] of index) {
