@@ -739,3 +739,10 @@ body:not(.with-tabbar) .up-fab { bottom: calc(16px + env(safe-area-inset-bottom)
 @media (prefers-reduced-motion: reduce) { .share-card.flash { animation: none; outline: 3px solid var(--accent); } }
 /* Menú de abajo: botón central para subir */
 .tabbar a.tab-up span { display: grid; place-items: center; width: 40px; height: 40px; margin-top: -14px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-size: 1.5rem; font-weight: 800; box-shadow: 0 4px 12px rgba(255,90,31,.4); }
+
+/* Inicio: fotos más vendidas y tarjeta para subir de plan */
+.top-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 6px; }
+.top-photo { position: relative; aspect-ratio: 3/2; border-radius: 8px; overflow: hidden; display: block; }
+.top-photo img { width: 100%; height: 100%; object-fit: cover; }
+.top-photo span { position: absolute; right: 4px; bottom: 4px; padding: 1px 7px; border-radius: 99px; background: var(--accent); color: var(--accent-ink); font-size: .78rem; font-weight: 800; }
+.upsell { border: 2px solid var(--accent); background: linear-gradient(135deg, var(--accent-soft), var(--surface) 60%); }

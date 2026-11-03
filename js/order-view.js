@@ -67,6 +67,27 @@ function transferBox(o) {
   </div>`;
 }
 
+// Imagen 1080×1920: la foto entera sobre fondo oscuro, el evento arriba y el crédito del fotógrafo abajo.
+async function storyImage(blob, o) {
+  const W = 1080, H = 1920;
+  const bmp = await createImageBitmap(blob, { resizeWidth: W, resizeQuality: 'high', imageOrientation: 'from-image' });
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(W / 2, 200, 50, W / 2, 200, 1400);
+  g.addColorStop(0, '#3a1a0e'); g.addColorStop(1, '#0f1115');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  const k = Math.min((W - 80) / bmp.width, (H - 520) / bmp.height);
+  const w = bmp.width * k, h = bmp.height * k, x = (W - w) / 2, y = (H - h) / 2;
+  ctx.save(); ctx.beginPath(); ctx.roundRect(x, y, w, h, 28); ctx.clip(); ctx.drawImage(bmp, x, y, w, h); ctx.restore();
+  const font = '-apple-system, "Segoe UI", Roboto, Arial, sans-serif';
+  ctx.textAlign = 'center'; ctx.fillStyle = '#fff';
+  ctx.font = `800 58px ${font}`; ctx.fillText(o.eventName || '', W / 2, y - 60, W - 100);
+  ctx.font = `600 40px ${font}`; ctx.fillText(`📸 ${o.photographerName || ''}`, W / 2, y + h + 90, W - 100);
+  ctx.fillStyle = '#ff5a1f'; ctx.font = `800 38px ${font}`; ctx.fillText('quieromisfotos.com.ar', W / 2, y + h + 150);
+  const out = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92));
+  return new File([out], `historia-${o.id.slice(0, 6)}.jpg`, { type: 'image/jpeg' });
+}
+
 function draw(app, o) {
   const expired = o.downloadExpiresAt && o.downloadExpiresAt.toMillis() < Date.now();
   const head = {
@@ -108,7 +129,7 @@ function draw(app, o) {
         ${o.items.map((it, i) => `
           <div class="order-item">
             <img src="${esc(it.thumbUrl)}" alt="" loading="lazy">
-            ${o.status === 'approved' && !expired ? `<button class="btn sm" data-dl="${i}">⬇️ Descargar</button>` : ''}
+            ${o.status === 'approved' && !expired ? `<button class="btn sm" data-dl="${i}">⬇️ Descargar</button>${navigator.share ? `<button class="btn sm" data-story="${i}" title="Imagen vertical para tus historias de Instagram o WhatsApp">📲 Historia</button>` : ''}` : ''}
           </div>`).join('')}
       </div>
     </div>`;
@@ -143,6 +164,19 @@ function draw(app, o) {
     try { const l = await getLinks(); fire(l.links[+b.dataset.dl].url); b.textContent = '✓ Descargada'; }
     catch (err) { toast(errMsg(err), 'error'); }
     b.disabled = false;
+  });
+  // Historia: la foto comprada en formato vertical con el crédito del fotógrafo, lista para compartir.
+  $$('[data-story]', app).forEach(b => b.onclick = async () => {
+    b.disabled = true; const label = b.textContent; b.textContent = 'Preparando…';
+    try {
+      const l = await getLinks();
+      const res = await fetch(l.links[+b.dataset.story].url);
+      if (!res.ok) throw new Error('No se pudo bajar la foto. Probá de nuevo.');
+      const file = await storyImage(await res.blob(), o);
+      if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: o.eventName });
+      else { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); }
+    } catch (err) { if (err.name !== 'AbortError') toast(errMsg(err), 'error'); }
+    b.disabled = false; b.textContent = label;
   });
   // Dos pasos: primero se bajan (puede tardar) y después un toque abre "Compartir → Guardar imágenes"
   // (el navegador solo deja compartir como respuesta directa a un toque). De a 10 fotos para no llenar la memoria.

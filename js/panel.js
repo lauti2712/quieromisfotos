@@ -641,8 +641,10 @@ async function viewHome() {
   if (approved && (orders.length || totalPhotos)) {
     const lvl = myRules().stats;
     const mp = mpPlanOf(p, S.settings);
-    const net = o => (o.total || 0) - (o.platformFee || 0) - Math.round(((o.total || 0) * mp.percent) / 100);
+    const mpFee = o => (o.payMethod === 'transfer' ? 0 : Math.round(((o.total || 0) * mp.percent) / 100));
+    const net = o => (o.total || 0) - (o.platformFee || 0) - mpFee(o);
     const ts = o => (o.paidAt || o.createdAt)?.toMillis?.() || 0;
+    const startDay = new Date(); startDay.setHours(0, 0, 0, 0);
     const now = Date.now(), day = 86400000;
     const since = ms => orders.filter(o => ts(o) >= ms);
     const startMonth = new Date(); startMonth.setDate(1); startMonth.setHours(0, 0, 0, 0);
@@ -681,18 +683,24 @@ async function viewHome() {
     const src = {};
     for (const st of [...evStats, pfStat]) for (const [k, v] of Object.entries(st.src || {})) src[k] = (src[k] || 0) + v;
     const srcTotal = Object.values(src).reduce((a, v) => a + v, 0);
+    const soldBy = new Map();
+    for (const o of orders) for (const it of o.items || []) soldBy.set(it.photoId, { n: (soldBy.get(it.photoId)?.n || 0) + 1, thumb: it.thumbUrl, ev: o.eventId });
+    const topPhotos = [...soldBy.entries()].filter(([, v]) => v.n > 1).sort((a, b) => b[1].n - a[1].n).slice(0, 8);
 
     $('#home-dash').innerHTML = `
-      <div class="stats">${block('Últimos 7 días', since(now - 7 * day))}${block('Este mes', since(startMonth.getTime()))}${block('Total', orders)}
+      <div class="stats">${block('Hoy', since(startDay.getTime()))}${block('Últimos 7 días', since(now - 7 * day))}${block('Este mes', since(startMonth.getTime()))}${block('Total', orders)}
         <div class="stat"><span class="muted small">Visitas (30 días)</span><strong>${evVisits30.toLocaleString('es-AR')}</strong><span class="muted small">a tus eventos · ${pfVisits30.toLocaleString('es-AR')} a tu perfil</span></div></div>
       <p class="muted small" style="margin-top:0">Montos netos estimados (después de la comisión de la plataforma y de Mercado Pago, ${mp.percent}%).
         ${pending.length ? `<br>💳 <strong>A acreditar en Mercado Pago: ${fmtMoney(sum(pending, net))}</strong> (cobrás ${mp.label.toLowerCase()}).` : ''}</p>
+      <div id="home-transfer"></div>
       ${rows.length ? `<div class="card"><h2>Tus álbumes</h2><div class="table-wrap"><table class="list">
-        <tr><th>Evento</th><th>Fotos</th>${lvl >= 2 ? '<th>Visitas</th><th>Fotos vistas</th><th>Al carrito</th>' : ''}<th>Vendidas</th>${lvl >= 2 ? '<th>Ventas c/100 visitas</th>' : ''}<th>Neto</th></tr>
-        ${rows.map(x => `<tr><td><a href="#/evento/${x.ev.id}">${esc(x.ev.name)}</a></td><td>${x.set.photoCount}</td>
+        <tr><th>Evento</th><th>Se vende</th><th>Fotos</th>${lvl >= 2 ? '<th>Visitas</th><th>Fotos vistas</th><th>Al carrito</th>' : ''}<th>Vendidas</th>${lvl >= 2 ? '<th>Ventas c/100 visitas</th>' : ''}<th>Neto</th></tr>
+        ${rows.map(x => `<tr><td><a href="#/evento/${x.ev.id}">${esc(x.ev.name)}</a></td><td>${countdownHtml(x.ev, x.set)}</td><td>${x.set.photoCount}</td>
           ${lvl >= 2 ? `<td>${x.views}</td><td>${x.pv}</td><td>${x.ca}</td>` : ''}<td>${x.sold}</td>
           ${lvl >= 2 ? `<td>${x.views ? ((x.sold / x.views) * 100).toFixed(1) : '—'}</td>` : ''}<td>${fmtMoney(x.net)}</td></tr>`).join('')}
       </table></div>${lvl < 2 ? lockNote('Profesional Lite', 'Visitas, fotos vistas y agregadas al carrito por evento') : ''}</div>` : ''}
+      ${topPhotos.length ? `<div class="card"><h2>📈 Tus fotos más vendidas</h2><p class="muted small" style="margin-top:0">Fijate qué tomas funcionan para repetirlas en el próximo evento.</p>
+        <div class="top-photos">${topPhotos.map(([, v]) => `<a href="#/evento/${v.ev}" class="top-photo"><img src="${esc(v.thumb)}" alt="" loading="lazy"><span>×${v.n}</span></a>`).join('')}</div></div>` : ''}
       ${lvl >= 3 ? `<div class="card"><h2>Ventas por semana</h2>
         <div class="spark tall">${weeks.map(w => `<span style="height:${Math.max(2, (w.v / maxW) * 100)}%" title="Semana del ${w.label}: ${fmtMoney(w.v)}"></span>`).join('')}</div>
         <div class="spark-labels">${weeks.map(w => `<span>${w.label}</span>`).join('')}</div>
@@ -711,9 +719,48 @@ async function viewHome() {
       : `<div class="card">${lockNote('Profesional Premium', 'Horarios en que más vendés y de dónde llega la gente')}</div>`}`;
   }
 
+  // ---- cobro por transferencia: saldo de comisiones, o la invitación a activarlo / a subir de plan
+  if (approved) drawHomeTransfer(orders).catch(() => {});
   // ---- avisos push
   renderPushCard();
   $$('[data-push-on]').forEach(b => b.onclick = () => turnPushOn(b));
+}
+
+// Días que le quedan de venta al álbum + Extender (en la tabla de Inicio).
+function countdownHtml(ev, set) {
+  const r = retentionState(set);
+  if (r.k === 'active') return `<span class="pill ${r.days <= 3 ? 'warn' : ''}">${r.days === 1 ? 'hasta mañana' : `${r.days} días`}</span>${r.days <= 7 ? ` <a class="small" href="#/evento/${ev.id}">Extender</a>` : ''}`;
+  if (r.k === 'grace') return `<span class="pill danger">vencido</span> <a class="small" href="#/evento/${ev.id}">Extender</a>`;
+  if (r.k === 'deleted') return '<span class="pill">terminado</span>';
+  return '—';
+}
+
+// Tarjeta de cobro por transferencia en Inicio: saldo a pagar si lo usa; si su plan no lo tiene, cuánto se ahorraría.
+async function drawHomeTransfer(orders) {
+  const box = $('#home-transfer');
+  const plans = S.settings.transfer?.plans || [];
+  if (!box || !plans.length) return;
+  const p = S.profile, mp = mpPlanOf(p, S.settings);
+  const names = plans.map(id => PLANS[id]?.label || id).join(', ');
+  if (!plans.includes(planOf(p))) {
+    // Lo que pagó de comisión de Mercado Pago este mes: lo que se hubiera ahorrado cobrando por transferencia.
+    const m = new Date(); m.setDate(1); m.setHours(0, 0, 0, 0);
+    const fee = orders.filter(o => o.payMethod !== 'transfer' && ((o.paidAt || o.createdAt)?.toMillis?.() || 0) >= m.getTime()).reduce((a, o) => a + Math.round(((o.total || 0) * mp.percent) / 100), 0);
+    box.innerHTML = `<div class="card stack upsell">
+      <h2 style="margin:0">🏦 Cobrá por transferencia y ahorrate la comisión de Mercado Pago</h2>
+      <p style="margin:0">${fee ? `Este mes pagaste <strong>${fmtMoney(fee)}</strong> de comisión de Mercado Pago (${mp.percent}%). ` : ''}Con el cobro por transferencia tus clientes te pagan a tu alias y la venta se acredita sola, <strong>sin la comisión de MP</strong>.</p>
+      <div class="row" style="justify-content:space-between"><span class="muted small">Incluido en ${esc(names)}.</span><a class="btn primary sm" href="#/web">⭐ Ver planes</a></div></div>`;
+    return;
+  }
+  if (!p.transferOn) {
+    box.innerHTML = `<div class="card row" style="justify-content:space-between;gap:8px"><span>🏦 Tu plan incluye <strong>cobro por transferencia</strong>: tus clientes te pagan a tu alias, sin la comisión de Mercado Pago.</span><a class="btn primary sm" href="#/mp">Activarlo</a></div>`;
+    return;
+  }
+  const bal = (await getDoc(doc(db, 'feeBalance', S.user.uid)).catch(() => null))?.data() || {};
+  const owed = Math.max(0, Math.round(((bal.accrued || 0) - (bal.paid || 0)) * 100) / 100);
+  box.innerHTML = `<div class="card row" style="justify-content:space-between;gap:8px">
+    <span>🏦 Cobro por transferencia activo${bal.orders ? ` · ${bal.orders} venta${bal.orders === 1 ? '' : 's'}` : ''}. ${owed > 0 ? `Saldo de comisiones a pagar: <strong>${fmtMoney(owed)}</strong>` : '<span class="muted">No debés comisiones.</span>'}</span>
+    ${owed > 0 ? '<a class="btn primary sm" href="#/mp">Pagar saldo</a>' : '<a class="btn sm" href="#/mp">Ver</a>'}</div>`;
 }
 
 async function renderPushCard() {
