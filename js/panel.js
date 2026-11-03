@@ -1649,6 +1649,11 @@ async function viewEvent(id) {
         const st = sets.get(u.uid) || {};
         return `<div class="item-row">${avatarHtml(u)}<div class="grow"><strong>${esc(u.displayName || u.uid)}</strong><br><span class="muted small">${fmtMoney(st.price)} por foto · ${st.photoCount || 0} fotos · 💾 ${fmtBytes(setBytes(st))} · ${(st.subalbums || []).length} sub-álbumes</span></div></div>`;
       }).join('') : '<p class="muted">Todavía no se sumó ningún fotógrafo.</p>'}</div>`;
+    // Superadmin: la misma tarjeta para compartir que ven los fotógrafos (link del evento, texto, video, QR y cartel).
+    // El video y el precio salen del fotógrafo con más fotos del evento.
+    const main = users.slice().sort((a, b) => (sets.get(b.uid)?.photoCount || 0) - (sets.get(a.uid)?.photoCount || 0))[0];
+    if (main) mountShareCard($('#ev-share-card'), { ev, set: sets.get(main.uid) || {}, uid: main.uid, displayName: users.length > 1 ? users.map(u => u.displayName).filter(Boolean).join(', ') : main.displayName, multi: false });
+    $('#ev-share').onclick = () => $('#ev-share-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
     $('#ev-danger').innerHTML = `<button class="btn danger" id="ev-del">Eliminar evento</button>`;
     $('#ev-del').onclick = async () => {
       // Con ventas no se borra: los compradores tienen que poder descargar (la limpieza borraría los originales).
