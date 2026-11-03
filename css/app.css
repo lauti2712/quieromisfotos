@@ -758,3 +758,9 @@ body:not(.with-tabbar) .up-fab { bottom: calc(16px + env(safe-area-inset-bottom)
 .crop-dlg { width: min(720px, 96vw); }
 .crop-stage { border-radius: 10px; overflow: hidden; background: #000; }
 .crop-stage canvas { display: block; width: 100%; height: auto; cursor: grab; touch-action: none; }
+
+/* Ruta de navegación de las páginas estáticas (SEO) */
+.crumbs { margin: 4px 0 10px; display: flex; flex-wrap: wrap; gap: 4px; }
+.crumbs a { color: inherit; }
+.guide h2 { margin-top: 24px; }
+.guide p, .guide li { line-height: 1.6; }
