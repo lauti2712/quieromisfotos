@@ -1,8 +1,9 @@
 # Genera páginas estáticas indexables por Google (el sitio usa rutas con #, que Google no indexa):
-#   /e/{eventId}/   /f/{slug}/   /eventos/   /fotografos/   sitemap.xml   robots.txt
+#   /e/{eventId}/   /f/{slug}/   /eventos/   /fotografos/[{zona}/]   /fotos/[{deporte}/]   /guias/[{guia}/]   sitemap.xml   robots.txt
 # Lee solo datos públicos de Firestore (mismas reglas que un visitante). Lo corre GitHub Actions cada hora.
 # Uso: python3 tools/build-seo.py
-import html, json, pathlib, re, shutil, subprocess, urllib.request, datetime
+import html, json, pathlib, re, shutil, subprocess, urllib.request, datetime, unicodedata
+from seo_guides import GUIDES
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SITE = 'https://quieromisfotos.com.ar'
@@ -51,6 +52,20 @@ events = [x for x in query('events', [('status', '==', 'published')], order=('da
 users = {u['id']: u for u in query('users', [('status', '==', 'approved')]) if u.get('role') == 'photographer' and not u.get('demo')}
 tax = get('settings/tags') or {}
 tag_name = {t['id']: t['name'] for t in tax.get('tags', [])}
+sports = {t['id']: t for t in tax.get('tags', []) if t.get('typeId') == 'deporte'}
+
+
+def slugify(t):
+    t = unicodedata.normalize('NFD', str(t or '')).encode('ascii', 'ignore').decode().lower()
+    return re.sub(r'[^a-z0-9]+', '-', t).strip('-')[:60]
+
+
+def crumbs(items):
+    """Ruta de navegación visible + datos para Google. items: [(nombre, url), …] (la última es la página actual)."""
+    links = ' › '.join(f'<a href="{e(u)}">{e(n)}</a>' if i < len(items) - 1 else f'<span>{e(n)}</span>' for i, (n, u) in enumerate(items))
+    ld = {'@context': 'https://schema.org', '@type': 'BreadcrumbList',
+          'itemListElement': [{'@type': 'ListItem', 'position': i + 1, 'name': n, 'item': u if u.startswith('http') else SITE + u} for i, (n, u) in enumerate(items)]}
+    return f'<nav class="crumbs muted small" aria-label="Ruta">{links}</nav>', ld
 css = re.search(r'href="(css/app\.css[^"]*)"', (ROOT / 'index.html').read_text()).group(1)
 
 
@@ -96,7 +111,7 @@ def page(title, desc, canonical, body, image=None, jsonld=None, redirect=None):
 </div></header>
 <main class="container">{body}</main>
 <footer class="site">Quiero Mis Fotos · Encontrá tu foto. Reviví tu momento.
-  <div class="foot-links"><a href="/#/arrepentimiento"><strong>Botón de arrepentimiento</strong></a> · <a href="/eventos/">Eventos</a> · <a href="/fotografos/">Fotógrafos</a> · <a href="/soy-fotografo/">Soy fotógrafo</a></div>
+  <div class="foot-links"><a href="/#/arrepentimiento"><strong>Botón de arrepentimiento</strong></a> · <a href="/eventos/">Eventos</a> · <a href="/fotos/">Fotos por deporte</a> · <a href="/fotografos/">Fotógrafos</a> · <a href="/soy-fotografo/">Soy fotógrafo</a> · <a href="/guias/">Guías para fotógrafos</a></div>
   <div class="credit">Desarrollado por <a href="https://solucionescotidianas.com.ar" target="_blank" rel="noopener">Soluciones Cotidianas</a></div></footer>
 </body>
 </html>'''
@@ -127,9 +142,10 @@ def thumbs_html(items, href, alt):
 
 
 # ---------------------------------------------------------------- limpiar y generar
-for d in ('e', 'f', 'eventos', 'fotografos'):
+for d in ('e', 'f', 'eventos', 'fotografos', 'fotos', 'guias'):
     shutil.rmtree(ROOT / d, ignore_errors=True)
 urls = [(f'{SITE}/', None), (f'{SITE}/eventos/', None), (f'{SITE}/fotografos/', None), (f'{SITE}/terminos/', None), (f'{SITE}/privacidad/', None)]
+images = {}  # url de la página -> [(imagen, título)] para el sitemap de imágenes (Google Imágenes)
 
 
 def write(rel, content):
@@ -144,12 +160,21 @@ for ev in events:
     photos = query('photos', [('eventId', '==', ev['id']), ('hidden', '==', False)], limit=12)
     first_img = ev.get('coverUrl') or ev.get('autoCoverUrl') or (photos[0]['previewUrl'] if photos else None)
     name = ev.get('name', '')
-    title = f'Fotos de {name} · Quiero Mis Fotos'
+    when = fmt_date(ev.get('date'))
+    # Título con fecha y lugar, salvo que ya estén en el nombre o lo hagan muy largo (Google corta ~60 caracteres).
+    title = f'Fotos de {name}'
+    for extra in ([when] if when and not re.search(r'\d{1,2}/\d{1,2}', name) else []) + ([ev['location'].split(',')[0]] if ev.get('location') else []):
+        if len(title) + len(extra) < 62: title += f' · {extra}'
+    title += ' | Quiero Mis Fotos'
+    ev_sports = [sports[t] for t in ev.get('tagIds') or [] if t in sports]
     desc = f'Encontrá y descargá tus fotos de {name}' + (f' ({fmt_date(ev.get("date"))}' if ev.get('date') else '') + (f', {ev["location"]})' if ev.get('location') else ')' if ev.get('date') else '') + \
         f'. Fotos en alta calidad{" de " + ", ".join(p["displayName"] for p in phs) if phs else ""}.'
     app = f'/#/evento/{ev["id"]}'
+    trail = [('Inicio', '/'), ('Eventos', '/eventos/')] + ([(ev_sports[0]['name'], f'/fotos/{ev_sports[0]["slug"]}/')] if ev_sports else []) + [(name, f'/e/{ev["id"]}/')]
+    crumb_html, crumb_ld = crumbs(trail)
+    related = [x for x in events if x['id'] != ev['id'] and ev_sports and ev_sports[0]['id'] in (x.get('tagIds') or [])][:6]
     body = f'''
-      <a href="/eventos/" class="muted small" style="text-decoration:none">← Todos los eventos</a>
+      {crumb_html}
       <div class="event-hero" style="margin-top:10px"><div class="cover">{f'<img src="{e(first_img)}" alt="">' if first_img else ''}
         <div class="meta"><h1>Fotos de {e(name)}</h1><div>{e(fmt_date(ev.get("date")))}{f" · 📍 {e(ev['location'])}" if ev.get('location') else ''}</div></div></div></div>
       {f'<div class="pills" style="margin-bottom:16px">{pills(tags, "pill accent")}</div>' if tags else ''}
@@ -158,7 +183,8 @@ for ev in events:
         <a class="btn primary" style="justify-self:start" href="{app}">📸 Ver todas las fotos y comprar</a>
       </div>
       {people_html(phs) if phs else ''}
-      {f'<div class="card"><h2>Algunas fotos</h2><div class="gallery">{thumbs_html(photos, app, "Foto de " + name)}</div></div>' if photos else ''}'''
+      {f'<div class="card"><h2>Algunas fotos</h2><div class="gallery">{thumbs_html(photos, app, "Foto de " + name + (" · " + ", ".join(p["displayName"] for p in phs) if phs else ""))}</div></div>' if photos else ''}
+      {f'<h2>Otros eventos de {e(ev_sports[0]["name"].lower())}</h2><div class="events-grid">{"".join(event_card(x) for x in related)}</div><p><a href="/fotos/{e(ev_sports[0]["slug"])}/">Ver todas las fotos de {e(ev_sports[0]["name"].lower())} →</a></p>' if related else ''}'''
     ld = {'@context': 'https://schema.org', '@type': 'Event', 'name': name, 'startDate': ev.get('date'),
           'eventStatus': 'https://schema.org/EventScheduled', 'eventAttendanceMode': 'https://schema.org/OfflineEventAttendanceMode',
           'location': {'@type': 'Place', 'name': ev.get('location') or 'Argentina', 'address': ev.get('location') or 'Argentina'},
@@ -170,8 +196,15 @@ for ev in events:
     if prices:
         ld['offers'] = {'@type': 'Offer', 'name': f'Fotos de {name}', 'price': min(prices), 'priceCurrency': 'ARS',
                         'availability': 'https://schema.org/InStock', 'url': f'{SITE}/e/{ev["id"]}/', 'validFrom': ev.get('date')}
-    write(f'e/{ev["id"]}', page(title, desc, f'{SITE}/e/{ev["id"]}/', body, first_img, ld, redirect=app))
+    # Fotos de muestra con licencia: Google Imágenes las marca como "con licencia" y enlaza a la página para comprarlas.
+    credit = ', '.join(p['displayName'] for p in phs) or 'Quiero Mis Fotos'
+    img_ld = [{'@context': 'https://schema.org', '@type': 'ImageObject', 'contentUrl': p['previewUrl'], 'thumbnailUrl': p.get('thumbUrl'),
+               'name': f'Foto de {name}', 'creditText': credit, 'creator': {'@type': 'Person', 'name': credit},
+               'copyrightNotice': f'© {credit}', 'license': f'{SITE}/terminos/', 'acquireLicensePage': f'{SITE}/e/{ev["id"]}/'}
+              for p in photos if p.get('previewUrl')][:6]
+    write(f'e/{ev["id"]}', page(title, desc, f'{SITE}/e/{ev["id"]}/', body, first_img, [ld, crumb_ld, *img_ld], redirect=app))
     urls.append((f'{SITE}/e/{ev["id"]}/', ev.get('date')))
+    images[f'{SITE}/e/{ev["id"]}/'] = ([(first_img, name)] if first_img else []) + [(p['previewUrl'], f'Foto de {name}') for p in photos if p.get('previewUrl') and p['previewUrl'] != first_img]
 
 for u in users.values():
     slug = u.get('slug')
@@ -185,7 +218,10 @@ for u in users.values():
     socials = u.get('socials') or {}
     same = [v for v in [f'https://instagram.com/{socials["instagram"].lstrip("@")}' if socials.get('instagram') else None,
                         socials.get('facebook') if str(socials.get('facebook', '')).startswith('http') else None] if v]
+    zone_slug = slugify(u.get('zone'))
+    p_crumb, p_crumb_ld = crumbs([('Inicio', '/'), ('Fotógrafos', '/fotografos/')] + ([(u['zone'], f'/fotografos/{zone_slug}/')] if zone_slug else []) + [(u.get('displayName') or slug, f'/f/{slug}/')])
     body = f'''
+      {p_crumb}
       <div class="profile-head">
         {f'<span class="avatar lg"><img src="{e(u["avatarUrl"])}" alt="{e(u.get("displayName"))}"></span>' if u.get('avatarUrl') else ''}
         <div style="flex:1;min-width:220px">
@@ -202,7 +238,8 @@ for u in users.values():
           'description': desc, 'url': f'{SITE}/f/{slug}/', 'image': u.get('avatarUrl') or None,
           'address': {'@type': 'PostalAddress', 'addressLocality': u.get('zone') or '', 'addressCountry': 'AR'},
           'knowsAbout': acts, 'sameAs': same}
-    write(f'f/{slug}', page(title, desc, f'{SITE}/f/{slug}/', body, (pf[0]['url'] if pf else u.get('avatarUrl')), ld, redirect=app))
+    write(f'f/{slug}', page(title, desc, f'{SITE}/f/{slug}/', body, (pf[0]['url'] if pf else u.get('avatarUrl')), [ld, p_crumb_ld], redirect=app))
+    if pf: images[f'{SITE}/f/{slug}/'] = [(x['url'], f'Foto de {u.get("displayName")}') for x in pf if x.get('url')]
     urls.append((f'{SITE}/f/{slug}/', None))
     # Web personal (planes Web): también al sitemap
     plan_ok = u.get('plan') in ('web', 'webdomain', 'empresa') and (u.get('proUntil') or '') > datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -219,6 +256,75 @@ write('fotografos', page('Fotógrafos deportivos y de eventos · Quiero Mis Foto
                          '<h1>Fotógrafos</h1><p class="muted">Encontrá un fotógrafo y pedile presupuesto.</p><div class="dir-grid">' +
                          ''.join(f'<a class="dir-card" href="/f/{e(u["slug"])}/" style="text-decoration:none"><strong>{e(u.get("displayName"))}</strong><span class="muted small">{e(u.get("zone"))}</span></a>' for u in users.values() if u.get('slug')) +
                          '</div>'))
+
+# ---------------------------------------------------------------- fotos por deporte: /fotos/ y /fotos/{deporte}/
+SPORT_INTRO = 'Encontrá tus fotos de {s}: partidos, torneos y eventos de {s} con fotos a la venta. Buscate por horario, dorsal o con una selfie, y descargalas en alta calidad, sin marca de agua.'
+sport_pages = []
+for sid, sp in sports.items():
+    evs = [ev for ev in events if sid in (ev.get('tagIds') or [])]
+    phs = [u for u in users.values() if sid in (u.get('specialties') or []) and u.get('slug')]
+    if not evs and not phs: continue
+    sname = sp['name']; slug = sp.get('slug') or slugify(sname)
+    sport_pages.append((slug, sname, len(evs)))
+    c_html, c_ld = crumbs([('Inicio', '/'), ('Fotos por deporte', '/fotos/'), (sname, f'/fotos/{slug}/')])
+    body = f'''{c_html}
+      <h1>Fotos de {e(sname.lower())}</h1>
+      <p class="muted" style="max-width:65ch">{e(SPORT_INTRO.format(s=sname.lower()))}</p>
+      {f'<h2>Eventos de {e(sname.lower())} con fotos</h2><div class="events-grid">{"".join(event_card(ev) for ev in evs)}</div>' if evs else ''}
+      {f'<h2>Fotógrafos de {e(sname.lower())}</h2><div class="dir-grid">' + "".join(f'<a class="dir-card" href="/f/{e(u["slug"])}/" style="text-decoration:none"><strong>{e(u.get("displayName"))}</strong><span class="muted small">{e(u.get("zone"))}</span></a>' for u in phs) + '</div>' if phs else ''}
+      <div class="card stack" style="margin-top:20px"><strong>¿Sacás fotos de {e(sname.lower())}?</strong><span>Subí tus eventos, la marca de agua se pone sola y cobrás directo con Mercado Pago.</span><a class="btn primary" style="justify-self:start" href="/soy-fotografo/">Vender mis fotos</a></div>'''
+    ld = [c_ld, {'@context': 'https://schema.org', '@type': 'CollectionPage', 'name': f'Fotos de {sname.lower()}', 'url': f'{SITE}/fotos/{slug}/',
+                 'mainEntity': {'@type': 'ItemList', 'itemListElement': [{'@type': 'ListItem', 'position': i + 1, 'url': f'{SITE}/e/{ev["id"]}/', 'name': ev.get('name')} for i, ev in enumerate(evs[:30])]}}]
+    first = next((ev.get('coverUrl') or ev.get('autoCoverUrl') for ev in evs if ev.get('coverUrl') or ev.get('autoCoverUrl')), None)
+    write(f'fotos/{slug}', page(f'Fotos de {sname.lower()} · partidos, torneos y eventos | Quiero Mis Fotos', SPORT_INTRO.format(s=sname.lower())[:158],
+                                f'{SITE}/fotos/{slug}/', body, first, ld))
+    urls.append((f'{SITE}/fotos/{slug}/', evs[0].get('date') if evs else None))
+if sport_pages:
+    c_html, c_ld = crumbs([('Inicio', '/'), ('Fotos por deporte', '/fotos/')])
+    write('fotos', page('Fotos por deporte · fútbol, rugby, running y más | Quiero Mis Fotos',
+                        'Encontrá las fotos de tu deporte: fútbol, futsal, rugby, hockey, running, básquet, vóley y más. Buscate y descargalas en alta calidad.',
+                        f'{SITE}/fotos/', f'''{c_html}<h1>Fotos por deporte</h1><p class="muted">Elegí tu deporte y encontrá tu evento.</p>
+                        <div class="dir-grid">{"".join(f'<a class="dir-card" href="/fotos/{e(sl)}/" style="text-decoration:none"><strong>{e(n)}</strong><span class="muted small">{c} evento{"" if c == 1 else "s"}</span></a>' for sl, n, c in sorted(sport_pages, key=lambda x: -x[2]))}</div>''', None, c_ld))
+    urls.append((f'{SITE}/fotos/', None))
+
+# ---------------------------------------------------------------- fotógrafos por zona: /fotografos/{zona}/
+zones = {}
+for u in users.values():
+    zs = slugify(u.get('zone'))
+    if zs and u.get('slug'):
+        zn = u['zone'].strip()
+        zones.setdefault(zs, {'name': zn.title() if zn == zn.lower() else zn, 'users': []})['users'].append(u)
+for zs, z in zones.items():
+    c_html, c_ld = crumbs([('Inicio', '/'), ('Fotógrafos', '/fotografos/'), (z['name'], f'/fotografos/{zs}/')])
+    acts = sorted({sports[t]['name'] for u in z['users'] for t in (u.get('specialties') or []) if t in sports})
+    body = f'''{c_html}
+      <h1>Fotógrafos deportivos en {e(z["name"])}</h1>
+      <p class="muted" style="max-width:65ch">Fotógrafos de {e(z["name"])} para tu partido, torneo, carrera o evento{(" de " + e(", ".join(a.lower() for a in acts))) if acts else ""}. Mirá su trabajo y pediles presupuesto por WhatsApp.</p>
+      <div class="dir-grid">{"".join(f'<a class="dir-card" href="/f/{e(u["slug"])}/" style="text-decoration:none"><strong>{e(u.get("displayName"))}</strong><span class="muted small">{e(", ".join(sports[t]["name"] for t in (u.get("specialties") or []) if t in sports) or u.get("zone"))}</span></a>' for u in z['users'])}</div>'''
+    ld = [c_ld, {'@context': 'https://schema.org', '@type': 'ItemList', 'name': f'Fotógrafos deportivos en {z["name"]}',
+                 'itemListElement': [{'@type': 'ListItem', 'position': i + 1, 'url': f'{SITE}/f/{u["slug"]}/', 'name': u.get('displayName')} for i, u in enumerate(z['users'])]}]
+    write(f'fotografos/{zs}', page(f'Fotógrafos deportivos en {z["name"]} | Quiero Mis Fotos', f'Encontrá fotógrafos deportivos y de eventos en {z["name"]}. Mirá su portfolio y pediles presupuesto.',
+                                   f'{SITE}/fotografos/{zs}/', body, None, ld))
+    urls.append((f'{SITE}/fotografos/{zs}/', None))
+
+# ---------------------------------------------------------------- guías para fotógrafos: /guias/ y /guias/{guia}/
+for g in GUIDES:
+    c_html, c_ld = crumbs([('Inicio', '/'), ('Guías para fotógrafos', '/guias/'), (g['h1'], f'/guias/{g["slug"]}/')])
+    others = ''.join(f'<li><a href="/guias/{x["slug"]}/">{e(x["h1"])}</a></li>' for x in GUIDES if x['slug'] != g['slug'])
+    body = f'''{c_html}<article class="guide" style="max-width:68ch">
+      <h1>{e(g["h1"])}</h1><p class="muted small">Actualizado: {e(fmt_date(g["date"]))}</p>{g["body"]}
+      <div class="card stack" style="margin-top:24px"><strong>Vendé tus fotos en Quiero Mis Fotos</strong><span>Empezá gratis: subís tus eventos, la marca de agua se pone sola y cobrás directo con Mercado Pago.</span><a class="btn primary" style="justify-self:start" href="/soy-fotografo/">Conocer la plataforma</a></div>
+      <h2>Otras guías</h2><ul>{others}</ul></article>'''
+    ld = [c_ld, {'@context': 'https://schema.org', '@type': 'Article', 'headline': g['h1'], 'description': g['desc'], 'datePublished': g['date'], 'dateModified': g['date'],
+                 'inLanguage': 'es-AR', 'mainEntityOfPage': f'{SITE}/guias/{g["slug"]}/', 'image': f'{SITE}/assets/og-image.png',
+                 'author': {'@type': 'Organization', 'name': 'Quiero Mis Fotos', 'url': SITE}, 'publisher': {'@type': 'Organization', 'name': 'Quiero Mis Fotos', 'logo': {'@type': 'ImageObject', 'url': f'{SITE}/assets/logo-512.png'}}}]
+    write(f'guias/{g["slug"]}', page(f'{g["title"]} | Quiero Mis Fotos', g['desc'], f'{SITE}/guias/{g["slug"]}/', body, None, ld))
+    urls.append((f'{SITE}/guias/{g["slug"]}/', g['date']))
+c_html, c_ld = crumbs([('Inicio', '/'), ('Guías para fotógrafos', '/guias/')])
+write('guias', page('Guías para fotógrafos deportivos | Quiero Mis Fotos', 'Guías prácticas para fotógrafos deportivos: cómo vender tus fotos online, cuánto cobrar y cómo compartirlas para vender más.',
+                    f'{SITE}/guias/', f'''{c_html}<h1>Guías para fotógrafos deportivos</h1><p class="muted">Todo lo que necesitás para vender las fotos de tus eventos.</p>
+                    <div class="dir-grid">{"".join(f'<a class="dir-card" href="/guias/{g["slug"]}/" style="text-decoration:none"><strong>{e(g["h1"])}</strong><span class="muted small">{e(g["desc"][:110])}…</span></a>' for g in GUIDES)}</div>''', None, c_ld))
+urls.append((f'{SITE}/guias/', None))
 
 # ---------------------------------------------------------------- "Soy fotógrafo" (para que Google la encuentre)
 # La del sitio (#/soy-fotografo) tiene animación y calculadora, pero Google no indexa rutas con #.
@@ -291,7 +397,9 @@ write('soy-fotografo', page('Vendé tus fotos deportivas online · Plataforma pa
 urls.insert(1, (f'{SITE}/soy-fotografo/', None))
 
 today = datetime.date.today().isoformat()
-(ROOT / 'sitemap.xml').write_text('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
-                                  ''.join(f'  <url><loc>{e(u)}</loc>{f"<lastmod>{d}</lastmod>" if d else ""}</url>\n' for u, d in urls) + '</urlset>\n')
+def img_tags(u):
+    return ''.join(f'<image:image><image:loc>{e(src)}</image:loc></image:image>' for src, _ in images.get(u, [])[:12] if src)
+(ROOT / 'sitemap.xml').write_text('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n' +
+                                  ''.join(f'  <url><loc>{e(u)}</loc>{f"<lastmod>{d}</lastmod>" if d else ""}{img_tags(u)}</url>\n' for u, d in urls) + '</urlset>\n')
 (ROOT / 'robots.txt').write_text(f'User-agent: *\nAllow: /\nDisallow: /panel.html\n\nSitemap: {SITE}/sitemap.xml\n')
 print(f'SEO ok: {len(events)} eventos, {len(users)} fotógrafos, {len(urls)} URLs en el sitemap')
