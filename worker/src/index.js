@@ -48,7 +48,7 @@ import { isFree, albumPhotoLimit, setActive, activeAlbumLimit } from './plans.js
 import { signToken, verifyToken } from './tokens.js';
 import { json, httpError, apiUrl } from './http.js';
 import { connectUrl, callback, disconnect } from './mp.js';
-import { checkout, webhook, syncOrder, retryCheckout, downloadLinks, download } from './orders.js';
+import { checkout, webhook, syncOrder, retryCheckout, downloadLinks, download, reviewOriginal } from './orders.js';
 import { createTag } from './tags.js';
 import { scanBibsRequest } from './bibs.js';
 import { addFaces, myFaces, matchFaces } from './faces.js';
@@ -196,6 +196,7 @@ async function route(req, env, ctx) {
     if (parts[2] === 'mark-paid') return markPaid(req, env, parts[1]);
   }
   if (m === 'GET' && parts[0] === 'dl' && parts.length === 2) return download(req, env, parts[1]);
+  if (m === 'POST' && parts[0] === 'review' && parts[1] === 'original' && ID_RE.test(parts[2] || '')) return reviewOriginal(req, env, parts[2]);
   throw httpError(404, 'No encontrado');
 }
 

@@ -1,5 +1,5 @@
 // Galería pública de un evento: filtros por fotógrafo y sub-álbum, scroll infinito y visor.
-import { db, collection, getDocs, query, where, orderBy, limit, startAfter, Timestamp, getCountFromServer, doc, getDoc } from './fb.js';
+import { db, collection, getDocs, query, where, orderBy, limit, startAfter, Timestamp, getCountFromServer, doc, getDoc, SUPERADMIN_EMAIL } from './fb.js';
 import { $, $$, esc, fmtMoney, toast, errMsg, todayIso, fmtDate, waLink } from './util.js';
 import { cart } from './cart.js';
 import { openViewer } from './viewer.js';
@@ -8,7 +8,8 @@ import { computeTotals, splitPhotos, bestPrice } from './pricing.js';
 import { favs } from './favs.js';
 import { shareLink, eventUrl } from './share.js';
 import { trackPhotoView, trackCartAdd } from './stats.js';
-import { API_BASE } from './api.js';
+import { API_BASE, apiPost } from './api.js';
+import { currentUser } from './account.js';
 
 const PAGE = 60;
 
@@ -389,6 +390,11 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
     return by ? `${esc(by.name)} <span style="opacity:.75">para ${esc(ph?.displayName || '')}</span>` : esc(ph?.displayName || '');
   }
 
+  // Revisión de calidad: el superadmin y el fotógrafo de la foto pueden bajar el original desde el visor.
+  function canReview(p) {
+    const u = currentUser();
+    return !!u && ((u.email === SUPERADMIN_EMAIL && u.emailVerified) || u.uid === p.photographerUid || u.uid === p.uploadedBy);
+  }
   function viewerFooter(p, el, rerender) {
     const ph = byUid.get(p.photographerUid);
     const set = sets.get(p.photographerUid) || {};
@@ -400,6 +406,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
       <span class="row">
         <button class="btn sm" id="lb-fav" title="Favorita">${fav ? '♥' : '♡'}</button>
         <button class="btn sm" id="lb-share" title="Compartir esta foto">🔗</button>
+        ${canReview(p) ? '<button class="btn sm" id="lb-orig" title="Descargar el original para revisar la calidad (solo vos lo ves)">⬇️ Original</button>' : ''}
         <a class="btn sm" href="#/carrito">${cart.count() ? `🛒 ${cart.count()} · ${fmtMoney(cartSummary().total)}` : 'Ver carrito'}</a>
         ${forSale(p.photographerUid)
           ? `<button class="btn ${inCart ? '' : 'primary'}" id="lb-add">${inCart ? '✓ En el carrito' : '🛒 Agregar al carrito'}</button>`
@@ -408,6 +415,16 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
       ${forSale(p.photographerUid) && cartSummary().tip ? `<span class="lb-note lb-tip">${esc(cartSummary().tip)}</span>` : ''}`;
     $('#lb-add', el)?.addEventListener('click', () => { toggleCart(p); rerender(); });
     $('#lb-fav', el).onclick = () => { toggleFav(p); rerender(); };
+    $('#lb-orig', el)?.addEventListener('click', async e => {
+      e.target.disabled = true;
+      try {
+        const r = await apiPost(`/review/original/${p.id}`);
+        const mb = n => `${(n / 1e6).toLocaleString('es-AR', { maximumFractionDigits: 1 })} MB`;
+        toast(`Original: ${r.width}×${r.height} px · ${mb(r.bytes)}${r.fileBytes && r.fileBytes !== r.bytes ? ` (el archivo subido pesaba ${mb(r.fileBytes)})` : ''}`);
+        const a = document.createElement('a'); a.href = r.url; a.download = ''; document.body.appendChild(a); a.click(); a.remove();
+      } catch (err) { toast(errMsg(err), 'error'); }
+      e.target.disabled = false;
+    });
     $('#lb-share', el).onclick = () => shareLink({
       title: `Foto de ${ev.name}`, text: `📸 Mirá esta foto de ${ev.name}:`,
       url: `${eventUrl(ev.id)}${eventUrl(ev.id).includes('?') ? '&' : '?'}foto=${encodeURIComponent(p.id)}`,
