@@ -20,7 +20,7 @@ export function interruptedUpload(eventId) {
 export function clearInterrupted(eventId) { try { localStorage.removeItem(pendingKey(eventId)); } catch { /* nada */ } }
 
 // bibs: además manda una copia sin marca para leer los dorsales (onBibs avisa lo que encontró).
-export function createUploader({ eventId, uid, team = '', wm, logo = null, optimize = false, bibs = false, onChange, onPhoto, onBibs }) {
+export function createUploader({ eventId, uid, team = '', wm, logo = null, optimize = false, bibs = false, faces = false, onChange, onPhoto, onBibs }) {
   // Se pueden reemplazar (setHandlers) si el fotógrafo sale y vuelve al evento mientras sube.
   const lowEnd = (navigator.deviceMemory && navigator.deviceMemory <= 4) || (navigator.hardwareConcurrency || 4) <= 4;
   const concurrency = lowEnd ? 2 : 3;
@@ -55,17 +55,19 @@ export function createUploader({ eventId, uid, team = '', wm, logo = null, optim
 
   function process(file) {
     const w = pool().find(x => !x.busy);
-    if (!w) return processFile(file, wm, logo, { optimize, scan: bibs });
+    // La copia sin marca (1280 px) sirve para leer dorsales y para las caras de la búsqueda por selfie.
+    const scan = bibs || faces;
+    if (!w) return processFile(file, wm, logo, { optimize, scan });
     w.busy = true;
     const id = ++seq;
     w.current = id;
     return new Promise((resolve, reject) => {
       waiting.set(id, data => {
         if (data.ok) resolve(data);
-        else if (data.fallback) processFile(file, wm, logo, { optimize, scan: bibs }).then(resolve, reject);
+        else if (data.fallback) processFile(file, wm, logo, { optimize, scan }).then(resolve, reject);
         else reject(new Error(data.error));
       });
-      w.postMessage({ id, file, wm, logo, optimize, scan: bibs });
+      w.postMessage({ id, file, wm, logo, optimize, scan });
     });
   }
 
@@ -142,7 +144,36 @@ export function createUploader({ eventId, uid, team = '', wm, logo = null, optim
     it.status = 'done'; it.loaded = it.file.size; it.noTime = !r.takenAtExact;
     if (photo) onPhoto?.({ id: pid, ...photo }, c.expiresAt);
     // Dorsales: en segundo plano; si falla, la foto queda igual (se pueden cargar a mano).
-    if (r.scan) putBlob(`/bibs/${eventId}/${pid}`, r.scan, s.token).then(res => onBibs?.(pid, res.bibs || [])).catch(e => console.warn('dorsales', e));
+    if (bibs && r.scan) putBlob(`/bibs/${eventId}/${pid}`, r.scan, s.token).then(res => onBibs?.(pid, res.bibs || [])).catch(e => console.warn('dorsales', e));
+    // Caras para la búsqueda por selfie: de a una en este hilo, sin frenar la subida (se mandan de a tandas).
+    if (faces && r.scan) { faceJobs.push({ pid, blob: r.scan }); runFaces(); }
+  }
+
+  // ---- búsqueda por selfie: solo se mandan las huellas (números), nunca imágenes de caras
+  const faceJobs = [], faceBatch = [];
+  let facesBusy = false;
+  async function runFaces() {
+    if (facesBusy) return;
+    facesBusy = true;
+    try {
+      const { photoFaces } = await import('./faces.js');
+      while (faceJobs.length) {
+        const job = faceJobs.shift();
+        try {
+          const bmp = await createImageBitmap(job.blob);
+          faceBatch.push({ p: job.pid, f: await photoFaces(bmp) });
+          bmp.close?.();
+        } catch (e) { console.warn('caras', e); }
+        if (faceBatch.length >= 20 || !faceJobs.length) await flushFaces();
+      }
+    } catch (e) { console.warn('caras', e); }
+    facesBusy = false;
+  }
+  async function flushFaces() {
+    if (!faceBatch.length) return;
+    const items = faceBatch.splice(0);
+    try { const s = await uploadSession(eventId, team); await postWithToken(`/faces/${eventId}`, { items }, s.token); }
+    catch (e) { console.warn('caras', e); }
   }
 
   function pump() {

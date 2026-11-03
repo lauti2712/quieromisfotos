@@ -125,9 +125,9 @@ service cloud.firestore {
           && uid() in eventAfter(eid).photographerUids
           && request.resource.data.get('photoCount', 0) == 0
           && request.resource.data.get('bytesOriginal', 0) == 0
-          && !request.resource.data.keys().hasAny(['bytesPublic', 'hourCounts', 'expiresAt', 'extendedUntil', 'originalsDeleted', 'extraPhotos', 'soldPhotos', 'soldOrders', 'bibScans', 'bibPhotos']);
+          && !request.resource.data.keys().hasAny(['bytesPublic', 'hourCounts', 'expiresAt', 'extendedUntil', 'originalsDeleted', 'extraPhotos', 'soldPhotos', 'soldOrders', 'bibScans', 'bibPhotos', 'facesPhotos', 'facesAt', 'lastUploadAt']);
         allow update: if isSuper() || (isApproved() && uid() == pid
-          && !changed().hasAny(['photoCount', 'bytesOriginal', 'bytesPublic', 'hourCounts', 'expiresAt', 'extendedUntil', 'originalsDeleted', 'soldPhotos', 'soldOrders', 'storageAt', 'originalsDeletedAt', 'extraPhotos', 'bibScans', 'bibPhotos']));
+          && !changed().hasAny(['photoCount', 'bytesOriginal', 'bytesPublic', 'hourCounts', 'expiresAt', 'extendedUntil', 'originalsDeleted', 'soldPhotos', 'soldOrders', 'storageAt', 'originalsDeletedAt', 'extraPhotos', 'bibScans', 'bibPhotos', 'facesPhotos', 'facesAt', 'lastUploadAt']));
         allow delete: if isSuper() || (signedIn() && uid() == pid && resource.data.get('photoCount', 0) == 0);
       }
     }

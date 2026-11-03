@@ -8,6 +8,7 @@ import { computeTotals, splitPhotos, bestPrice } from './pricing.js';
 import { favs } from './favs.js';
 import { shareLink, eventUrl } from './share.js';
 import { trackPhotoView, trackCartAdd } from './stats.js';
+import { API_BASE } from './api.js';
 
 const PAGE = 60;
 
@@ -17,6 +18,8 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
   const state = { uid: '', sub: '', hour: 0, fav: false, bib: '', photos: [], cursor: null, done: false, loading: false };
   // Búsqueda por dorsal: aparece si algún fotógrafo tiene fotos con dorsales leídos.
   const hasBibs = withPhotos.some(p => (sets.get(p.uid)?.bibPhotos || 0) > 0);
+  // Búsqueda por selfie: algún álbum a la venta con la opción activada (la apaga el fotógrafo o el superadmin).
+  const selfieOn = !ev.demo && withPhotos.some(p => sets.get(p.uid)?.selfie !== false && (sets.get(p.uid)?.facesPhotos || 0) > 0 && setForSale(sets.get(p.uid)));
   const cleanBib = v => { const n = (String(v || '').match(/\d{1,6}/) || [''])[0]; return n ? String(parseInt(n, 10)) : ''; };
   // Link con dorsal (#/evento/{id}?dorsal=123): abre directo con la búsqueda hecha.
   if (hasBibs && cleanBib(initialBib) && cleanBib(initialBib) !== '0') state.bib = cleanBib(initialBib);
@@ -60,6 +63,8 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
     </form>` : ''}
     ${uploading.length ? `<div class="notice ok small">📤 <strong>${uploading.map(p => esc(p.displayName)).join(', ')} está${uploading.length > 1 ? 'n' : ''} subiendo fotos ahora</strong> (van ${uploading.reduce((a, p) => a + (sets.get(p.uid)?.photoCount || 0), 0)}). Volvé en un rato o tocá <strong>🔔 Avisarme</strong> arriba.</div>` : ''}
     ${noPay.length ? `<div class="notice">⏳ ${noPay.length === withPhotos.length ? 'Las fotos de este evento todavía no están a la venta' : `Las fotos de ${noPay.map(p => esc(p.displayName)).join(', ')} todavía no están a la venta`}: el fotógrafo está terminando de configurar los pagos. Tocá <strong>🔔 Avisarme</strong> arriba y te avisamos.</div>` : ''}
+    ${selfieOn ? `<div class="g-selfie" id="g-selfie"><button class="btn primary" id="g-selfie-go">🤳 Buscarme con una selfie</button><span class="muted small">Te mostramos las fotos donde aparecés.</span>
+      <input type="file" id="g-selfie-in" accept="image/*" capture="user" hidden></div>` : ''}
     <div class="g-price" id="g-price"></div>
     <div class="filter-row" id="g-ph"></div>
     <div class="filter-row" id="g-sub"></div>
@@ -97,13 +102,13 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
       ? [`<span class="muted small" style="align-self:center">🕒 Horario:</span><button class="chip ${!state.hour ? 'on' : ''}" data-hour="0">Todo</button>`,
         ...hours.map(h => `<button class="chip ${state.hour === h ? 'on' : ''}" data-hour="${h}">${hourLabel(h)} <span class="muted small">${hourCount.get(h) || ''}</span></button>`)].join('')
       : '';
-    $$('[data-hour]', box).forEach(b => b.onclick = () => { state.hour = Number(b.dataset.hour); state.fav = false; reset(); });
+    $$('[data-hour]', box).forEach(b => b.onclick = () => { state.hour = Number(b.dataset.hour); state.fav = false; state.selfie = null; reset(); });
 
     const nFav = favs.forEvent(ev.id).length;
     $('#g-fav', box).innerHTML = nFav || state.fav
       ? `<button class="chip ${state.fav ? 'on' : ''}" data-fav>♥ Mis favoritas (${nFav})</button>${state.fav ? '<span class="muted small" style="align-self:center">Guardadas en este dispositivo</span>' : ''}`
       : '';
-    $('[data-fav]', box)?.addEventListener('click', () => { state.fav = !state.fav; reset(); });
+    $('[data-fav]', box)?.addEventListener('click', () => { state.fav = !state.fav; state.selfie = null; reset(); });
 
     // Precio y packs de cada fotógrafo, arriba de las fotos.
     const shown = (state.uid ? withPhotos.filter(p => p.uid === state.uid) : withPhotos).filter(p => forSale(p.uid));
@@ -113,7 +118,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
       return `<div class="g-price-row">💲 ${withPhotos.length > 1 ? `<strong>${esc(p.displayName)}</strong> · ` : ''}<strong>${fmtMoney(st.price)}</strong> por foto
         ${packs.map(k => `<span class="pill ok">${k.qty} fotos x ${fmtMoney(k.price)}</span>`).join(' ')}</div>`;
     }).join('') + (shown.length ? '<div class="muted small">Si llevás varias, se aplica solo la combinación más barata.</div>' : '');
-    $$('[data-uid]', box).forEach(b => b.onclick = () => { state.uid = b.dataset.uid; state.sub = ''; reset(); });
+    $$('[data-uid]', box).forEach(b => b.onclick = () => { state.uid = b.dataset.uid; state.sub = ''; state.selfie = null; reset(); });
     $$('[data-sub]', box).forEach(b => b.onclick = () => {
       state.sub = b.dataset.sub;
       if (!state.uid && withPhotos.length === 1) state.uid = withPhotos[0].uid;
@@ -130,6 +135,16 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
 
   async function loadMore() {
     if (state.loading || state.done) return;
+    if (state.selfie) {
+      const list = state.selfie;
+      state.photos = list; state.done = true;
+      $('#g-grid', box).innerHTML = list.length
+        ? `<div class="g-bib-found"><span>🤳 Encontramos <strong>${list.length}</strong> foto${list.length === 1 ? '' : 's'} donde parecés estar (de la más parecida a la menos)</span><button type="button" class="btn sm" id="g-selfie-x">Ver todas</button></div>${list.map((p, i) => itemHtml(p, i)).join('')}`
+        : `<div class="empty" style="grid-column:1/-1">No encontramos fotos tuyas con esa selfie.<br>Puede que no estés de frente en ninguna: probá con otra selfie con buena luz, o buscá por horario.<br><button type="button" class="btn sm" id="g-selfie-x" style="margin-top:8px">Ver todas</button></div>`;
+      $('#g-selfie-x', box).onclick = () => { state.selfie = null; reset(); };
+      $('#g-more', box).innerHTML = '';
+      return;
+    }
     if (state.fav) {
       const list = favs.forEvent(ev.id).filter(p => byUid.has(p.photographerUid) && (!state.uid || p.photographerUid === state.uid)).sort((a, b) => a.takenAt - b.takenAt);
       state.photos = list; state.done = true;
@@ -261,7 +276,11 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
   // Barra fija abajo con lo que lleva en el carrito (en el celular el botón del carrito queda lejos).
   // Total estimado del carrito (packs y costo de servicio aplicados; lo confirma el carrito al pagar) y sugerencia de pack.
   let settings = null;
-  loadSettings().then(s => { settings = s; if (document.body.contains(box)) syncCartBar(); }).catch(() => {});
+  loadSettings().then(s => {
+    settings = s;
+    if (s.selfieEnabled === false) $('#g-selfie', box)?.remove(); // apagada para toda la plataforma
+    if (document.body.contains(box)) syncCartBar();
+  }).catch(() => {});
   function cartSummary() {
     let total = 0, tip = '';
     for (const g of cart.groups()) {
@@ -402,6 +421,55 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
       if (s.exists() && d.eventId === ev.id && !d.hidden) openSingle({ id: s.id, ...d });
     }).catch(() => {});
   }
+
+  // ---- buscarme con una selfie: aviso (una vez por dispositivo), selfie, huella en el celular y comparación en el servidor
+  $('#g-selfie-go', box)?.addEventListener('click', () => {
+    let ok = false;
+    try { ok = localStorage.getItem('qmf-selfie-ok') === '1'; } catch { /* nada */ }
+    if (ok) return $('#g-selfie-in', box).click();
+    const dlg = document.createElement('dialog');
+    dlg.innerHTML = `<div class="dlg-head"><h2>🤳 Buscarme con una selfie</h2><button class="btn ghost sm" data-close>✕</button></div>
+      <div class="dlg-body stack">
+        <p style="margin:0">Te sacás una selfie y te mostramos las fotos del evento donde aparecés.</p>
+        <ul class="small" style="margin:0;padding-left:18px">
+          <li>Tu celular calcula una <strong>huella numérica de tu cara</strong>. <strong>La selfie no se sube ni se guarda.</strong></li>
+          <li>Esa huella se compara con las caras de las fotos del evento y <strong>no se guarda</strong> después de la búsqueda.</li>
+          <li>Es un dato biométrico: lo usamos solo para esta búsqueda. Más info en <a href="privacidad/" target="_blank">Privacidad</a>.</li>
+        </ul>
+        <label class="check"><input type="checkbox" id="sf-ok"> Acepto que se use mi selfie para buscar mis fotos</label>
+      </div>
+      <div class="dlg-foot"><button class="btn primary" id="sf-go" disabled>Sacarme la selfie</button></div>`;
+    document.body.appendChild(dlg);
+    dlg.addEventListener('close', () => dlg.remove());
+    dlg.querySelector('[data-close]').onclick = () => dlg.close();
+    dlg.querySelector('#sf-ok').onchange = e => { dlg.querySelector('#sf-go').disabled = !e.target.checked; };
+    dlg.querySelector('#sf-go').onclick = () => { try { localStorage.setItem('qmf-selfie-ok', '1'); } catch { /* nada */ } dlg.close(); $('#g-selfie-in', box).click(); };
+    dlg.showModal();
+  });
+  $('#g-selfie-in', box)?.addEventListener('change', async e => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    const btn = $('#g-selfie-go', box);
+    btn.disabled = true; btn.textContent = '🤳 Buscando… (la primera vez tarda unos segundos)';
+    try {
+      const { selfieFace } = await import('./faces.js');
+      const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      const d = await selfieFace(bmp);
+      bmp.close?.();
+      if (!d) throw new Error('No encontramos una cara en la selfie. Probá de frente, con buena luz y sin anteojos de sol.');
+      const res = await fetch(`${API_BASE}/faces/${ev.id}/match`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ d: Array.from(d) }) });
+      const r = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(r.error || 'No se pudo buscar. Probá de nuevo.');
+      // Las fotos encontradas, en el orden de parecido (las borradas u ocultas se saltean).
+      const docs = await Promise.all((r.photos || []).map(x => getDoc(doc(db, 'photos', x.p)).then(s => (s.exists() ? { id: s.id, ...s.data() } : null)).catch(() => null)));
+      state.selfie = docs.filter(p => p && !p.hidden && p.eventId === ev.id && byUid.has(p.photographerUid));
+      Object.assign(state, { fav: false, bib: '', hour: 0 });
+      reset();
+      $('#g-grid', box).scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (err) { toast(errMsg(err), 'error'); }
+    btn.disabled = false; btn.textContent = '🤳 Buscarme con una selfie';
+  });
 
   const bibForm = $('#g-bib', box);
   if (bibForm) {

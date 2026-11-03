@@ -746,3 +746,6 @@ body:not(.with-tabbar) .up-fab { bottom: calc(16px + env(safe-area-inset-bottom)
 .top-photo img { width: 100%; height: 100%; object-fit: cover; }
 .top-photo span { position: absolute; right: 4px; bottom: 4px; padding: 1px 7px; border-radius: 99px; background: var(--accent); color: var(--accent-ink); font-size: .78rem; font-weight: 800; }
 .upsell { border: 2px solid var(--accent); background: linear-gradient(135deg, var(--accent-soft), var(--surface) 60%); }
+
+/* Buscarme con una selfie */
+.g-selfie { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-bottom: 12px; padding: 12px; border-radius: var(--radius); background: var(--accent-soft); color: var(--text); }
