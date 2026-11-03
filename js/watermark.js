@@ -20,12 +20,12 @@ export function drawWatermark(ctx, w, h, wm, logo = null) {
   ctx.textBaseline = 'middle';
   ctx.lineJoin = 'round';
 
-  // Mosaico diagonal con el sitio
-  const size = Math.max(11, Math.round(big * 0.024));
-  ctx.font = `700 ${size}px system-ui, -apple-system, Arial, sans-serif`;
-  ctx.globalAlpha = alpha * 0.75;
-  const stepX = ctx.measureText(tiled).width + size * 3;
-  const stepY = size * 5.5;
+  // Mosaico diagonal con el sitio: letra fina, más chica y más espaciada para que no tape la foto.
+  const size = Math.max(10, Math.round(big * 0.017));
+  ctx.font = `600 ${size}px system-ui, -apple-system, Arial, sans-serif`;
+  ctx.globalAlpha = alpha * 0.55;
+  const stepX = ctx.measureText(tiled).width + size * 6;
+  const stepY = size * 9;
   ctx.translate(w / 2, h / 2);
   ctx.rotate(-Math.PI / 6);
   const R = Math.hypot(w, h) / 2 + stepX;
@@ -37,17 +37,17 @@ export function drawWatermark(ctx, w, h, wm, logo = null) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
   // Centro: logo del fotógrafo o el sitio
-  ctx.globalAlpha = Math.min(0.95, alpha * 1.4);
+  ctx.globalAlpha = Math.min(0.95, alpha * 0.8);
   if (wantsLogo(opts) && logo) {
     drawLogo(ctx, logo, w / 2, h / 2, Math.min(w, h) * 0.4);
   } else {
-    let cs = Math.round(Math.min(w, h) * 0.075);
-    ctx.font = `800 ${cs}px system-ui, -apple-system, Arial, sans-serif`;
+    let cs = Math.round(Math.min(w, h) * 0.05);
+    ctx.font = `600 ${cs}px system-ui, -apple-system, Arial, sans-serif`;
     const max = w * 0.85;
     const tw = ctx.measureText(SITE_MARK).width;
     if (tw > max) {
       cs = Math.max(11, Math.floor(cs * max / tw));
-      ctx.font = `800 ${cs}px system-ui, -apple-system, Arial, sans-serif`;
+      ctx.font = `600 ${cs}px system-ui, -apple-system, Arial, sans-serif`;
     }
     stamp(ctx, SITE_MARK, w / 2, h / 2, cs);
   }
@@ -55,8 +55,8 @@ export function drawWatermark(ctx, w, h, wm, logo = null) {
 }
 
 function stamp(ctx, text, x, y, size) {
-  ctx.lineWidth = Math.max(1, size * 0.12);
-  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+  ctx.lineWidth = Math.max(1, size * 0.08);
+  ctx.strokeStyle = 'rgba(0,0,0,0.3)';
   ctx.strokeText(text, x, y);
   ctx.fillStyle = '#ffffff';
   ctx.fillText(text, x, y);
