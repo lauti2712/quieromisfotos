@@ -2762,6 +2762,11 @@ async function viewAdminConfig() {
       <button class="btn" id="a-reload">🔄 Refrescar todos</button>
       <button class="btn" id="a-mailtest" title="Manda un mail a tu casilla para confirmar que Resend anda">✉️ Enviarme un mail de prueba</button>
     </div>
+    <div class="card row" style="justify-content:space-between">
+      <div><strong>📣 Novedades a los fotógrafos</strong><br><span class="muted small">Video para historias, portada, búsqueda por selfie y precio especial. Primero mandátelo de prueba; el envío a todos se hace una sola vez.</span></div>
+      <button class="btn" id="a-news-test">Enviarme la prueba</button>
+      <button class="btn primary" id="a-news">Enviar a todos</button>
+    </div>
     <div class="card stack" id="a-push"></div>
     <div class="card stack" id="a-transfer"></div>
     <form id="acf">
@@ -2851,6 +2856,18 @@ async function viewAdminConfig() {
     try { const r = await apiPost('/admin/mail/test'); toast(`Mail enviado a ${r.to}. Revisá la bandeja (y Spam).`); }
     catch (err) { toast(errMsg(err), 'error'); }
     e.target.disabled = false;
+  };
+  $('#a-news-test').onclick = async e => {
+    e.target.disabled = true;
+    try { await apiPost('/admin/mail/news', { test: true }); toast('Prueba enviada a tu mail. Revisá la bandeja (y Spam).'); }
+    catch (err) { toast(errMsg(err), 'error'); }
+    e.target.disabled = false;
+  };
+  $('#a-news').onclick = async e => {
+    if (!confirm('¿Enviar las novedades por mail a todos los fotógrafos? Se hace una sola vez.')) return;
+    e.target.disabled = true;
+    try { const r = await apiPost('/admin/mail/news', {}); toast(`Novedades enviadas a ${r.sent} fotógrafo${r.sent === 1 ? '' : 's'}${r.skipped ? ` (${r.skipped} sin mail)` : ''}.`); }
+    catch (err) { toast(errMsg(err), 'error'); e.target.disabled = false; }
   };
   $('#a-reload').onclick = async () => {
     if (!confirm('¿Recargar el sitio en todos los dispositivos abiertos?')) return;

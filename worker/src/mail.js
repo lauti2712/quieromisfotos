@@ -2,7 +2,8 @@
 //   - Compra aprobada → link a las descargas (orders.js).
 //   - "Ya están las fotos" → seguidores del evento o del fotógrafo sin notificaciones activas (push.js).
 // Plan gratis de Resend: 100 mails por día y 3.000 por mes; si falla o no hay clave, no corta nada (best-effort).
-import { serviceToken } from './admin.js';
+import { serviceToken, adminQuery, adminSet } from './admin.js';
+import { httpError } from './http.js';
 
 const FROM = 'Quiero Mis Fotos <fotos@quieromisfotos.com.ar>';
 const REPLY_TO = 'desarrollo@solucionescotidianas.com.ar';
@@ -66,4 +67,42 @@ export async function authEmails(env, uids) {
 export async function mailTest(req, env, claims) {
   const ok = await sendMail(env, { to: claims.email, subject: '✅ Prueba de mails de Quiero Mis Fotos', html: mailLayout({ title: 'Los mails funcionan', intro: 'Si ves este mail, Resend y el dominio quieromisfotos.com.ar están bien configurados.', cta: { label: 'Ir al panel', url: `${env.PANEL_URL || 'https://quieromisfotos.com.ar/panel.html'}#/admin/config` } }) });
   return ok;
+}
+
+// Novedades para todos los fotógrafos (superadmin). Primero {test: true} manda solo a tu casilla;
+// el envío real queda registrado en broadcasts/{key} y no se puede repetir.
+//   POST /admin/mail/news {test?}
+const NEWS = {
+  key: 'novedades-2026-11-video-portada-selfie',
+  subject: '4 novedades para vender más tus fotos 📸',
+  items: [
+    ['🎬 Video para historias, listo para compartir', 'En cada álbum, en "Compartir", se arma solo un video corto con tus mejores fotos y el link al álbum. Lo descargás y lo subís a historias de Instagram o al estado de WhatsApp. Ahí mismo tenés el texto listo para el grupo, el código QR y un cartel para imprimir y dejar en la cancha.'],
+    ['🖼️ Elegí la portada de tu evento', 'La portada es lo primero que se ve en el link y en la lista de eventos. Ahora podés elegir una de tus fotos (sin marca de agua) o subir una imagen, y encuadrarla como quieras. Si no elegís ninguna, ponemos una de tus fotos automáticamente. Además, en cada evento ahora aparece tu nombre como fotógrafo.'],
+    ['🤳 Búsqueda por selfie', 'Tus clientes se sacan una selfie y ven solo las fotos donde aparecen, sin recorrer cientos de fotos. Así se encuentran más rápido y compran más. Las fotos nuevas se preparan solas al subirlas. Si tenés álbumes que subiste antes, entrá al álbum y tocá <strong>"Prepararlas ahora"</strong>.'],
+    ['💡 Tip: poné un precio especial a las fotos que valen más', 'Una foto del equipo completo la compra una sola persona y la comparte con todo el plantel. Ponele un precio más alto que al resto: en tu álbum elegí esas fotos y tocá <strong>💲 Precio</strong>. Las fotos con precio especial se cobran aparte y no entran en los packs.'],
+  ],
+};
+const newsHtml = (env, name) => mailLayout({
+  title: `¡Hola${name ? ' ' + name.split(' ')[0] : ''}!`,
+  intro: 'Sumamos herramientas a Quiero Mis Fotos. Ya están funcionando en tu panel:' +
+    NEWS.items.map(([h, t]) => `<br><br><strong style="color:#15181e">${esc(h)}</strong><br>${t}`).join(''),
+  cta: { label: 'Entrar a mi panel', url: env.PANEL_URL || 'https://quieromisfotos.com.ar/panel.html' },
+  foot: '¿Dudas? Escribinos por WhatsApp desde el botón verde del panel, o respondé este mail.<br>El equipo de Quiero Mis Fotos',
+});
+
+export async function mailNews(req, env, claims) {
+  const { test } = await req.json().catch(() => ({}));
+  if (test) {
+    const ok = await sendMail(env, { to: claims.email, subject: `[Prueba] ${NEWS.subject}`, html: newsHtml(env, 'Lauti') });
+    return { ok, sent: ok ? 1 : 0, test: true };
+  }
+  const users = await adminQuery(env, 'users', { filters: [['role', '==', 'photographer']], limit: 500 });
+  const live = users.filter(u => !['suspended', 'rejected', 'deleted'].includes(u.status));
+  const emails = await authEmails(env, live.map(u => u.id));
+  const list = live.map(u => ({ to: emails[u.id] || u.email, name: u.displayName })).filter(m => m.to && m.to !== claims.email);
+  // Marca primero: si ya se mandó, falla y no se repite.
+  await adminSet(env, `broadcasts/${NEWS.key}`, { sentAt: new Date(), count: list.length, by: claims.email }, { mustNotExist: true })
+    .catch(() => { throw httpError(409, 'Estas novedades ya se enviaron (o no se pudo registrar el envío)'); });
+  await sendMany(env, list.map(m => ({ to: m.to, subject: NEWS.subject, html: newsHtml(env, m.name) })));
+  return { ok: true, sent: list.length, skipped: live.length - list.length };
 }

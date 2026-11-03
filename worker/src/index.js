@@ -61,7 +61,7 @@ import { renderSite } from './site.js';
 import { scanRequest, scanStorage } from './storage.js';
 import { runBackup, backupRequest } from './backup.js';
 import { costsRequest, checkCosts } from './costs.js';
-import { mailTest } from './mail.js';
+import { mailTest, mailNews } from './mail.js';
 import { markPaid, reportFeePayment, confirmFeePayment, matchPendingTransfers } from './transfers.js';
 import { notifyFollowersOnce, drainPushQueue } from './push.js';
 import { extensionCheckout, extensionSync } from './extensions.js';
@@ -178,6 +178,12 @@ async function route(req, env, ctx) {
     if (!env.RESEND_API_KEY) throw httpError(503, 'Falta la clave de Resend (RESEND_API_KEY)');
     if (!await mailTest(req, env, c)) throw httpError(502, 'Resend rechazó el envío: revisá que el dominio esté verificado');
     return json({ ok: true, to: c.email });
+  }
+  if (m === 'POST' && url.pathname === '/admin/mail/news') {
+    const c = await requireUser(req, env);
+    if (c.email !== 'lautarom87@gmail.com' || c.email_verified !== true) throw httpError(403, 'Solo superadmin');
+    if (!env.RESEND_API_KEY) throw httpError(503, 'Falta la clave de Resend (RESEND_API_KEY)');
+    return json(await mailNews(req, env, c));
   }
   if (m === 'POST' && url.pathname === '/fees/report') return reportFeePayment(req, env);
   if (m === 'POST' && url.pathname === '/admin/fees/confirm') return confirmFeePayment(req, env);
