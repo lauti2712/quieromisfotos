@@ -2,7 +2,7 @@
 //   GET /admin/costs[?fresh=1]  (superadmin)  -> uso del mes por servicio, cupo gratis y costo estimado en USD
 // Fuentes:
 //   Firestore  → Cloud Monitoring (la cuenta de servicio necesita el rol "Visor de Monitoring")
-//   Cloudflare → API GraphQL de analíticas (CF_API_TOKEN necesita el permiso "Account Analytics: Read")
+//   Cloudflare → API GraphQL de analíticas (CF_ANALYTICS_TOKEN: token propio, solo "Account Analytics: Read")
 //   R2 (espacio) → adminStats/storage, que mide el cron diario (storage.js)
 // Cada fuente falla por separado: si falta un permiso, esa parte vuelve con `error` y el resto se muestra igual.
 // Precios de lista (USD), del lado caro cuando dependen de la región: es una estimación, la factura manda.
@@ -60,15 +60,17 @@ async function firestoreUsage(env, start, end) {
 
 // ------------------------------------------------------------------ Cloudflare (GraphQL)
 async function cfGraphql(env, query, variables) {
-  if (!env.CF_API_TOKEN) throw httpError(503, 'Falta el token de Cloudflare (CF_API_TOKEN).');
+  // Token propio de solo lectura para las analíticas (CF_ANALYTICS_TOKEN); si no está, se prueba con el de dominios.
+  const token = env.CF_ANALYTICS_TOKEN || env.CF_API_TOKEN;
+  if (!token) throw httpError(503, 'Falta el token de Cloudflare (CF_ANALYTICS_TOKEN).');
   const res = await fetch('https://api.cloudflare.com/client/v4/graphql', {
-    method: 'POST', headers: { Authorization: `Bearer ${env.CF_API_TOKEN}`, 'Content-Type': 'application/json' },
+    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ query, variables }),
   });
   const d = await res.json().catch(() => ({}));
   if (d.errors?.length) {
     const msg = d.errors.map(e => e.message).join(', ');
-    if (/auth|permission|access/i.test(msg)) throw httpError(403, 'Falta el permiso "Account Analytics: Read" en el token de Cloudflare (CF_API_TOKEN).');
+    if (/auth|permission|access/i.test(msg)) throw httpError(403, 'Falta el token de Cloudflare con permiso "Account Analytics: Read" (CF_ANALYTICS_TOKEN).');
     throw httpError(502, `Cloudflare: ${msg.slice(0, 200)}`);
   }
   return d.data?.viewer?.accounts?.[0] || {};

@@ -336,6 +336,18 @@ export async function downloadLinks(req, env, orderId) {
   return json({ links, exp });
 }
 
+// POST /review/original/{photoId}  (superadmin o el fotógrafo de la foto) -> link de 15 min al original, para revisar la calidad.
+export async function reviewOriginal(req, env, pid) {
+  const claims = await requireUser(req, env);
+  const p = await adminGet(env, `photos/${pid}`);
+  const isSuper = claims.email === 'lautarom87@gmail.com' && claims.email_verified === true;
+  if (!p || (!isSuper && p.photographerUid !== claims.sub && p.uploadedBy !== claims.sub)) throw httpError(404, 'Foto no encontrada');
+  if (p.originalDeleted) throw httpError(410, 'El original ya se borró (el álbum venció)');
+  const exp = Math.floor(Date.now() / 1000) + LINK_TTL;
+  const token = await signToken({ typ: 'dl', o: `rev${pid}`, e: p.eventId, u: p.photographerUid, p: pid, n: 1, exp }, env.UPLOAD_SECRET);
+  return json({ url: `${apiUrl(env, req)}/dl/${token}`, bytes: p.bytes || 0, fileBytes: p.fileBytes || 0, width: p.width, height: p.height });
+}
+
 // GET /dl/{token} -> el original, como descarga
 export async function download(req, env, token) {
   const t = await verifyToken(token, env.UPLOAD_SECRET, 'dl');
