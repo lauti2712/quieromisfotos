@@ -34,10 +34,19 @@ export function faceDistance(a, b) {
   return Math.sqrt(s);
 }
 
+// face-api acepta imagen, video o canvas (no ImageBitmap): se dibuja en un canvas.
+function toInput(src) {
+  if (typeof ImageBitmap === 'undefined' || !(src instanceof ImageBitmap)) return src;
+  const c = document.createElement('canvas');
+  c.width = src.width; c.height = src.height;
+  c.getContext('2d').drawImage(src, 0, 0);
+  return c;
+}
+
 // Todas las caras de una foto que se ven lo suficientemente grandes para reconocerlas (en px del lado menor de la cara).
 export async function photoFaces(source, { minSize = 36, max = 15 } = {}) {
   const api = await loadFaceApi();
-  const det = await api.detectAllFaces(source, new api.TinyFaceDetectorOptions({ inputSize: 608, scoreThreshold: 0.55 }))
+  const det = await api.detectAllFaces(toInput(source), new api.TinyFaceDetectorOptions({ inputSize: 608, scoreThreshold: 0.45 }))
     .withFaceLandmarks(true).withFaceDescriptors();
   return det.filter(d => Math.min(d.detection.box.width, d.detection.box.height) >= minSize)
     .sort((a, b) => b.detection.box.height - a.detection.box.height).slice(0, max)
@@ -47,7 +56,7 @@ export async function photoFaces(source, { minSize = 36, max = 15 } = {}) {
 // La cara de la selfie: la más grande. null si no encontró ninguna.
 export async function selfieFace(source) {
   const api = await loadFaceApi();
-  const det = await api.detectAllFaces(source, new api.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.4 }))
+  const det = await api.detectAllFaces(toInput(source), new api.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.4 }))
     .withFaceLandmarks(true).withFaceDescriptors();
   if (!det.length) return null;
   det.sort((a, b) => b.detection.box.height - a.detection.box.height);
