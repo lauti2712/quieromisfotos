@@ -2055,6 +2055,7 @@ async function viewAdminPhotographers() {
     .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
   const privs = await Promise.all(users.map(u => getDoc(doc(db, 'userPrivate', u.uid)).then(s => s.data() || {}).catch(() => ({}))));
   const reqs = await Promise.all(users.map(u => getDoc(doc(db, 'planRequests', u.uid)).then(s => s.data() || null).catch(() => null)));
+  const zoneOk = await Promise.all(users.map(u => canonicalPlace(u.zone).catch(() => 'x')));
   // Cobro por transferencia: saldos de comisiones y pagos avisados por confirmar.
   const [balSnap, repSnap] = await Promise.all([
     getDocs(collection(db, 'feeBalance')).catch(() => null),
@@ -2068,7 +2069,8 @@ async function viewAdminPhotographers() {
       ${avatarHtml(u)}
       <div class="grow">
         <strong>${esc(u.displayName)}</strong> <span class="muted small">/${esc(u.slug)}</span><br>
-        <span class="muted small">${esc(privs[i].email || privs[i].phone || '')}${u.zone ? ' · ' + esc(u.zone) : ''} · alta ${esc(fmtTs(u.createdAt))}</span>
+        <span class="muted small">${esc(privs[i].email || privs[i].phone || '')}${u.zone ? ' · 📍 ' + esc(u.zone) : ''} · alta ${esc(fmtTs(u.createdAt))}</span>
+        ${zoneOk[i] ? '' : '<span class="pill warn" title="No es una localidad de la lista">📍 Localidad sin elegir</span>'} <button class="btn sm" data-zone="${u.uid}" title="Cambiar la localidad del fotógrafo">📍 Localidad</button>
         ${waOf(u, privs[i]) ? `<a class="small" target="_blank" rel="noopener" href="${esc(waLink(waOf(u, privs[i])))}">💬 ${esc(waOf(u, privs[i]))}</a>` : ''}<br>
         ${privs[i].provider ? `<span class="pill" title="Cómo se registró">${privs[i].provider === 'google' ? 'Ingresa con Google' : privs[i].provider === 'phone' ? 'Ingresa con el celular (SMS)' : 'Ingresa con email y contraseña'}</span>` : ''}
         ${privs[i].emailVerified ? '' : `<span class="pill warn" title="Todavía no tocó el link del mail de confirmación: no puede publicar ni vincular Mercado Pago">✉️ Correo sin confirmar</span> <button class="btn sm" data-verify="${u.uid}" title="Para quien no puede abrir el mail: lo confirmás vos">✅ Confirmar cuenta</button>`}
@@ -2141,6 +2143,21 @@ async function viewAdminPhotographers() {
       save({ count, until: Timestamp.fromMillis(Date.parse(`${d}T23:59:59-03:00`)), givenAt: Timestamp.now() });
     };
     $('#bn-off', dlg)?.addEventListener('click', () => save(null));
+  });
+  // Localidad del fotógrafo (de la lista oficial), editada por el superadmin.
+  $$('[data-zone]').forEach(b => b.onclick = () => {
+    const u = users.find(x => x.uid === b.dataset.zone);
+    const dlg = openDialog(`Localidad · ${u.displayName}`, `
+      <label class="field">Localidad<input type="text" id="zn-in" maxlength="80" value="${esc(u.zone || '')}" placeholder="Empezá a escribir y elegí de la lista">
+        ${u.zone ? `<span class="hint">Hoy dice: "${esc(u.zone)}"</span>` : ''}</label>`,
+      '<button class="btn" data-close>Cancelar</button><button class="btn primary" id="zn-save">Guardar</button>');
+    placeInput($('#zn-in', dlg));
+    $('#zn-save', dlg).onclick = async () => {
+      const zone = await canonicalPlace($('#zn-in', dlg).value);
+      if (!zone) return toast('Elegí una localidad de la lista.', 'error');
+      try { await updateDoc(doc(db, 'users', u.uid), { zone }); dlg.close(); toast(`Localidad de ${u.displayName}: ${zone}`); viewAdminPhotographers(); }
+      catch (e) { toast(errMsg(e), 'error'); }
+    };
   });
   // Confirmación manual de la cuenta (no puede abrir el mail de confirmación).
   $$('[data-verify]').forEach(b => b.onclick = async () => {
@@ -2247,15 +2264,17 @@ let adminEvFilter = 'all';
 async function viewAdminEvents() {
   const snap = await getDocs(query(collection(db, 'events'), orderBy('date', 'desc'), limit(300)));
   const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  const evs = all.filter(e => adminEvFilter === 'all' || e.kind === adminEvFilter);
+  const evs = all.filter(e => adminEvFilter === 'all' || (adminEvFilter === 'nocity' ? !e.city : e.kind === adminEvFilter));
   $('#view').innerHTML = `
     <div class="row" style="justify-content:space-between;margin-bottom:14px">
       <h1 style="margin:0">Eventos</h1>
       <button class="btn primary" id="new">+ Evento general</button>
     </div>
-    <div class="tabs">${[['all', 'Todos'], ['general', 'Generales'], ['own', 'De fotógrafos']].map(([k, l]) => `<button class="chip ${adminEvFilter === k ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div>
-    ${evs.length ? `<div class="events-grid">${evs.map(ev => panelEventCard(ev)).join('')}</div>` : '<div class="card"><div class="empty">No hay eventos.</div></div>'}`;
+    <div class="tabs">${[['all', 'Todos'], ['general', 'Generales'], ['own', 'De fotógrafos'], ['nocity', `📍 Sin localidad (${all.filter(e => !e.city).length})`]].map(([k, l]) => `<button class="chip ${adminEvFilter === k ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div>
+    ${adminEvFilter === 'nocity' ? '<p class="muted small">Eventos cargados antes de la lista de localidades. Tocá ✏️ para elegirla.</p>' : ''}
+    ${evs.length ? `<div class="events-grid">${evs.map(ev => panelEventCard(ev).replace('<button class="card-share"', `<button class="card-share" data-edit-ev="${ev.id}" title="Editar evento y localidad" aria-label="Editar" style="right:48px">✏️</button><button class="card-share"`)).join('')}</div>` : '<div class="card"><div class="empty">No hay eventos.</div></div>'}`;
   $('#new').onclick = () => eventDialog(null);
+  $$('[data-edit-ev]').forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation(); eventDialog(evs.find(x => x.id === b.dataset.editEv), () => viewAdminEvents()); });
   $$('[data-f]').forEach(b => b.onclick = () => { adminEvFilter = b.dataset.f; viewAdminEvents(); });
   $$('[data-share]').forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation(); shareEvent(evs.find(x => x.id === b.dataset.share)); });
 }
