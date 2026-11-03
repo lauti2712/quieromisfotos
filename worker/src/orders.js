@@ -11,6 +11,7 @@ import { feePercentFor, GRACE_DAYS } from './plans.js';
 import { subscriptionWebhook } from './subscriptions.js';
 import { addAlert } from './alerts.js';
 import { createTransferOrder, syncTransferOrder } from './transfers.js';
+import { sendMail, mailLayout } from './mail.js';
 
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
 const MAX_ITEMS = 300;
@@ -190,6 +191,7 @@ export async function commitOrderUpdate(env, orderId, order, upd) {
   // Contador de ventas del álbum (solo la primera vez que el pedido pasa a aprobado o se reembolsa).
   if (upd.status === 'approved' && order.status !== 'approved') {
     await countSale(env, order, 1);
+    await mailDownloads(env, orderId, { ...order, ...upd }).catch(e => console.error('mail compra', e));
     // Transferencia: la plata llegó entera al fotógrafo; la comisión queda como saldo a pagar a la plataforma.
     if (order.payMethod === 'transfer' && order.platformFee > 0) {
       await adminCommit(env, [
@@ -213,6 +215,26 @@ export async function commitOrderUpdate(env, orderId, order, upd) {
     await countSale(env, order, -1);
   }
   return { ...order, ...upd };
+}
+
+// Mail al comprador con el link a sus descargas (también quedan en Mis compras).
+async function mailDownloads(env, orderId, order) {
+  const priv = await adminGet(env, `orderPrivate/${orderId}`);
+  if (!priv?.buyerEmail) return;
+  const site = (env.SITE_URL || 'https://quieromisfotos.com.ar/').replace(/\/?$/, '/');
+  const until = order.downloadExpiresAt ? new Date(order.downloadExpiresAt).toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Argentina/Buenos_Aires' }) : '';
+  const n = order.count || (order.items || []).length;
+  await sendMail(env, {
+    to: priv.buyerEmail,
+    subject: `✅ Tus fotos de ${order.eventName || 'tu evento'} están listas`,
+    html: mailLayout({
+      title: '¡Tus fotos están listas!',
+      intro: `${priv.buyerName ? `Hola ${priv.buyerName.split(' ')[0]}, ` : ''}ya podés descargar ${n === 1 ? 'tu foto' : `tus ${n} fotos`} en alta calidad, sin marca de agua.`,
+      rows: [['Evento', order.eventName || ''], ['Fotógrafo', order.photographerName || ''], ['Fotos', String(n)], ['Total', `$${Number(order.total || 0).toLocaleString('es-AR')}`], ...(until ? [['Disponibles hasta', until]] : [])],
+      cta: { label: '⬇️ Descargar mis fotos', url: `${site}#/pedido/${orderId}` },
+      foot: 'Guardá este mail: con el botón volvés a tus fotos cuando quieras. También están en <strong>Mis compras</strong>, ingresando con la misma cuenta.',
+    }),
+  });
 }
 
 // POST /mp/webhook?o={orderId}  — no se confía en el contenido: se consulta el pago a MP.
@@ -294,7 +316,9 @@ export async function retryCheckout(req, env, orderId) {
 export async function downloadLinks(req, env, orderId) {
   const claims = await requireUser(req, env);
   const order = await adminGet(env, `orders/${orderId}`);
-  if (!order || order.buyerUid !== claims.sub) throw httpError(404, 'Pedido no encontrado');
+  // El comprador, y para revisar la calidad de lo que se entrega, el fotógrafo del pedido y el superadmin.
+  const reviewer = order && (order.photographerUid === claims.sub || (claims.email === 'lautarom87@gmail.com' && claims.email_verified === true));
+  if (!order || (order.buyerUid !== claims.sub && !reviewer)) throw httpError(404, 'Pedido no encontrado');
   if (order.status !== 'approved') throw httpError(409, 'El pedido todavía no está pagado');
   if (order.downloadExpiresAt && order.downloadExpiresAt.getTime() < Date.now()) {
     // Si el fotógrafo extendió el álbum después de la compra, el plazo se corre con él.

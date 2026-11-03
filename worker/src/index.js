@@ -41,9 +41,9 @@
 //   qmf-private: e/{eid}/{uid}/{pid}        (original, nunca público)
 
 import { activatePhotographer, verifyAccount } from './approval.js';
-import { verifyIdToken, getDocAsUser } from './firebase.js';
+import { verifyIdToken, getDocAsUser, requireUser } from './firebase.js';
 import { adminGet, adminGetMany, adminQuery } from './admin.js';
-import { isFree, albumPhotoLimit, setActive } from './plans.js';
+import { isFree, albumPhotoLimit, setActive, activeAlbumLimit } from './plans.js';
 import { signToken, verifyToken } from './tokens.js';
 import { json, httpError, apiUrl } from './http.js';
 import { connectUrl, callback, disconnect } from './mp.js';
@@ -59,6 +59,7 @@ import { renderSite } from './site.js';
 import { scanRequest, scanStorage } from './storage.js';
 import { runBackup, backupRequest } from './backup.js';
 import { costsRequest, checkCosts } from './costs.js';
+import { mailTest } from './mail.js';
 import { markPaid, reportFeePayment, confirmFeePayment, matchPendingTransfers } from './transfers.js';
 import { notifyFollowersOnce, drainPushQueue } from './push.js';
 import { extensionCheckout, extensionSync } from './extensions.js';
@@ -164,6 +165,13 @@ async function route(req, env, ctx) {
   if (m === 'POST' && url.pathname === '/admin/domains/status') return domainStatus(req, env);
   if (m === 'POST' && url.pathname === '/admin/storage/scan') return scanRequest(req, env);
   if (m === 'GET' && url.pathname === '/admin/costs') return costsRequest(req, env, ctx);
+  if (m === 'POST' && url.pathname === '/admin/mail/test') {
+    const c = await requireUser(req, env);
+    if (c.email !== 'lautarom87@gmail.com' || c.email_verified !== true) throw httpError(403, 'Solo superadmin');
+    if (!env.RESEND_API_KEY) throw httpError(503, 'Falta la clave de Resend (RESEND_API_KEY)');
+    if (!await mailTest(req, env, c)) throw httpError(502, 'Resend rechazó el envío: revisá que el dominio esté verificado');
+    return json({ ok: true, to: c.email });
+  }
   if (m === 'POST' && url.pathname === '/fees/report') return reportFeePayment(req, env);
   if (m === 'POST' && url.pathname === '/admin/fees/confirm') return confirmFeePayment(req, env);
   if (m === 'POST' && url.pathname === '/admin/backup') return backupRequest(req, env);
@@ -219,11 +227,15 @@ async function uploadSession(req, env) {
       role = 'member';
       // Plan Gratis: un solo álbum activo a la vez (con fotos y originales guardados).
       if (!isSuper && isFree(user)) {
+        // Gratis: 1 álbum activo a la vez, más los álbumes de prueba que haya dado el superadmin.
+        const max = activeAlbumLimit(user, await adminGet(env, 'settings/platform').catch(() => null) || {});
         const evs = await adminQuery(env, 'events', { filters: [['photographerUids', 'array-contains', uid]], limit: 300 });
         const others = evs.filter(e => e.id !== eid);
         const sets = others.length ? await adminGetMany(env, others.map(e => `events/${e.id}/sets/${uid}`)) : [];
-        const busy = others.find((e, i) => setActive(sets[i]));
-        if (busy) throw httpError(403, `Con el plan Gratis podés tener 1 álbum activo a la vez y ya tenés "${busy.name}". Pasate al plan Profesional o esperá a que venza.`);
+        const busy = others.filter((e, i) => setActive(sets[i]));
+        if (busy.length >= max) throw httpError(403, max > 1
+          ? `Llegaste a tus ${max} álbumes activos (incluye los de prueba). Pasate al plan Profesional o esperá a que venza alguno.`
+          : `Con el plan Gratis podés tener 1 álbum activo a la vez y ya tenés "${busy[0].name}". Pasate al plan Profesional o esperá a que venza.`);
       }
     } else if (isSuper || ev.createdBy === uid) role = 'editor';
     else throw httpError(403, 'No participás en este evento');

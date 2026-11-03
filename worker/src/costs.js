@@ -34,7 +34,7 @@ async function firestoreUsage(env, start, end) {
       'aggregation.alignmentPeriod': '86400s', 'aggregation.perSeriesAligner': 'ALIGN_SUM', 'aggregation.crossSeriesReducer': 'REDUCE_SUM',
     });
     const res = await fetch(`https://monitoring.googleapis.com/v3/projects/${env.FIREBASE_PROJECT_ID}/timeSeries?${q}`, { headers: { Authorization: `Bearer ${token}` } });
-    if (res.status === 403) throw httpError(403, 'Falta el permiso: dale a la cuenta de servicio de Firebase el rol "Visor de Monitoring" (Monitoring Viewer) en Google Cloud → IAM.');
+    if (res.status === 403) throw httpError(403, 'Falta el permiso: dale a la cuenta de servicio qmf-worker el rol "Visualizador de Monitoring" en Google Cloud → IAM.');
     if (!res.ok) throw httpError(502, `Cloud Monitoring ${res.status}: ${(await res.text()).slice(0, 160)}`);
     const d = await res.json();
     const days = {};

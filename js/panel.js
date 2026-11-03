@@ -13,6 +13,7 @@ import {
 } from './util.js';
 const waOf = (u, priv) => priv?.whatsapp || u.socials?.whatsapp || '';
 import { initTheme } from './theme.js';
+import { activeAlbumLimit, albumBonusOf } from './plans-core.js';
 import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, ACTIVITY_TYPE, USER_TAG_TYPES, tagPills, SERVICES, isPro, mpPlanOf, GEAR_TYPES, PLANS, planOf, siteUrlOf, setUntil, setDeleteAt, GRACE_DAYS, albumPhotoLimit, feePercentFor, isFreePlan, setActive, planSpec, rulesFor, bibsOn } from './data.js';
 import { viewWeb } from './panel-web.js';
 import { sellerNet } from './pricing.js';
@@ -131,8 +132,9 @@ function planLine(p) {
 }
 function planCardHtml(p) {
   const l = planLine(p);
+  const bonus = albumBonusOf(p);
   return `<div class="notice ${l.id === 'free' ? '' : 'ok'} row" style="justify-content:space-between;gap:8px">
-    <span>⭐ Tu plan: <strong>${esc(l.text)}</strong></span><a class="btn sm" href="#/web">${l.id === 'free' ? 'Ver planes' : 'Ver o cambiar'}</a></div>`;
+    <span>⭐ Tu plan: <strong>${esc(l.text)}</strong>${bonus && l.id === 'free' ? `<br>🎁 Tenés <strong>${bonus.count} álbum${bonus.count === 1 ? '' : 'es'} extra</strong> de prueba hasta el ${esc(new Date(bonus.until).toLocaleDateString('es-AR'))}` : ''}</span><a class="btn sm" href="#/web">${l.id === 'free' ? 'Ver planes' : 'Ver o cambiar'}</a></div>`;
 }
 
 function updateRolePill() {
@@ -1238,7 +1240,7 @@ async function viewSales() {
     <div class="card"><h2>Últimos pedidos</h2>
       ${orders.length ? `<div class="table-wrap"><table class="list">
         <tr><th>Fecha</th><th>Evento</th><th>Fotos</th><th>Total</th><th>Estado</th></tr>
-        ${orders.map(o => { const [l, c] = STATUS[o.status] || [o.status, '']; return `<tr><td>${esc(fmtTs(o.createdAt))}</td><td>${esc(o.eventName)}</td><td>${o.count}</td><td>${fmtMoney(o.total)}${o.payMethod === 'transfer' ? ' <span class="muted small">🏦</span>' : ''}</td><td><span class="pill ${c}">${l}</span></td></tr>`; }).join('')}
+        ${orders.map(o => { const [l, c] = STATUS[o.status] || [o.status, '']; return `<tr><td>${esc(fmtTs(o.createdAt))}</td><td>${esc(o.eventName)}</td><td>${o.count}</td><td>${fmtMoney(o.total)}${o.payMethod === 'transfer' ? ' <span class="muted small">🏦</span>' : ''}</td><td><span class="pill ${c}">${l}</span>${o.status === 'approved' ? ` <a class="small" target="_blank" href="index.html#/pedido/${o.id}" title="Ver el pedido y descargar lo mismo que recibió el comprador">Ver</a>` : ''}</td></tr>`; }).join('')}
       </table></div>` : '<div class="empty">Todavía no tenés ventas.</div>'}
     </div>`;
   $$('[data-markpaid]').forEach(b => b.onclick = async () => {
@@ -1665,6 +1667,8 @@ async function viewEvent(id) {
       const others = snap.docs.filter(d => d.id !== id);
       const sets = await Promise.all(others.map(d => getDoc(doc(db, 'events', d.id, 'sets', me)).then(x => x.data() || null).catch(() => null)));
       const i = sets.findIndex(setActive);
+      // Álbumes de prueba (los da el superadmin): mientras estén vigentes puede tener más de uno activo.
+      if (sets.filter(setActive).length < activeAlbumLimit(S.profile, S.settings)) return;
       if (i < 0 || !$('#dz')) return;
       const other = others[i].data(), del = setDeleteAt(sets[i]);
       $('#dz').classList.add('hidden');
@@ -1910,6 +1914,7 @@ async function viewAdminPhotographers() {
         ${privs[i].provider ? `<span class="pill" title="Cómo se registró">${privs[i].provider === 'google' ? 'Ingresa con Google' : privs[i].provider === 'phone' ? 'Ingresa con el celular (SMS)' : 'Ingresa con email y contraseña'}</span>` : ''}
         ${privs[i].emailVerified ? '' : `<span class="pill warn" title="Todavía no tocó el link del mail de confirmación: no puede publicar ni vincular Mercado Pago">✉️ Correo sin confirmar</span> <button class="btn sm" data-verify="${u.uid}" title="Para quien no puede abrir el mail: lo confirmás vos">✅ Confirmar cuenta</button>`}
         ${u.mpConnected ? '<span class="pill ok">MP vinculado</span>' : `<span class="pill ${u.status === 'approved' ? 'danger' : ''}">MP sin vincular</span>`}
+        ${albumBonusOf(u) ? `<span class="pill accent" title="Álbumes de prueba">🎁 +${albumBonusOf(u).count} álbum${albumBonusOf(u).count === 1 ? '' : 'es'} hasta ${esc(new Date(albumBonusOf(u).until).toLocaleDateString('es-AR'))}</span>` : ''}
         ${planOf(u) !== 'free' ? `<span class="pill accent">⭐ ${esc(PLANS[planOf(u)].label)} ${u.courtesy ? '· cortesía, sin vencimiento' : `hasta ${esc(fmtTs(u.proUntil))}`}</span>` : '<span class="pill">Gratis</span>'}
         ${reqs[i] && reqs[i].plan !== planOf(u) ? `<span class="pill warn">Pidió: ${esc(PLANS[reqs[i].plan]?.label || reqs[i].plan)}</span>` : ''}
         ${u.site?.requestedDomain && !u.domainActive ? `<span class="pill warn">Dominio pedido: ${esc(u.site.requestedDomain)}</span>` : ''}
@@ -1924,6 +1929,7 @@ async function viewAdminPhotographers() {
           <button class="btn sm" data-pro="${u.uid}">+30 días</button>
           <button class="btn sm" data-courtesy="${u.uid}" title="Plan sin costo y sin vencimiento, hasta que lo quites">🎁 Cortesía</button>` : ''}
         ${isPro(u) ? `<button class="btn sm ghost" data-unpro="${u.uid}">Quitar plan</button>` : ''}
+ ${u.status === 'approved' && planOf(u) === 'free' ? `<button class="btn sm ghost" data-bonus="${u.uid}" title="Más álbumes activos a la vez, por un tiempo, a modo de prueba">🎁 Álbumes de prueba</button>` : ''}
         <button class="btn sm ghost" data-subsync="${u.uid}" title="Revisa en Mercado Pago su suscripción y aplica el plan">🔄 Suscripción</button>
         ${u.transferOn || bals.has(u.uid) || u.transferBlocked ? `<button class="btn sm ghost" data-fees="${u.uid}">🏦 Transferencia${owedOf(u.uid) ? ` · debe ${fmtMoney(owedOf(u.uid))}` : ''}${reported.some(r => r.uid === u.uid) ? ' · 🔔 avisó un pago' : ''}</button>` : ''}
         ${PLANS[planOf(u)]?.team ? `<button class="btn sm ghost" data-seats="${u.uid}" title="Lugares extra para su equipo (además de los del plan)">👥 Lugares extra: ${u.teamExtraSeats || 0}</button>` : ''}
@@ -1956,6 +1962,26 @@ async function viewAdminPhotographers() {
       toast(`${u.displayName}: plan ${PLANS[plan].label} de cortesía`);
       viewAdminPhotographers();
     } catch (e) { toast(errMsg(e), 'error'); }
+  });
+  // Álbumes de prueba: en plan Gratis, X álbumes activos extra hasta una fecha.
+  $$('[data-bonus]').forEach(b => b.onclick = () => {
+    const u = users.find(x => x.uid === b.dataset.bonus);
+    const cur = albumBonusOf(u);
+    const dlg = openDialog(`Álbumes de prueba · ${u.displayName}`, `
+      <p class="muted small" style="margin:0">Con el plan Gratis puede tener 1 álbum activo a la vez. Sumale álbumes extra por un tiempo para que pruebe la plataforma.</p>
+      <label class="field">Álbumes extra<input type="number" id="bn-count" min="1" max="50" step="1" value="${cur?.count || 3}"></label>
+      <label class="field">Hasta el<input type="date" id="bn-until" value="${new Date(cur?.until || Date.now() + 30 * 86400000).toISOString().slice(0, 10)}"></label>`,
+      `${cur ? '<button class="btn ghost danger" id="bn-off">Quitar</button>' : ''}<button class="btn primary" id="bn-save">Guardar</button>`);
+    const save = async albumBonus => {
+      try { await updateDoc(doc(db, 'users', u.uid), { albumBonus }); dlg.close(); toast(albumBonus ? 'Álbumes de prueba asignados' : 'Álbumes de prueba quitados'); viewAdminPhotographers(); }
+      catch (e) { toast(errMsg(e), 'error'); }
+    };
+    $('#bn-save', dlg).onclick = () => {
+      const count = Math.round(Number($('#bn-count', dlg).value) || 0), d = $('#bn-until', dlg).value;
+      if (!(count > 0) || !d) return toast('Completá la cantidad y la fecha.', 'error');
+      save({ count, until: Timestamp.fromMillis(Date.parse(`${d}T23:59:59-03:00`)), givenAt: Timestamp.now() });
+    };
+    $('#bn-off', dlg)?.addEventListener('click', () => save(null));
   });
   // Confirmación manual de la cuenta (no puede abrir el mail de confirmación).
   $$('[data-verify]').forEach(b => b.onclick = async () => {
@@ -2127,6 +2153,7 @@ async function viewAdminCustomers() {
     </div>
     <div class="row" style="margin-bottom:12px">
       <input type="search" id="cu-q" placeholder="Buscar por nombre o email" value="${esc(custQ)}" style="max-width:320px">
+      <form id="cu-order" class="row" style="gap:6px"><input type="search" id="cu-oid" placeholder="Código de pedido (ej: A1B2C3D4)" style="max-width:220px"><button class="btn sm">👁️ Ver pedido</button></form>
       <div class="tabs" style="margin:0">${[['all', 'Todos'], ['buyers', 'Compraron'], ['none', 'Nunca compraron']].map(([k, l]) => `<button class="chip ${custFilter === k ? 'on' : ''}" data-cf="${k}">${l}</button>`).join('')}</div>
     </div>
     <div class="card">${list.length ? `<div class="table-wrap"><table class="list">
@@ -2141,6 +2168,14 @@ async function viewAdminCustomers() {
 
   let t;
   $('#cu-q').oninput = e => { clearTimeout(t); t = setTimeout(() => { custQ = e.target.value; viewAdminCustomers().then(() => { const i = $('#cu-q'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }); }, 300); };
+  // Revisar un pedido (por ejemplo, la calidad que recibió el comprador): se busca por el código que ve el cliente.
+  $('#cu-order').onsubmit = e => {
+    e.preventDefault();
+    const code = $('#cu-oid').value.trim().toLowerCase();
+    const o = code.length >= 6 && os.docs.find(d => d.id.toLowerCase().startsWith(code));
+    if (!o) return toast('No encontré un pedido con ese código.', 'error');
+    window.open(`index.html#/pedido/${o.id}`, '_blank');
+  };
   $$('[data-cf]').forEach(b => b.onclick = () => { custFilter = b.dataset.cf; viewAdminCustomers(); });
   $('#cu-csv').onclick = () => {
     const cell = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
@@ -2601,6 +2636,7 @@ async function viewAdminConfig() {
     <div class="card row" style="justify-content:space-between">
       <div><strong>Refrescar todos los dispositivos</strong><br><span class="muted small">Recarga el sitio y el panel en todos los navegadores abiertos (oficial y prueba), en los próximos 5 minutos o cuando vuelvan a la pestaña. Los que están subiendo fotos ven un aviso y no se cortan.</span></div>
       <button class="btn" id="a-reload">🔄 Refrescar todos</button>
+      <button class="btn" id="a-mailtest" title="Manda un mail a tu casilla para confirmar que Resend anda">✉️ Enviarme un mail de prueba</button>
     </div>
     <div class="card stack" id="a-push"></div>
     <div class="card stack" id="a-transfer"></div>
@@ -2686,6 +2722,12 @@ async function viewAdminConfig() {
   draw();
   drawSuperPush();
   drawAdminTransfer();
+  $('#a-mailtest').onclick = async e => {
+    e.target.disabled = true;
+    try { const r = await apiPost('/admin/mail/test'); toast(`Mail enviado a ${r.to}. Revisá la bandeja (y Spam).`); }
+    catch (err) { toast(errMsg(err), 'error'); }
+    e.target.disabled = false;
+  };
   $('#a-reload').onclick = async () => {
     if (!confirm('¿Recargar el sitio en todos los dispositivos abiertos?')) return;
     try { await setDoc(doc(db, 'settings', 'app'), { reloadAt: serverTimestamp() }, { merge: true }); toast('Listo: se van a recargar en los próximos minutos'); }

@@ -79,7 +79,9 @@ function draw(app, o) {
     refunded: ['↩️ Pago reembolsado', 'Este pedido fue reembolsado.', ''],
   }[o.status] || [o.status, '', ''];
 
+  const review = currentUser() && o.buyerUid !== currentUser().uid;
   app.innerHTML = `
+    ${review ? '<div class="notice small">👁️ <strong>Vista de revisión:</strong> ves este pedido como lo ve el comprador y descargás los mismos archivos que recibió.</div>' : ''}
     <a href="#/cuenta" class="muted small" style="text-decoration:none">← Mis compras</a>
     <div class="notice ${head[2]}" style="margin-top:10px"><strong>${head[0]}</strong><br>${head[1]}</div>
     <div class="card stack">

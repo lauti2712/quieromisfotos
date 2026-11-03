@@ -1,5 +1,8 @@
 // Notificaciones push (Firebase Cloud Messaging) a los dispositivos que el usuario activó (userPrivate/{uid}.fcmTokens).
 import { adminGet, adminUpdate, accessToken, adminQuery, adminDelete, adminGetMany, adminSet } from './admin.js';
+import { sendMany, mailLayout, authEmails } from './mail.js';
+
+const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 export async function notifyUser(env, uid, { title, body, link }) {
   if (env.FIREBASE_EMULATOR) return;
@@ -75,6 +78,16 @@ export async function drainPushQueue(env) {
   const batch = job.uids.slice(0, 25), rest = job.uids.slice(25);
   const privs = await adminGetMany(env, batch.map(u => `userPrivate/${u}`));
   const tokens = privs.flatMap(p => p?.fcmTokens || []).slice(0, SEND_PER_RUN);
+  // Sin notificaciones activas (iPhone sin la web instalada, permiso negado): el aviso les llega por mail.
+  const noPush = batch.filter((u, i) => !(privs[i]?.fcmTokens || []).length);
+  if (noPush.length && job.mail !== false) {
+    const emails = await authEmails(env, noPush).catch(() => ({}));
+    await sendMany(env, Object.values(emails).map(to => ({
+      to, subject: job.title.replace(/^📸\s*/, '📸 '),
+      html: mailLayout({ title: job.title.replace(/^📸\s*/, ''), intro: esc(job.body), cta: { label: '📸 Ver las fotos', url: job.link },
+        foot: 'Te llega este mail porque tocaste 🔔 Avisarme en Quiero Mis Fotos. Para no recibir más avisos, tocá de nuevo 🔔 en el evento o en el perfil del fotógrafo.' }),
+    }))).catch(e => console.error('mail seguidores', e));
+  }
   const at = await accessToken(env);
   for (const token of tokens) {
     await fetch(`https://fcm.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/messages:send`, {

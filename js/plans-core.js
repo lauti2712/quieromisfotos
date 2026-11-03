@@ -46,6 +46,18 @@ function basePlanSpec(planId, st) {
   }
 }
 
+// Álbumes activos a la vez: ilimitado en los planes pagos; en Gratis, 1 + los álbumes de prueba que dio el superadmin
+// (users.albumBonus = { count, until }) mientras estén vigentes.
+export function albumBonusOf(user, now = Date.now()) {
+  const b = user?.albumBonus;
+  const until = b?.until?.toMillis?.() ?? b?.until?.getTime?.() ?? 0;
+  return b && b.count > 0 && until > now ? { count: b.count, until } : null;
+}
+export function activeAlbumLimit(user, st, now = Date.now()) {
+  if (planOf(user, now) !== 'free') return Infinity;
+  return (planSpec('free', st, now).albums || 1) + (albumBonusOf(user, now)?.count || 0);
+}
+
 // Lo que rige hoy para un fotógrafo, según su plan vigente.
 export function rulesFor(user, st = {}) {
   const plan = planOf(user);

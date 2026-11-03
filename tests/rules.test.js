@@ -120,6 +120,8 @@ test('transferencia: el fotógrafo no se desbloquea solo; saldos y pagos privado
     await setDoc(doc(db, 'platformPrivate/feeBank'), { alias: 'qmf.alias' });
   });
   await assertFails(updateDoc(doc(user('ana'), 'users/ana'), { transferBlocked: false }));
+  await assertFails(updateDoc(doc(user('ana'), 'users/ana'), { albumBonus: { count: 5 } }));
+  await assertSucceeds(updateDoc(doc(as(SUPER), 'users/ana'), { albumBonus: { count: 3 } }));
   await assertSucceeds(updateDoc(doc(user('ana'), 'users/ana'), { transferOn: true, transferAlias: 'ana.fotos' }));
   await assertSucceeds(getDoc(doc(user('ana'), 'feeBalance/ana')));
   await assertFails(getDoc(doc(user('beto'), 'feeBalance/ana')));
