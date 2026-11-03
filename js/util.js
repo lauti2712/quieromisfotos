@@ -70,8 +70,10 @@ export function avatarHtml(user, cls = '') {
 }
 
 export function coverHtml(ev, badge = '') {
-  const inner = ev.coverUrl
-    ? `<img src="${esc(ev.coverUrl)}" alt="" loading="lazy">`
+  // Portada elegida por el fotógrafo; si no, una de las fotos del álbum (la pone el Worker).
+  const src = ev.coverUrl || ev.autoCoverUrl;
+  const inner = src
+    ? `<img src="${esc(src)}" alt="" loading="lazy">`
     : `<span class="initial">${esc(initials(ev.name))}</span>`;
   return `<div class="cover">${inner}${badge ? `<span class="badge">${badge}</span>` : ''}</div>`;
 }

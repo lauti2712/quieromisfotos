@@ -104,10 +104,12 @@ def page(title, desc, canonical, body, image=None, jsonld=None, redirect=None):
 
 def event_card(ev):
     tags = [tag_name[t] for t in ev.get('tagIds') or [] if t in tag_name][:3]
-    cover = f'<img src="{e(ev["coverUrl"])}" alt="" loading="lazy">' if ev.get('coverUrl') else f'<span class="initial">{e((ev.get("name") or "?")[:2].upper())}</span>'
+    src = ev.get('coverUrl') or ev.get('autoCoverUrl')
+    cover = f'<img src="{e(src)}" alt="" loading="lazy">' if src else f'<span class="initial">{e((ev.get("name") or "?")[:2].upper())}</span>'
     return f'''<a class="event-card" href="/e/{e(ev["id"])}/"><div class="cover">{cover}</div><div class="body">
       <span class="date">{e(fmt_date(ev.get("date")))}</span><span class="name">{e(ev.get("name"))}</span>
       {f'<span class="muted small">📍 {e(ev["location"])}</span>' if ev.get('location') else ''}
+      {f'<span class="muted small">📷 {e(", ".join(ev["photographerNames"]))}</span>' if ev.get('photographerNames') else ''}
       {f'<div class="pills">{"".join(f"<span class=pill>{e(t)}</span>" for t in tags)}</div>' if tags else ''}</div></a>'''
 
 
@@ -140,7 +142,7 @@ for ev in events:
     tags = [tag_name[t] for t in ev.get('tagIds') or [] if t in tag_name]
     phs = [users[u] for u in ev.get('photographerUids') or [] if u in users]
     photos = query('photos', [('eventId', '==', ev['id']), ('hidden', '==', False)], limit=12)
-    first_img = ev.get('coverUrl') or (photos[0]['previewUrl'] if photos else None)
+    first_img = ev.get('coverUrl') or ev.get('autoCoverUrl') or (photos[0]['previewUrl'] if photos else None)
     name = ev.get('name', '')
     title = f'Fotos de {name} · Quiero Mis Fotos'
     desc = f'Encontrá y descargá tus fotos de {name}' + (f' ({fmt_date(ev.get("date"))}' if ev.get('date') else '') + (f', {ev["location"]})' if ev.get('location') else ')' if ev.get('date') else '') + \

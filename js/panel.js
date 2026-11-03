@@ -27,6 +27,7 @@ import { initRefresh } from './refresh.js';
 import { pushAvailable, pushOn, pushBlocked, enablePush, disablePush, isIos, isStandalone, listenForeground } from './push.js';
 import { shareLink, eventUrl } from './share.js';
 import { mountShareCard } from './panel-share.js';
+import { cropImage } from './cropper.js';
 
 const root = $('#root');
 const S = { user: null, profile: null, isSuper: false, settings: { ...DEFAULT_SETTINGS }, tax: null };
@@ -1511,24 +1512,49 @@ function eventDialog(ev, onSaved) {
     <input type="hidden" id="ev-cover" value="${esc(ev.coverUrl)}">
     <div class="field"><span>Portada</span>
       ${isNew ? '<span class="muted small">Podés subir la portada después de crear el evento.</span>' : `
-        <div class="row"><img id="ev-cover-img" src="${esc(ev.coverUrl)}" alt="" class="${ev.coverUrl ? '' : 'hidden'}" style="width:160px;aspect-ratio:16/9;object-fit:cover;border-radius:8px">
+        <div class="row"><img id="ev-cover-img" src="${esc(ev.coverUrl || ev.autoCoverUrl || '')}" alt="" class="${ev.coverUrl || ev.autoCoverUrl ? '' : 'hidden'}" style="width:160px;aspect-ratio:16/9;object-fit:cover;border-radius:8px">
+          <button type="button" class="btn sm" id="ev-cover-pick">🖼️ Elegir de mis fotos</button>
           <label class="btn sm">Subir imagen<input type="file" id="ev-cover-file" accept="image/*" hidden></label>
-          ${ev.coverUrl ? '<button type="button" class="btn sm ghost" id="ev-cover-rm">Quitar</button>' : ''}</div>`}
+          ${ev.coverUrl ? '<button type="button" class="btn sm ghost" id="ev-cover-rm">Quitar</button>' : ''}</div>
+        <span class="hint">${ev.coverUrl ? 'Portada elegida por vos.' : 'Si no elegís una, usamos una de tus fotos.'} La elegida se ve sin marca de agua y la podés encuadrar.</span>`}
     </div>
     <label class="field">Estado<select id="ev-status"><option value="draft" ${ev.status !== 'published' ? 'selected' : ''}>Borrador (no visible al público)</option><option value="published" ${ev.status === 'published' ? 'selected' : ''}>Publicado (ya tiene link para compartir)</option></select></label>
     ${general ? '<p class="muted small" style="margin:0">Los eventos generales siempre están abiertos para que se sumen fotógrafos.</p>'
       : `<label class="check"><input type="checkbox" id="ev-open" ${ev.openToJoin ? 'checked' : ''}> Permitir que otros fotógrafos se sumen a este evento</label>`}
   `, `<button class="btn" data-close>Cancelar</button><button class="btn primary" id="ev-save">${isNew ? 'Crear' : 'Guardar'}</button>`);
 
+  // Portada: se encuadra (16:9) y se sube. Puede venir de un archivo o de una foto del álbum (desde el original, sin marca).
+  const setCover = async blob => {
+    const cropped = await cropImage(blob);
+    if (!cropped) return;
+    toast('Subiendo portada…');
+    const { url } = await uploadAsset('cover', cropped, ev.id);
+    $('#ev-cover', dlg).value = url;
+    const img = $('#ev-cover-img', dlg); img.src = url; img.classList.remove('hidden');
+  };
   $('#ev-cover-file', dlg)?.addEventListener('change', async e => {
     const f = e.target.files[0];
+    e.target.value = '';
     if (!f) return;
-    try {
-      toast('Subiendo portada…');
-      const { url } = await uploadAsset('cover', await resizeToJpeg(f, 1600, 0.82), ev.id);
-      $('#ev-cover', dlg).value = url;
-      const img = $('#ev-cover-img', dlg); img.src = url; img.classList.remove('hidden');
-    } catch (err) { toast(errMsg(err), 'error'); }
+    try { await setCover(f); } catch (err) { toast(errMsg(err), 'error'); }
+  });
+  $('#ev-cover-pick', dlg)?.addEventListener('click', async () => {
+    const snap = await getDocs(query(collection(db, 'photos'), where('eventId', '==', ev.id), where('photographerUid', '==', S.user.uid), where('hidden', '==', false), limit(150))).catch(() => null);
+    const list = (snap?.docs || []).map(d => ({ id: d.id, ...d.data() }));
+    if (!list.length) return toast('Todavía no subiste fotos a este evento.', 'error');
+    const pick = openDialog('Elegí la foto de portada', `<div class="cover-pick">${list.map(p => `<button type="button" data-pid="${p.id}"><img src="${esc(p.thumbUrl)}" alt="" loading="lazy"></button>`).join('')}</div>`);
+    $$('[data-pid]', pick).forEach(b => b.onclick = async () => {
+      b.disabled = true;
+      try {
+        toast('Bajando la foto sin marca de agua…');
+        const r = await apiPost(`/review/original/${b.dataset.pid}`);
+        const res = await fetch(r.url);
+        if (!res.ok) throw new Error('No se pudo bajar la foto. Probá con otra.');
+        const blob = await res.blob();
+        pick.close();
+        await setCover(blob);
+      } catch (err) { b.disabled = false; toast(errMsg(err), 'error'); }
+    });
   });
   $('#ev-cover-rm', dlg)?.addEventListener('click', () => { $('#ev-cover', dlg).value = ''; $('#ev-cover-img', dlg).classList.add('hidden'); });
   const bindChip = c => { c.onclick = () => { c.classList.toggle('on'); c.classList.contains('on') ? sel.add(c.dataset.tag) : sel.delete(c.dataset.tag); }; };

@@ -4,7 +4,7 @@
 //        -> registra la foto ya subida (muestra, miniatura y original en R2) y suma al set.
 //   POST /photos/{eid}/delete      X-Upload-Token  {ids: [...]} (hasta 100)
 //        -> borra las fotos; las que tienen una venta con descarga vigente solo se ocultan.
-import { adminGetMany, adminQuery, adminCommit } from './admin.js';
+import { adminGet, adminGetMany, adminQuery, adminCommit } from './admin.js';
 import { albumPhotoLimit, rulesFor, isFree } from './plans.js';
 import { json, httpError } from './http.js';
 
@@ -59,6 +59,16 @@ export async function commitPhoto(req, env, s, eid, pid, publicBase) {
     // La galería pública muestra "subiendo fotos…" mientras llegan fotos nuevas.
     { update: setPath, data: { lastUploadAt: new Date(now) }, mask: ['lastUploadAt'] },
   ];
+  // Tarjeta del evento: el nombre del fotógrafo (con su primera foto) y, si no eligió portada, una de sus fotos.
+  // Se pone con la primera y se cambia con la foto 15 (suele ser más representativa que la primera de la tanda).
+  const n = set.photoCount || 0;
+  if (n === 0 || n === 14) {
+    const ev = await adminGet(env, `events/${eid}`).catch(() => null);
+    if (ev) {
+      if (n === 0 && user?.displayName) ops.push({ union: `events/${eid}`, field: 'photographerNames', values: [user.displayName] });
+      if (!ev.coverUrl && (n === 0 ? !ev.autoCoverUrl : true)) ops.push({ update: `events/${eid}`, data: { autoCoverUrl: photo.previewUrl }, mask: ['autoCoverUrl'] });
+    }
+  }
   // El plazo de venta arranca con la primera foto (una sola vez), según el plan del fotógrafo.
   let expiresAt = set.expiresAt?.getTime?.() || null;
   if (!expiresAt) {

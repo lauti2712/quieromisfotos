@@ -5,7 +5,7 @@
 // Retención: los originales de un álbum se borran GRACE_DAYS después de que deja de venderse
 // (vencimiento + extensiones pagas). Solo borra si RETENTION_DELETE="1"; si no, lo informa como simulación.
 import { verifyIdToken } from './firebase.js';
-import { adminGet, adminGetMany, adminSet, adminUpdateMany } from './admin.js';
+import { adminGet, adminGetMany, adminSet, adminUpdateMany, adminCommit } from './admin.js';
 import { json, httpError } from './http.js';
 import { setAvailableUntil } from './orders.js';
 import { notifyUser, notifyFollowersOnce } from './push.js';
@@ -83,6 +83,8 @@ export async function scanStorage(env) {
     s.priv = 0; s.n = 0;
   }
   retention.upcoming.sort((a, b) => a.deleteAt - b.deleteAt).splice(40);
+  // Tarjetas de eventos viejos (antes de que el Worker los completara al subir): nombres de los fotógrafos y portada automática.
+  await fillEventCards(env, ids, docs, sets).catch(e => console.error('tarjetas', e));
   // Índices de caras de álbumes que ya no existen o cuyos originales se borraron (Privacidad: se borran con el álbum).
   const fids = Object.keys(faceKeys);
   if (fids.length) {
@@ -181,4 +183,33 @@ async function sendWarnings(env, warnings) {
     out[w.id] = w.type === 'expiry' ? { warnedExpiry: new Date(w.until) } : { warnedDelete: new Date(w.deleteAt) };
   }
   return out;
+}
+
+// Eventos con fotos sin photographerNames o sin portada: se completan (de a 30 por día). La portada automática es una
+// muestra al azar del álbum con más fotos (ya lleva marca de agua); la que elige el fotógrafo (coverUrl) tiene prioridad.
+async function fillEventCards(env, ids, docs, sets) {
+  const byEvent = {};
+  ids.forEach((id, i) => { const [eid, uid] = id.split('/'); if (docs[i] && sets[id].objs.length) (byEvent[eid] ||= []).push({ uid, set: docs[i], objs: sets[id].objs }); });
+  const eids = Object.keys(byEvent).slice(0, 300);
+  if (!eids.length) return;
+  const evs = await adminGetMany(env, eids.map(e => `events/${e}`));
+  const todo = eids.map((eid, i) => ({ eid, ev: evs[i] })).filter(x => x.ev && (!(x.ev.photographerNames || []).length || (!x.ev.coverUrl && !x.ev.autoCoverUrl))).slice(0, 30);
+  if (!todo.length) return;
+  const uids = [...new Set(todo.flatMap(x => byEvent[x.eid].filter(s => (s.set.photoCount || 0) > 0).map(s => s.uid)))];
+  const users = uids.length ? await adminGetMany(env, uids.map(u => `users/${u}`)) : [];
+  const nameOf = Object.fromEntries(uids.map((u, i) => [u, users[i]?.displayName || '']));
+  const base = (env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
+  const ops = [];
+  for (const { eid, ev } of todo) {
+    const withPhotos = byEvent[eid].filter(s => (s.set.photoCount || 0) > 0).sort((a, b) => (b.set.photoCount || 0) - (a.set.photoCount || 0));
+    const names = withPhotos.map(s => nameOf[s.uid]).filter(Boolean);
+    const data = {};
+    if (!(ev.photographerNames || []).length && names.length) data.photographerNames = names;
+    if (!ev.coverUrl && !ev.autoCoverUrl && withPhotos[0] && base) {
+      const previews = withPhotos[0].objs.filter(o => o.kind === 'pub' && o.key.endsWith('_p.jpg'));
+      if (previews.length) data.autoCoverUrl = `${base}/${previews[Math.floor(Math.random() * previews.length)].key}`;
+    }
+    if (Object.keys(data).length) ops.push({ update: `events/${eid}`, data, mask: Object.keys(data) });
+  }
+  if (ops.length) await adminCommit(env, ops);
 }

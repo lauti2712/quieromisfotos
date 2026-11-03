@@ -178,6 +178,7 @@ function eventCard(ev, tax) {
         <span class="date">${esc(fmtDate(ev.date))}</span>
         <span class="name">${esc(ev.name)}</span>
         ${ev.location ? `<span class="muted small">📍 ${esc(ev.location)}</span>` : ''}
+        ${(ev.photographerNames || []).length ? `<span class="muted small">📷 ${esc(ev.photographerNames.join(', '))}</span>` : ''}
         ${tags.length ? `<div class="pills">${tags.map(t => `<span class="pill">${esc(t.name)}</span>`).join('')}</div>` : ''}
       </div>
     </a>`;
@@ -209,7 +210,7 @@ async function renderEvent(id) {
     <a href="#/" class="muted small" style="text-decoration:none">← Todos los eventos</a>
     <div class="event-hero" style="margin-top:10px">
       <div class="cover">
-        ${ev.coverUrl ? `<img src="${esc(ev.coverUrl)}" alt="">` : ''}
+        ${ev.coverUrl || ev.autoCoverUrl ? `<img src="${esc(ev.coverUrl || ev.autoCoverUrl)}" alt="">` : ''}
         <div class="hero-actions">
           <button class="btn sm hero-btn" id="ev-follow">🔔 Avisarme</button>
           <button class="btn sm hero-btn" id="ev-share">🔗 Compartir</button>
