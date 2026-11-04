@@ -290,10 +290,12 @@ if sport_pages:
 # ---------------------------------------------------------------- fotógrafos por zona: /fotografos/{zona}/
 zones = {}
 for u in users.values():
-    zs = slugify(u.get('zone'))
-    if zs and u.get('slug'):
-        zn = u['zone'].strip()
-        zones.setdefault(zs, {'name': zn.title() if zn == zn.lower() else zn, 'users': []})['users'].append(u)
+    if not u.get('slug'): continue
+    # Su localidad y las zonas donde trabaja (elegidas de la lista oficial).
+    for zn in [u.get('zone') or ''] + list(u.get('workPlaces') or []):
+        zs, zn = slugify(zn), zn.strip()
+        z = zones.setdefault(zs, {'name': zn.title() if zn == zn.lower() else zn, 'users': []}) if zs else None
+        if z is not None and u not in z['users']: z['users'].append(u)
 for zs, z in zones.items():
     c_html, c_ld = crumbs([('Inicio', '/'), ('Fotógrafos', '/fotografos/'), (z['name'], f'/fotografos/{zs}/')])
     acts = sorted({sports[t]['name'] for u in z['users'] for t in (u.get('specialties') or []) if t in sports})

@@ -28,7 +28,7 @@ import { pushAvailable, pushOn, pushBlocked, enablePush, disablePush, isIos, isS
 import { shareLink, eventUrl } from './share.js';
 import { mountShareCard } from './panel-share.js';
 import { cropImage } from './cropper.js';
-import { placeInput, canonicalPlace } from './places.js';
+import { placeInput, canonicalPlace, multiPlaceInput, guessPlaces } from './places.js';
 
 const root = $('#root');
 const S = { user: null, profile: null, isSuper: false, settings: { ...DEFAULT_SETTINGS }, tax: null };
@@ -836,7 +836,9 @@ function viewProfile() {
       </div>
       <div class="grid2">
         <label class="field">Localidad<input type="text" id="pf-zone" maxlength="80" required value="${esc(p.zone)}" placeholder="Empezá a escribir y elegí de la lista"><span class="hint">Elegila de la lista: así te encuentran en "Fotógrafos en tu zona".</span></label>
-        <label class="field">Zonas donde trabajás<input type="text" id="pf-workzones" maxlength="120" value="${esc(p.workZones || '')}" placeholder="Ej: Rosario, Funes, Roldán"></label>
+        <div class="field"><span>Zonas donde trabajás</span><input type="text" id="pf-workzones" maxlength="80">
+          <div class="pills" id="pf-workchips" style="margin-top:6px"></div>
+          <span class="hint" id="pf-workhint">Localidades donde cubrís eventos. Te encuentran también en esas zonas.</span></div>
       </div>
       <label class="field">Bio<textarea id="pf-bio" maxlength="600" placeholder="Contá qué actividades cubrís, tu experiencia…">${esc(p.bio)}</textarea></label>
       <div class="field"><span>Actividades que cubrís</span>
@@ -932,6 +934,14 @@ function viewProfile() {
   $('#pf-sport-new')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addSport(); } });
   $('#pf-slug').oninput = e => { $('#pf-slug-prev').textContent = slugify(e.target.value); };
   placeInput($('#pf-zone'));
+  // Zonas de trabajo: de la lista oficial. Si había texto escrito a mano, se reconocen las que se puedan.
+  const oldWork = !p.workPlaces && p.workZones ? p.workZones : '';
+  let work = null;
+  (async () => {
+    const init = p.workPlaces || (oldWork ? await guessPlaces(oldWork, (p.zone || '').split(',').pop()).catch(() => []) : []);
+    work = multiPlaceInput($('#pf-workzones'), $('#pf-workchips'), init);
+    if (oldWork) $('#pf-workhint').textContent = `Antes decía: "${oldWork}". Revisá las localidades y sumá las que falten; se guardan al tocar Guardar.`;
+  })();
   $('#pf').onsubmit = async e => {
     e.preventDefault();
     const zone = await canonicalPlace($('#pf-zone').value);
@@ -943,7 +953,7 @@ function viewProfile() {
     const upd = {
       displayName: $('#pf-name').value.trim(), slug, zone,
       bio: $('#pf-bio').value.trim(), avatarUrl: $('#pf-avatar').value.trim(), socials,
-      workZones: $('#pf-workzones').value.trim(),
+      ...(work ? { workPlaces: work.get(), workZones: work.get().map(x => x.split(',')[0]).join(', ') } : {}),
       specialties: $$('#pf-sports .chip.on').map(c => c.dataset.v),
       services: $$('#pf-services .chip.on').map(c => c.dataset.v),
       gear: gear.map(g => ({ type: GEAR_TYPES.includes(g.type) ? g.type : 'Otro', name: String(g.name || '').trim().slice(0, 60) })).filter(g => g.name),

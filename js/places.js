@@ -26,6 +26,43 @@ export async function canonicalPlace(text) {
   return list.find(x => x.key === k)?.label || '';
 }
 
+// Texto viejo escrito a mano ("Rosario, Funes y Roldán"): las que se reconocen sin dudas (un solo nombre en todo el país,
+// o el que coincide con la provincia de su localidad).
+export async function guessPlaces(text, prov = '') {
+  await loadPlaces();
+  const out = [];
+  for (const t of String(text || '').split(/,| y |\/|;|·/)) {
+    const k = norm(t);
+    if (k.length < 3) continue;
+    const exact = list.find(x => x.key === k);
+    const same = exact ? [exact] : list.filter(x => x.name === k);
+    const pick = same.length === 1 ? same[0] : same.find(x => prov && x.key.endsWith(', ' + norm(prov)));
+    if (pick && !out.includes(pick.label)) out.push(pick.label);
+  }
+  return out;
+}
+
+// Varias localidades como etiquetas: input de búsqueda + lista. get() devuelve las elegidas.
+export function multiPlaceInput(input, chipsBox, initial = [], { max = 12, onChange } = {}) {
+  let items = [...initial];
+  const draw = () => {
+    chipsBox.innerHTML = items.map((x, i) => `<span class="chip on">${x.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))} <button type="button" data-rm="${i}" aria-label="Quitar" style="border:0;background:none;color:inherit;cursor:pointer;padding:0 0 0 4px">✕</button></span>`).join('');
+    chipsBox.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { items.splice(+b.dataset.rm, 1); draw(); onChange?.(items); });
+    input.disabled = items.length >= max;
+    input.placeholder = items.length >= max ? `Hasta ${max} localidades` : 'Sumá una localidad: empezá a escribir y elegí de la lista';
+  };
+  placeInput(input);
+  input.addEventListener('change', async () => {
+    const c = await canonicalPlace(input.value);
+    if (!c) return;
+    if (!items.includes(c) && items.length < max) items.push(c);
+    input.value = ''; input.setCustomValidity('');
+    draw(); onChange?.(items);
+  });
+  draw();
+  return { get: () => [...items] };
+}
+
 function search(q, max = 8) {
   const k = norm(q);
   if (k.length < 2) return [];
