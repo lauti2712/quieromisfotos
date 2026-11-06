@@ -634,6 +634,7 @@ async function viewHome() {
     ${newsCardHtml()}
     <div id="home-alerts"></div>
     ${approved && !p.mpConnected && totalPhotos > 0 ? `<div class="notice danger"><strong>💳 Tus fotos se ven pero no se pueden comprar.</strong><br>Falta vincular Mercado Pago: los compradores ven "todavía no está a la venta". <a href="#/mp">Vincular ahora</a></div>` : ''}
+    ${(np => np.length ? `<div class="notice danger"><strong>💲 Álbumes sin precio: nadie puede comprar esas fotos.</strong><br>${np.map(ev => `<a href="#/evento/${ev.id}">${esc(ev.name)}</a>`).join(' · ')}</div>` : '')(evs.filter((ev, i) => sets[i] && (sets[i].photoCount || 0) > 0 && !(sets[i].price > 0) && !sets[i].originalsDeleted))}
     ${installCardHtml()}
     ${p.status === 'pending' ? `<div class="notice warn"><strong>Tu cuenta está pendiente de aprobación.</strong><br>Mientras tanto podés completar tu perfil, subir tu foto y tu portfolio, y configurar precios y marca de agua.</div>` : ''}
     ${done < steps.length ? `<div class="card stack">
@@ -1900,6 +1901,7 @@ function renderSetEditor(ev, set, reload) {
       ${retentionHtml(set)}
       <div id="short-link"></div>
     </div>
+    ${!(set.price > 0) && (set.photoCount || 0) > 0 ? '<div class="notice danger"><strong>💲 Este álbum no tiene precio: nadie puede comprar las fotos.</strong><br>Cargá el precio por foto acá abajo y tocá Guardar.</div>' : ''}
     <form class="card stack" id="set-form">
       <div class="row" style="justify-content:space-between"><h2 style="margin:0">Precios</h2><button type="button" class="btn sm" id="use-def">Usar mis valores por defecto</button></div>
       <label class="field" style="max-width:240px">Precio por foto (ARS)<input type="number" min="0" step="1" id="st-price" value="${set.price || ''}"></label>
