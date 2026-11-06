@@ -10,6 +10,7 @@
 //   DELETE /photo/{eid}/{pid}          X-Upload-Token                         (versión anterior del panel) borra los archivos
 //   PUT    /bibs/{eid}/{pid}           X-Upload-Token  (jpeg sin marca)       lee los dorsales con IA -> { bibs }
 //   POST   /faces/{eid}[/mine|/match]  búsqueda por selfie (faces.js)
+//   POST   /events/{eid}/close         Bearer   cerrar álbum: borra originales, quedan 10 de muestra (samples.js)
 //   GET|POST /faces/me[/delete]        Bearer   cara guardada del comprador para avisarle (faces.js)
 //   GET    /public/{key}                                                      sirve qmf-public (si no hay dominio público)
 //
@@ -54,6 +55,7 @@ import { createTag } from './tags.js';
 import { scanBibsRequest } from './bibs.js';
 import { addFaces, myFaces, matchFaces, myFace } from './faces.js';
 import { commitPhoto, deletePhotos, orderDownloadUntil } from './photos.js';
+import { closeAlbum } from './samples.js';
 import { statsHit } from './stats.js';
 import { sharePage } from './share.js';
 import { teamInvite, teamJoin, teamRemove, teamEvents, teamRefresh, canUploadForTeam } from './team.js';
@@ -141,6 +143,7 @@ async function route(req, env, ctx) {
     if (ID_RE.test(parts[2])) return commitPhoto(req, env, s, parts[1], parts[2], publicBase(req, env));
   }
   if (parts[0] === 'faces' && parts[1] === 'me') return myFace(req, env, parts[2]);
+  if (m === 'POST' && parts[0] === 'events' && ID_RE.test(parts[1] || '') && parts[2] === 'close') return closeAlbum(req, env, parts[1]);
   if (parts[0] === 'faces' && ID_RE.test(parts[1] || '')) {
     if (m === 'POST' && parts.length === 2) return addFaces(req, env, await session(req, env), parts[1]);
     if (m === 'GET' && parts[2] === 'mine') return myFaces(req, env, await session(req, env), parts[1]);

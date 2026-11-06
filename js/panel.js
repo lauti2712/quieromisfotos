@@ -1815,10 +1815,20 @@ async function viewEvent(id) {
 
   const isCreator = ev.createdBy === me && ev.kind === 'own';
   const set = sets.get(me);
+  // Cerrar el álbum: el evento queda con 10 fotos de muestra y deja de contar como álbum activo (libera el lugar).
+  const closeBtn = (set?.photoCount || 0) > 0 && !set.originalsDeleted ? '<button class="btn" id="ev-close">📦 Cerrar álbum</button>' : '';
+  const bindClose = () => $('#ev-close')?.addEventListener('click', async e => {
+    if (!confirm(`¿Cerrar el álbum "${ev.name}"?\n\n• Las fotos dejan de venderse y se borran los originales.\n• En el evento quedan 10 fotos de muestra con marca de agua.\n• Quien ya compró puede seguir descargando sus fotos.\n• Se libera el lugar para subir otro álbum.\n\nNo se puede deshacer.`)) return;
+    e.target.disabled = true; e.target.textContent = 'Cerrando…';
+    try { const r = await apiPost(`/events/${id}/close`); toast(`Álbum cerrado. Quedaron ${r.kept ?? 10} fotos de muestra.`); reload(); }
+    catch (err) { e.target.disabled = false; e.target.textContent = '📦 Cerrar álbum'; toast(errMsg(err), 'error'); }
+  });
   if (isCreator && ev.photographerUids.length === 1) {
-    $('#ev-danger').innerHTML = `<button class="btn danger" id="ev-del">Eliminar evento</button>`;
+    $('#ev-danger').innerHTML = `${closeBtn}<button class="btn danger" id="ev-del">Eliminar evento</button>`;
+    bindClose();
     $('#ev-del').onclick = async () => {
-      if ((set?.photoCount || 0) > 0) return toast('Primero borrá las fotos del evento.', 'error');
+      if ((set?.photoCount || 0) > 0 && !set.originalsDeleted) return toast('Este álbum tiene fotos. Para subir otro evento, tocá "📦 Cerrar álbum": quedan 10 fotos de muestra y se libera el lugar.', 'error');
+      if ((set?.photoCount || 0) > 0) return toast('El álbum ya está cerrado y queda como muestra en el calendario. No hace falta eliminarlo.', 'error');
       if (!confirm(`¿Eliminar "${ev.name}"?`)) return;
       try {
         const b = writeBatch(db);
@@ -1830,7 +1840,8 @@ async function viewEvent(id) {
       } catch (e) { toast(errMsg(e), 'error'); }
     };
   } else if (!isCreator) {
-    $('#ev-danger').innerHTML = `<button class="btn danger" id="ev-leave">Salir del evento</button>`;
+    $('#ev-danger').innerHTML = `${closeBtn}<button class="btn danger" id="ev-leave">Salir del evento</button>`;
+    bindClose();
     $('#ev-leave').onclick = async () => {
       if ((set?.photoCount || 0) > 0) return toast('Primero borrá tus fotos de este evento.', 'error');
       if (!confirm('¿Salir de este evento?')) return;
