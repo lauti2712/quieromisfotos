@@ -1721,8 +1721,27 @@ async function viewEvent(id) {
     $('#ev-sets').innerHTML = `<div class="card"><h2>Fotógrafos en el evento (${users.length})</h2>
       ${users.length ? users.map(u => {
         const st = sets.get(u.uid) || {};
-        return `<div class="item-row">${avatarHtml(u)}<div class="grow"><strong>${esc(u.displayName || u.uid)}</strong><br><span class="muted small">${fmtMoney(st.price)} por foto · ${st.photoCount || 0} fotos · 💾 ${fmtBytes(setBytes(st))} · ${(st.subalbums || []).length} sub-álbumes</span></div></div>`;
+        return `<div class="item-row">${avatarHtml(u)}<div class="grow"><strong>${esc(u.displayName || u.uid)}</strong><br><span class="muted small">${fmtMoney(st.price)} por foto · ${st.photoCount || 0} fotos · 💾 ${fmtBytes(setBytes(st))} · ${(st.subalbums || []).length} sub-álbumes${st.closedAt ? ' · 📦 cerrado' : ''}</span></div>
+          <div class="row">${(st.photoCount || 0) > 0 && !st.originalsDeleted ? `<button class="btn sm" data-sclose="${u.uid}" title="Quedan 10 fotos de muestra y se libera el lugar">📦 Cerrar</button>` : ''}<button class="btn sm danger" data-sdel="${u.uid}" title="Borra sus fotos, archivos y su álbum (no se puede si tiene ventas)">🗑️ Forzar eliminación</button></div></div>`;
       }).join('') : '<p class="muted">Todavía no se sumó ningún fotógrafo.</p>'}</div>`;
+    $$('[data-sclose]').forEach(b => b.onclick = async () => {
+      const u = users.find(x => x.uid === b.dataset.sclose);
+      if (!confirm(`¿Cerrar el álbum de ${u.displayName} en "${ev.name}"? Quedan 10 fotos de muestra y se libera su lugar. No se puede deshacer.`)) return;
+      b.disabled = true;
+      try { const r = await apiPost(`/events/${id}/close`, { uid: u.uid }); toast(`Álbum cerrado (${r.kept ?? 10} de muestra).`); viewEvent(id); }
+      catch (e) { b.disabled = false; toast(errMsg(e), 'error'); }
+    });
+    $$('[data-sdel]').forEach(b => b.onclick = async () => {
+      const u = users.find(x => x.uid === b.dataset.sdel);
+      const alone = (ev.photographerUids || []).length === 1 && ev.kind === 'own';
+      if (!confirm(`¿ELIMINAR el álbum de ${u.displayName} en "${ev.name}"?\n\nSe borran todas sus fotos y archivos${alone ? ' y también el evento' : ''}. No se puede deshacer.`)) return;
+      b.disabled = true;
+      try {
+        const r = await apiPost(`/admin/events/${id}/delete-album`, { uid: u.uid });
+        toast(`Eliminado: ${r.photos} fotos${r.eventDeleted ? ' y el evento' : ''}.`);
+        if (r.eventDeleted) location.hash = '#/admin/eventos'; else viewEvent(id);
+      } catch (e) { b.disabled = false; toast(errMsg(e), 'error'); }
+    });
     // Superadmin: la misma tarjeta para compartir que ven los fotógrafos (link del evento, texto, video, QR y cartel).
     // El video y el precio salen del fotógrafo con más fotos del evento.
     const main = users.slice().sort((a, b) => (sets.get(b.uid)?.photoCount || 0) - (sets.get(a.uid)?.photoCount || 0))[0];

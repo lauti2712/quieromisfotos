@@ -55,7 +55,7 @@ import { createTag } from './tags.js';
 import { scanBibsRequest } from './bibs.js';
 import { addFaces, myFaces, matchFaces, myFace } from './faces.js';
 import { commitPhoto, deletePhotos, orderDownloadUntil } from './photos.js';
-import { closeAlbum } from './samples.js';
+import { closeAlbum, forceDeleteAlbum } from './samples.js';
 import { statsHit } from './stats.js';
 import { sharePage } from './share.js';
 import { teamInvite, teamJoin, teamRemove, teamEvents, teamRefresh, canUploadForTeam } from './team.js';
@@ -144,6 +144,7 @@ async function route(req, env, ctx) {
   }
   if (parts[0] === 'faces' && parts[1] === 'me') return myFace(req, env, parts[2]);
   if (m === 'POST' && parts[0] === 'events' && ID_RE.test(parts[1] || '') && parts[2] === 'close') return closeAlbum(req, env, parts[1]);
+  if (m === 'POST' && parts[0] === 'admin' && parts[1] === 'events' && ID_RE.test(parts[2] || '') && parts[3] === 'delete-album') return forceDeleteAlbum(req, env, parts[2]);
   if (parts[0] === 'faces' && ID_RE.test(parts[1] || '')) {
     if (m === 'POST' && parts.length === 2) return addFaces(req, env, await session(req, env), parts[1]);
     if (m === 'GET' && parts[2] === 'mine') return myFaces(req, env, await session(req, env), parts[1]);

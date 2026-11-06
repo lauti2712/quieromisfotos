@@ -69,3 +69,35 @@ export async function closeAlbum(req, env, eid) {
   const r = await keepSamples(env, eid, uid);
   return json({ ok: true, ...r });
 }
+
+// Superadmin: eliminar del todo el álbum de un fotógrafo (fotos, archivos, huellas y su set). Si era el único fotógrafo
+// de un evento propio, se borra también el evento. No se permite si hay ventas (los compradores tienen que poder descargar).
+//   POST /admin/events/{eid}/delete-album   Bearer (superadmin)  {uid}
+export async function forceDeleteAlbum(req, env, eid) {
+  const c = await requireUser(req, env);
+  if (c.email !== 'lautarom87@gmail.com' || c.email_verified !== true) throw httpError(403, 'Solo superadmin');
+  const { uid } = await req.json().catch(() => ({}));
+  if (!uid) throw httpError(400, 'Falta el fotógrafo');
+  const [ev, set] = await Promise.all([adminGet(env, `events/${eid}`), adminGet(env, `events/${eid}/sets/${uid}`)]);
+  if (!ev) throw httpError(404, 'El evento no existe');
+  const orders = await adminQuery(env, 'orders', { filters: [['eventId', '==', eid], ['photographerUid', '==', uid], ['status', '==', 'approved']], limit: 1 });
+  if (orders.length) throw httpError(409, 'Este álbum tiene ventas: no se puede eliminar. Usá "Cerrar álbum" (quedan 10 de muestra y los compradores siguen descargando).');
+  const photos = await adminQuery(env, 'photos', { filters: [['eventId', '==', eid], ['photographerUid', '==', uid]], limit: 10000 });
+  const ops = photos.map(p => ({ del: `photos/${p.id}` }));
+  if (set) ops.push({ del: `events/${eid}/sets/${uid}` });
+  const others = (ev.photographerUids || []).filter(u => u !== uid);
+  const dropEvent = ev.kind === 'own' && !others.length;
+  if (dropEvent) ops.push({ del: `events/${eid}` });
+  else ops.push({ update: `events/${eid}`, data: { photographerUids: others }, mask: ['photographerUids'] });
+  for (let i = 0; i < ops.length; i += 400) await adminCommit(env, ops.slice(i, i + 400));
+  let files = 0;
+  for (const [bucket, prefix] of [[env.PRIVATE, `e/${eid}/${uid}/`], [env.PUBLIC, `e/${eid}/${uid}/`], [env.PRIVATE, `faces/${eid}/${uid}/`]]) {
+    let cursor;
+    do {
+      const r = await bucket.list({ prefix, cursor, limit: 1000 });
+      if (r.objects.length) { await bucket.delete(r.objects.map(o => o.key)); files += r.objects.length; }
+      cursor = r.truncated ? r.cursor : undefined;
+    } while (cursor);
+  }
+  return json({ ok: true, photos: photos.length, files, eventDeleted: dropEvent });
+}
