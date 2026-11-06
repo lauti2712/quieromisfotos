@@ -48,7 +48,10 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
   // Sin Mercado Pago vinculado no se puede cobrar: se ven las fotos pero no se agregan al carrito (el ejemplo sí, para mostrar).
   const canCharge = uid => !!ev.demo || !!byUid.get(uid)?.mpConnected;
   const forSale = uid => setForSale(sets.get(uid)) && canCharge(uid);
-  const expired = withPhotos.filter(p => !setForSale(sets.get(p.uid)) && setUntil(sets.get(p.uid)));
+  const isExpired = set => !!set && (set.originalsDeleted || (setUntil(set) > 0 && setUntil(set) <= Date.now()));
+  const expired = withPhotos.filter(p => isExpired(sets.get(p.uid)));
+  // Con fotos pero sin precio cargado: todavía no se pueden comprar (no es que vencieron).
+  const noPrice = withPhotos.filter(p => { const s = sets.get(p.uid); return s && !isExpired(s) && !(s.price > 0); });
   const noPay = withPhotos.filter(p => setForSale(sets.get(p.uid)) && !canCharge(p.uid));
   // Subida en curso: llegó una foto en los últimos 15 minutos (lo marca el Worker en el set).
   const uploading = withPhotos.filter(p => Date.now() - (sets.get(p.uid)?.lastUploadAt?.toMillis?.() || 0) < 15 * 60000);
@@ -63,6 +66,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
       <button class="btn primary">Buscar</button><button type="button" class="btn hidden" id="g-bib-x">Ver todas</button></div>
     </form>` : ''}
     ${uploading.length ? `<div class="notice ok small">📤 <strong>${uploading.map(p => esc(p.displayName)).join(', ')} está${uploading.length > 1 ? 'n' : ''} subiendo fotos ahora</strong> (van ${uploading.reduce((a, p) => a + (sets.get(p.uid)?.photoCount || 0), 0)}). Volvé en un rato o tocá <strong>🔔 Avisarme</strong> arriba.</div>` : ''}
+    ${noPrice.length ? `<div class="notice">⏳ ${noPrice.length === withPhotos.length ? 'Las fotos de este evento todavía no están a la venta' : `Las fotos de ${noPrice.map(p => esc(p.displayName)).join(', ')} todavía no están a la venta`}: el fotógrafo está terminando de cargar los precios. Tocá <strong>🔔 Avisarme</strong> arriba y te avisamos.</div>` : ''}
     ${noPay.length ? `<div class="notice">⏳ ${noPay.length === withPhotos.length ? 'Las fotos de este evento todavía no están a la venta' : `Las fotos de ${noPay.map(p => esc(p.displayName)).join(', ')} todavía no están a la venta`}: el fotógrafo está terminando de configurar los pagos. Tocá <strong>🔔 Avisarme</strong> arriba y te avisamos.</div>` : ''}
     ${selfieOn ? `<div class="g-selfie" id="g-selfie"><button class="btn primary" id="g-selfie-go">🤳 Buscarme con una selfie</button><span class="muted small">Te mostramos las fotos donde aparecés.</span>
       <input type="file" id="g-selfie-in" accept="image/*" capture="user" hidden></div>` : ''}
