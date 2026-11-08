@@ -13,7 +13,7 @@ import {
 } from './util.js';
 const waOf = (u, priv) => priv?.whatsapp || u.socials?.whatsapp || '';
 import { initTheme } from './theme.js';
-import { activeAlbumLimit, albumBonusOf } from './plans-core.js';
+import { activeAlbumLimit, albumBonusOf, photoBonusOf } from './plans-core.js';
 import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, ACTIVITY_TYPE, USER_TAG_TYPES, tagPills, SERVICES, isPro, mpPlanOf, GEAR_TYPES, PLANS, planOf, siteUrlOf, setUntil, setDeleteAt, GRACE_DAYS, albumPhotoLimit, feePercentFor, isFreePlan, setActive, planSpec, rulesFor, bibsOn } from './data.js';
 import { viewWeb } from './panel-web.js';
 import { sellerNet } from './pricing.js';
@@ -2182,6 +2182,8 @@ async function viewAdminPhotographers() {
           <button class="btn sm" data-courtesy="${u.uid}" title="Plan sin costo y sin vencimiento, hasta que lo quites">🎁 Cortesía</button>` : ''}
         ${isPro(u) ? `<button class="btn sm ghost" data-unpro="${u.uid}">Quitar plan</button>` : ''}
  ${u.status === 'approved' && planOf(u) === 'free' ? `<button class="btn sm ghost" data-bonus="${u.uid}" title="Más álbumes activos a la vez, por un tiempo, a modo de prueba">🎁 Álbumes de prueba</button>` : ''}
+        ${u.status === 'approved' ? `<button class="btn sm ghost" data-pbonus="${u.uid}" title="Más fotos por álbum, por un tiempo, a modo de prueba">📈 Fotos de prueba</button>` : ''}
+        ${photoBonusOf(u) ? `<span class="pill accent" title="Fotos de prueba">📈 +${photoBonusOf(u).photos} fotos por álbum hasta ${esc(new Date(photoBonusOf(u).until).toLocaleDateString('es-AR'))}</span>` : ''}
         <button class="btn sm ghost" data-subsync="${u.uid}" title="Revisa en Mercado Pago su suscripción y aplica el plan">🔄 Suscripción</button>
         ${u.transferOn || bals.has(u.uid) || u.transferBlocked ? `<button class="btn sm ghost" data-fees="${u.uid}">🏦 Transferencia${owedOf(u.uid) ? ` · debe ${fmtMoney(owedOf(u.uid))}` : ''}${reported.some(r => r.uid === u.uid) ? ' · 🔔 avisó un pago' : ''}</button>` : ''}
         ${PLANS[planOf(u)]?.team ? `<button class="btn sm ghost" data-seats="${u.uid}" title="Lugares extra para su equipo (además de los del plan)">👥 Lugares extra: ${u.teamExtraSeats || 0}</button>` : ''}
@@ -2234,6 +2236,27 @@ async function viewAdminPhotographers() {
       save({ count, until: Timestamp.fromMillis(Date.parse(`${d}T23:59:59-03:00`)), givenAt: Timestamp.now() });
     };
     $('#bn-off', dlg)?.addEventListener('click', () => save(null));
+  });
+  // Fotos de prueba: más fotos por álbum (sobre el tope de su plan) hasta una fecha.
+  $$('[data-pbonus]').forEach(b => b.onclick = () => {
+    const u = users.find(x => x.uid === b.dataset.pbonus);
+    const cur = photoBonusOf(u);
+    const base = planSpec(planOf(u), S.settings).albumPhotos || 0;
+    const dlg = openDialog(`Fotos de prueba · ${u.displayName}`, `
+      <p class="muted small" style="margin:0">Su plan permite ${base ? `${base} fotos por álbum` : 'fotos sin tope'}. Sumale fotos extra por álbum por un tiempo para que pruebe la plataforma.</p>
+      <label class="field">Fotos extra por álbum<input type="number" id="pb-n" min="50" max="20000" step="50" value="${cur?.photos || 500}"></label>
+      <label class="field">Hasta el<input type="date" id="pb-until" value="${new Date(cur?.until || Date.now() + 30 * 86400000).toISOString().slice(0, 10)}"></label>`,
+      `${cur ? '<button class="btn ghost danger" id="pb-off">Quitar</button>' : ''}<button class="btn primary" id="pb-save">Guardar</button>`);
+    const save = async photoBonus => {
+      try { await updateDoc(doc(db, 'users', u.uid), { photoBonus }); dlg.close(); toast(photoBonus ? `Listo: ${base ? base + photoBonus.photos : 'sin tope'} fotos por álbum hasta el ${new Date(photoBonus.until.toMillis()).toLocaleDateString('es-AR')}` : 'Fotos de prueba quitadas'); viewAdminPhotographers(); }
+      catch (e) { toast(errMsg(e), 'error'); }
+    };
+    $('#pb-save', dlg).onclick = () => {
+      const photos = Math.round(Number($('#pb-n', dlg).value) || 0), d = $('#pb-until', dlg).value;
+      if (!(photos > 0) || !d) return toast('Completá la cantidad y la fecha.', 'error');
+      save({ photos, until: Timestamp.fromMillis(Date.parse(`${d}T23:59:59-03:00`)), givenAt: Timestamp.now() });
+    };
+    $('#pb-off', dlg)?.addEventListener('click', () => save(null));
   });
   // Localidad del fotógrafo (de la lista oficial), editada por el superadmin.
   $$('[data-zone]').forEach(b => b.onclick = () => {

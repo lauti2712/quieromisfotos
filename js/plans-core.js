@@ -53,6 +53,12 @@ export function albumBonusOf(user, now = Date.now()) {
   const until = b?.until?.toMillis?.() ?? b?.until?.getTime?.() ?? 0;
   return b && b.count > 0 && until > now ? { count: b.count, until } : null;
 }
+// Fotos de prueba: más fotos por álbum, por un tiempo (users.photoBonus = { photos, until }, solo superadmin).
+export function photoBonusOf(user, now = Date.now()) {
+  const b = user?.photoBonus;
+  const until = b?.until?.toMillis?.() ?? b?.until?.getTime?.() ?? 0;
+  return b && b.photos > 0 && until > now ? { photos: b.photos, until } : null;
+}
 export function activeAlbumLimit(user, st, now = Date.now()) {
   if (planOf(user, now) !== 'free') return Infinity;
   return (planSpec('free', st, now).albums || 1) + (albumBonusOf(user, now)?.count || 0);
@@ -68,7 +74,7 @@ export function rulesFor(user, st = {}) {
 export function albumPhotoLimit(set, st, user) {
   const r = rulesFor(user, st);
   if (!(r.albumPhotos > 0)) return 0;
-  return r.albumPhotos + (r.plan === 'free' ? 0 : (set?.extraPhotos || 0));
+  return r.albumPhotos + (r.plan === 'free' ? 0 : (set?.extraPhotos || 0)) + (photoBonusOf(user)?.photos || 0);
 }
 
 // Colaboradores que puede tener la cuenta (0 si su plan no es Empresas).

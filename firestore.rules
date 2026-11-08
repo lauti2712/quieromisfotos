@@ -63,11 +63,11 @@ service cloud.firestore {
             && request.resource.data.status == 'pending'
             && request.resource.data.mpConnected == false
             // el plan, la cortesía, el dominio y MP los asignan el superadmin o el Worker, nunca el alta
-            && !request.resource.data.keys().hasAny(['transferBlocked', 'albumBonus', 'plan', 'proUntil', 'domainActive', 'siteDomain', 'domainSetup', 'trial', 'trialUsed', 'courtesy', 'demo', 'teamExtraSeats', 'teamPaidSeats', 'teamPublic', 'teamOf'])
+            && !request.resource.data.keys().hasAny(['transferBlocked', 'albumBonus', 'photoBonus', 'plan', 'proUntil', 'domainActive', 'siteDomain', 'domainSetup', 'trial', 'trialUsed', 'courtesy', 'demo', 'teamExtraSeats', 'teamPaidSeats', 'teamPublic', 'teamOf'])
             && request.resource.data.get('mpUserId', null) == null)
           || (isSuper() && request.resource.data.role == 'superadmin'));
       allow update: if isSuper() || (signedIn() && uid() == userId
-          && !changed().hasAny(['transferBlocked', 'albumBonus', 'role', 'status', 'mpConnected', 'mpUserId', 'createdAt', 'plan', 'proUntil', 'domainActive', 'siteDomain', 'domainSetup', 'trial', 'trialUsed', 'courtesy', 'teamExtraSeats', 'teamPaidSeats', 'teamPublic', 'teamOf'])
+          && !changed().hasAny(['transferBlocked', 'albumBonus', 'photoBonus', 'role', 'status', 'mpConnected', 'mpUserId', 'createdAt', 'plan', 'proUntil', 'domainActive', 'siteDomain', 'domainSetup', 'trial', 'trialUsed', 'courtesy', 'teamExtraSeats', 'teamPaidSeats', 'teamPublic', 'teamOf'])
           && (!changed().hasAny(['slug']) || slugOwnedAfter(userId)));
       allow delete: if isSuper();
     }
