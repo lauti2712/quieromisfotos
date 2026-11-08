@@ -1518,6 +1518,15 @@ async function joinDialog() {
   } catch (e) { $('#jl', dlg).innerHTML = `<div class="notice danger">${esc(errMsg(e))}</div>`; }
 }
 
+// ¿El álbum propio tiene precio? (sin precio no se puede publicar). Los eventos generales no tienen precio propio.
+async function hasPrice(ev) {
+  if (S.isSuper || ev.kind === 'general') return true;
+  const st = (await getDoc(doc(db, 'events', ev.id, 'sets', ev.createdBy || S.user.uid)).catch(() => null))?.data();
+  if (st?.price > 0) return true;
+  toast('Primero poné el precio por foto del álbum (en Precios, más abajo) y guardalo. Sin precio no se puede publicar.', 'error');
+  return false;
+}
+
 function newSetData() {
   const d = S.profile.defaults || {};
   return {
@@ -1560,6 +1569,8 @@ function eventDialog(ev, onSaved) {
           ${ev.coverUrl ? '<button type="button" class="btn sm ghost" id="ev-cover-rm">Quitar</button>' : ''}</div>
         <span class="hint">${ev.coverUrl ? 'Portada elegida por vos.' : 'Si no elegís una, usamos una de tus fotos.'} La elegida se ve sin marca de agua y la podés encuadrar.</span>`}
     </div>
+    ${isNew && !general ? `<label class="field" style="max-width:260px">Precio por foto (ARS)<input type="number" id="ev-price" min="1" step="1" inputmode="numeric" required value="${(S.profile.defaults?.price || 0) > 0 ? S.profile.defaults.price : ''}" placeholder="Ej: 2500">
+      <span class="hint">${(S.profile.defaults?.price || 0) > 0 ? 'Es el que usaste la última vez. Lo podés cambiar.' : 'Sin precio no se puede publicar ni vender.'} Los packs y demás opciones, en el álbum.</span></label>` : ''}
     <label class="field">Estado<select id="ev-status"><option value="draft" ${ev.status !== 'published' ? 'selected' : ''}>Borrador (no visible al público)</option><option value="published" ${ev.status === 'published' ? 'selected' : ''}>Publicado (ya tiene link para compartir)</option></select></label>
     ${general ? '<p class="muted small" style="margin:0">Los eventos generales siempre están abiertos para que se sumen fotógrafos.</p>'
       : `<label class="check"><input type="checkbox" id="ev-open" ${ev.openToJoin ? 'checked' : ''}> Permitir que otros fotógrafos se sumen a este evento</label>`}
@@ -1644,6 +1655,10 @@ function eventDialog(ev, onSaved) {
       searchTokens: searchTokens(name, loc, ...tagNames),
       updatedAt: serverTimestamp(),
     };
+    // Sin precio no se publica: en un álbum nuevo se pide acá; al publicar uno existente, se mira el precio del álbum.
+    const price = isNew && !general ? Math.round(Number($('#ev-price', dlg).value) || 0) : 0;
+    if (isNew && !general && data.status === 'published' && !(price > 0)) return toast('Poné el precio por foto para publicar el álbum (o guardalo como borrador).', 'error');
+    if (!isNew && data.status === 'published' && ev.status !== 'published' && !await hasPrice(ev)) return;
     const btn = $('#ev-save', dlg); btn.disabled = true;
     try {
       if (isNew) {
@@ -1653,8 +1668,10 @@ function eventDialog(ev, onSaved) {
           ...data, kind: general ? 'general' : 'own', createdBy: S.user.uid,
           photographerUids: general ? [] : [S.user.uid], createdAt: serverTimestamp(),
         });
-        if (!general) b.set(doc(db, 'events', ref.id, 'sets', S.user.uid), newSetData());
+        if (!general) b.set(doc(db, 'events', ref.id, 'sets', S.user.uid), { ...newSetData(), ...(price > 0 ? { price } : {}) });
+        if (!general && price > 0 && price !== S.profile.defaults?.price) b.update(doc(db, 'users', S.user.uid), { 'defaults.price': price });
         await b.commit();
+        if (!general && price > 0) S.profile.defaults = { ...(S.profile.defaults || {}), price };
         dlg.close();
         toast('Evento creado');
         location.hash = `#/evento/${ref.id}${general ? '' : '?nuevo=1'}`;
@@ -1708,6 +1725,7 @@ async function viewEvent(id) {
     $('#ev-edit').onclick = () => eventDialog(ev, reload);
     $('#ev-toggle').onclick = async () => {
       if (ev.status !== 'published' && !await requireVerified()) return;
+      if (ev.status !== 'published' && !await hasPrice(ev)) return;
       try { await updateDoc(doc(db, 'events', id), { status: ev.status === 'published' ? 'draft' : 'published', updatedAt: serverTimestamp() }); reload(); }
       catch (e) { toast(errMsg(e), 'error'); }
     };
@@ -2011,8 +2029,10 @@ function renderSetEditor(ev, set, reload) {
           await b.commit();
         }
       }
+      const newPrice = Math.round(Number($('#st-price').value) || 0);
+      if (!(newPrice > 0) && ev.status === 'published' && ev.kind === 'own' && ev.createdBy === S.user.uid) return toast('El álbum está publicado: necesita un precio por foto mayor a 0.', 'error');
       await updateDoc(doc(db, 'events', ev.id, 'sets', S.user.uid), {
-        price: Math.round(Number($('#st-price').value) || 0),
+        price: newPrice,
         packs: packs.get(),
         feeMode: $('input[name=st-fee]:checked').value,
         subalbums: clean,
@@ -2021,7 +2041,12 @@ function renderSetEditor(ev, set, reload) {
         ...($('#st-selfie') ? { selfie: $('#st-selfie').checked } : {}),
         updatedAt: serverTimestamp(),
       });
-      toast('Set guardado');
+      // Precio, packs y comisión pasan a ser los predeterminados de sus próximos álbumes (los puede cambiar en cada uno).
+      if (newPrice > 0) {
+        const defaults = { ...(S.profile.defaults || {}), price: newPrice, packs: packs.get(), feeMode: $('input[name=st-fee]:checked').value };
+        await updateDoc(doc(db, 'users', S.user.uid), { defaults }).then(() => { S.profile.defaults = defaults; }).catch(() => {});
+      }
+      toast(newPrice > 0 ? 'Guardado. Tus próximos álbumes arrancan con estos precios.' : 'Guardado');
       reload();
     } catch (err) { toast(errMsg(err), 'error'); }
   };
