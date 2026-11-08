@@ -2425,7 +2425,7 @@ async function incomeDialog() {
     const wdIn = wd.filter(w => (w.date?.toMillis?.() || 0) >= since);
     const saved = wdIn.reduce((a, w) => a + (w.amount || 0), 0);
     const day = x => new Date(x).toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' });
-    const kind = { mp: '⭐ Plan / extensión', fee: '📸 Comisión', transfer: '🏦 Saldo por transferencia' };
+    const kind = { mp: "⭐", fee: '📸 Comisión', transfer: '🏦 Saldo por transferencia' };
     // Por acreditar, agrupado por día: cuánto entra cada día.
     const byDay = {};
     for (const x of pending) { const k = x.releaseAt.slice(0, 10); (byDay[k] ||= []).push(x); }
