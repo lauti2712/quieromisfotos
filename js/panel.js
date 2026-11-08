@@ -2427,8 +2427,11 @@ async function viewAdminMetrics() {
   const commission = sum(orders, o => o.platformFee);
   const extRevenue = sum(extIn, x => x.price);
   // Planes vigentes: ingreso mensual recurrente estimado.
+  // Cortesías (marcadas así o con vencimiento lejano, "de prueba") no cuentan como ingreso.
   const active = users.filter(u => planOf(u) !== 'free');
-  const mrr = sum(active, u => planSpec(planOf(u), S.settings).price || 0);
+  const isCourtesy = u => !!u.courtesy || (u.proUntil?.toMillis?.() || 0) > Date.parse('2090-01-01');
+  const paid = active.filter(u => !isCourtesy(u));
+  const mrr = sum(paid, u => planSpec(planOf(u), S.settings).price || 0);
   const buyers = new Set(orders.map(o => o.buyerUid)).size;
   const approvedPh = users.filter(u => u.status === 'approved');
   const selling = new Set(orders.map(o => o.photographerUid));
@@ -2463,8 +2466,13 @@ async function viewAdminMetrics() {
       <div class="stat"><span class="muted small">Vendido por los fotógrafos</span><strong>${fmtMoney(sum(orders, o => o.total))}</strong><span class="muted small">${orders.length} ventas · ${sum(orders, o => o.count)} fotos</span></div>
       <div class="stat"><span class="muted small">Compradores</span><strong>${buyers}</strong><span class="muted small">ticket promedio ${fmtMoney(orders.length ? sum(orders, o => o.total) / orders.length : 0)}</span></div>
       <div class="stat"><span class="muted small">Fotógrafos</span><strong>${approvedPh.length}</strong><span class="muted small">${selling.size} con ventas en el período · ${users.filter(u => u.status === 'pending').length} pendientes</span></div>
-      <div class="stat"><span class="muted small">Planes activos</span><strong>${active.length}</strong><span class="muted small">≈ ${fmtMoney(mrr)}/mes</span></div>
+      <div class="stat"><span class="muted small">Planes pagos</span><strong>${paid.length}</strong><span class="muted small">≈ ${fmtMoney(mrr)}/mes · ${active.length - paid.length} cortesía${active.length - paid.length === 1 ? '' : 's'}</span></div>
     </div>
+    ${active.length ? `<details class="card"><summary><strong>Planes vigentes (${active.length})</strong></summary>
+      ${active.map(u => `<div class="item-row"><span class="grow"><strong>${esc(u.displayName || u.uid)}</strong> <span class="muted small">/${esc(u.slug || '')}</span><br>
+        <span class="muted small">${esc(PLANS[planOf(u)]?.label || planOf(u))} · ${isCourtesy(u) ? 'cortesía, no suma al ingreso' : `hasta ${esc(fmtTs(u.proUntil))} · ${fmtMoney(planSpec(planOf(u), S.settings).price || 0)}/mes`}</span></span>
+        ${u.status !== 'approved' ? `<span class="pill warn">${esc({ pending: 'Pendiente', suspended: 'Suspendido', rejected: 'Rechazado' }[u.status] || u.status || 'Sin estado')}</span>` : ''}</div>`).join('')}
+    </details>` : ''}
     <div class="card"><h2>Tus ingresos por mes</h2>
       <div class="spark tall">${byMonth.map(m => `<span style="height:${Math.max(2, (m.v / maxM) * 100)}%" title="${m.label}: ${fmtMoney(m.v)} (vendido ${fmtMoney(m.gmv)})"></span>`).join('')}</div>
       <div class="spark-labels">${byMonth.map(m => `<span>${m.label}</span>`).join('')}</div>
