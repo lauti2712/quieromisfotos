@@ -159,6 +159,8 @@ async function applyPayment(env, orderId, order, payment) {
     return order;
   }
   const upd = { mpPaymentId: String(payment.id), mpStatus: payment.status, mpStatusDetail: payment.status_detail || '' };
+  // Cuándo libera Mercado Pago este pago (y con él la comisión de la plataforma): lo usa Ingresos del superadmin.
+  if (payment.money_release_date) upd.mpReleaseAt = new Date(payment.money_release_date);
   if (status === 'approved') {
     if (Number(payment.transaction_amount) + 1 < order.total) throw httpError(400, 'El monto pagado no coincide');
     if (order.status !== 'approved') {

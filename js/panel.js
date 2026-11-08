@@ -2408,6 +2408,65 @@ async function viewAdminCustomers() {
   };
 }
 
+// Ingresos en tu Mercado Pago: cuándo se acredita cada cobro y los retiros que hacés a tu reserva.
+async function incomeDialog() {
+  const dlg = openDialog('💰 Tus ingresos en Mercado Pago', '<div id="inc"><div class="spinner"></div></div>');
+  const box = $('#inc', dlg);
+  const draw = async () => {
+    const [r, ws] = await Promise.all([apiGet('/admin/income'), getDocs(query(collection(db, 'withdrawals'), orderBy('date', 'desc'), limit(200)))]);
+    const wd = ws.docs.map(d => ({ id: d.id, ...d.data() }));
+    const now = Date.now(), dayMs = x => (x ? Date.parse(x) : 0);
+    const items = r.items.slice().sort((a, b) => (dayMs(a.releaseAt) || 9e15) - (dayMs(b.releaseAt) || 9e15));
+    const credited = items.filter(x => x.releaseAt && dayMs(x.releaseAt) <= now);
+    const pending = items.filter(x => x.releaseAt && dayMs(x.releaseAt) > now);
+    const unknown = items.filter(x => !x.releaseAt);
+    const tot = l => l.reduce((a, x) => a + (Number(x.net) || 0), 0);
+    const since = now - r.days * 86400000;
+    const wdIn = wd.filter(w => (w.date?.toMillis?.() || 0) >= since);
+    const saved = wdIn.reduce((a, w) => a + (w.amount || 0), 0);
+    const day = x => new Date(x).toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' });
+    const kind = { mp: '⭐ Plan / extensión', fee: '📸 Comisión', transfer: '🏦 Saldo por transferencia' };
+    // Por acreditar, agrupado por día: cuánto entra cada día.
+    const byDay = {};
+    for (const x of pending) { const k = x.releaseAt.slice(0, 10); (byDay[k] ||= []).push(x); }
+    box.innerHTML = `
+      ${r.error ? `<div class="notice warn small">No se pudo leer Mercado Pago: ${esc(r.error)}</div>` : ''}
+      <div class="stats" style="margin-bottom:12px">
+        <div class="stat"><span class="muted small">Acreditado (${r.days} días)</span><strong>${fmtMoney(tot(credited))}</strong><span class="muted small">neto, ya disponible</span></div>
+        <div class="stat"><span class="muted small">Guardado en la reserva</span><strong>${fmtMoney(saved)}</strong><span class="muted small">${wdIn.length} retiro${wdIn.length === 1 ? '' : 's'}</span></div>
+        <div class="stat"><span class="muted small">Falta guardar</span><strong>${fmtMoney(Math.max(0, tot(credited) - saved))}</strong><span class="muted small">acreditado − guardado</span></div>
+        <div class="stat"><span class="muted small">Por acreditar</span><strong>${fmtMoney(tot(pending))}</strong><span class="muted small">${pending.length} cobro${pending.length === 1 ? '' : 's'}</span></div>
+      </div>
+      <h3 style="margin:8px 0">📅 Próximas acreditaciones</h3>
+      ${Object.keys(byDay).length ? Object.entries(byDay).map(([d, l]) => `<div class="item-row"><span class="grow"><strong>${esc(day(d + 'T12:00'))}</strong><br><span class="muted small">${l.map(x => `${kind[x.kind] || ''} ${fmtMoney(x.net)}`).join(' · ')}</span></span><strong>${fmtMoney(tot(l))}</strong></div>`).join('') : '<p class="muted small">No hay cobros por acreditar.</p>'}
+      <h3 style="margin:16px 0 8px">🏦 Retiros a tu reserva</h3>
+      <form class="row" id="wd-f" style="gap:8px;flex-wrap:wrap">
+        <input type="date" id="wd-date" value="${todayIso()}" required style="max-width:160px">
+        <input type="number" id="wd-amount" min="1" step="0.01" inputmode="decimal" placeholder="Monto" required style="max-width:140px">
+        <input type="text" id="wd-note" maxlength="80" placeholder="Nota (opcional)" style="flex:1;min-width:140px">
+        <button class="btn primary sm" type="submit">Registrar retiro</button>
+      </form>
+      ${wd.length ? wd.map(w => `<div class="item-row"><span class="grow"><strong>${fmtMoney(w.amount)}</strong> <span class="muted small">${esc(w.date?.toDate?.().toLocaleDateString('es-AR') || '')}${w.note ? ' · ' + esc(w.note) : ''}</span></span><button class="btn sm ghost" data-wdel="${w.id}" aria-label="Borrar retiro">✕</button></div>`).join('') : '<p class="muted small">Todavía no registraste retiros.</p>'}
+      <h3 style="margin:16px 0 8px">✅ Acreditados</h3>
+      ${credited.length ? credited.slice().reverse().map(x => `<div class="item-row small"><span class="grow">${kind[x.kind] || ''} · ${esc(x.desc)}<br><span class="muted">${esc(day(x.releaseAt))}${x.amount !== x.net ? ` · cobrado ${fmtMoney(x.amount)}` : ''}</span></span><strong>${fmtMoney(x.net)}</strong></div>`).join('') : '<p class="muted small">Nada acreditado en este período.</p>'}
+      ${unknown.length ? `<p class="muted small" style="margin-top:12px">${unknown.length} comisión${unknown.length === 1 ? '' : 'es'} de ventas anteriores a este cambio (${fmtMoney(tot(unknown))}) no tienen fecha de acreditación guardada. Las nuevas ya la traen.</p>` : ''}`;
+    $('#wd-f', box).onsubmit = async e => {
+      e.preventDefault();
+      const amount = Number($('#wd-amount', box).value);
+      if (!(amount > 0)) return toast('Poné el monto del retiro.', 'error');
+      try {
+        await addDoc(collection(db, 'withdrawals'), { amount, date: Timestamp.fromMillis(Date.parse(`${$('#wd-date', box).value}T12:00:00-03:00`)), note: $('#wd-note', box).value.trim(), createdAt: serverTimestamp() });
+        toast('Retiro registrado'); draw();
+      } catch (err) { toast(errMsg(err), 'error'); }
+    };
+    $$('[data-wdel]', box).forEach(b => b.onclick = async () => {
+      if (!confirm('¿Borrar este retiro?')) return;
+      try { await deleteDoc(doc(db, 'withdrawals', b.dataset.wdel)); draw(); } catch (err) { toast(errMsg(err), 'error'); }
+    });
+  };
+  draw().catch(e => { box.innerHTML = `<div class="notice danger">${esc(errMsg(e))}</div>`; });
+}
+
 // ================================================================ superadmin: métricas
 let metricsRange = 30;
 async function viewAdminMetrics() {
@@ -2462,17 +2521,13 @@ async function viewAdminMetrics() {
       <div class="tabs" style="margin:0">${[[7, '7 días'], [30, '30 días'], [90, '90 días'], [0, 'Todo']].map(([k, l]) => `<button class="chip ${metricsRange === k ? 'on' : ''}" data-r="${k}">${l}</button>`).join('')}</div>
     </div>
     <div class="stats">
-      <div class="stat"><span class="muted small">Tus ingresos</span><strong>${fmtMoney(commission + extRevenue)}</strong><span class="muted small">comisiones ${fmtMoney(commission)} · extensiones ${fmtMoney(extRevenue)}</span></div>
+      <div class="stat" id="m-income" role="button" tabindex="0" style="cursor:pointer" title="Ver acreditaciones y retiros"><span class="muted small">Tus ingresos ›</span><strong>${fmtMoney(commission + extRevenue)}</strong><span class="muted small">comisiones ${fmtMoney(commission)} · extensiones ${fmtMoney(extRevenue)}</span></div>
       <div class="stat"><span class="muted small">Vendido por los fotógrafos</span><strong>${fmtMoney(sum(orders, o => o.total))}</strong><span class="muted small">${orders.length} ventas · ${sum(orders, o => o.count)} fotos</span></div>
       <div class="stat"><span class="muted small">Compradores</span><strong>${buyers}</strong><span class="muted small">ticket promedio ${fmtMoney(orders.length ? sum(orders, o => o.total) / orders.length : 0)}</span></div>
       <div class="stat"><span class="muted small">Fotógrafos</span><strong>${approvedPh.length}</strong><span class="muted small">${selling.size} con ventas en el período · ${users.filter(u => u.status === 'pending').length} pendientes</span></div>
-      <div class="stat"><span class="muted small">Planes pagos</span><strong>${paid.length}</strong><span class="muted small">≈ ${fmtMoney(mrr)}/mes · ${active.length - paid.length} cortesía${active.length - paid.length === 1 ? '' : 's'}</span></div>
+      <div class="stat" id="m-plans" role="button" tabindex="0" style="cursor:pointer" title="Ver fotógrafos con plan"><span class="muted small">Planes pagos ›</span><strong>${paid.length}</strong><span class="muted small">≈ ${fmtMoney(mrr)}/mes · ${active.length - paid.length} cortesía${active.length - paid.length === 1 ? '' : 's'}</span></div>
     </div>
-    ${active.length ? `<details class="card"><summary><strong>Planes vigentes (${active.length})</strong></summary>
-      ${active.map(u => `<div class="item-row"><span class="grow"><strong>${esc(u.displayName || u.uid)}</strong> <span class="muted small">/${esc(u.slug || '')}</span><br>
-        <span class="muted small">${esc(PLANS[planOf(u)]?.label || planOf(u))} · ${isCourtesy(u) ? 'cortesía, no suma al ingreso' : `hasta ${esc(fmtTs(u.proUntil))} · ${fmtMoney(planSpec(planOf(u), S.settings).price || 0)}/mes`}</span></span>
-        ${u.status !== 'approved' ? `<span class="pill warn">${esc({ pending: 'Pendiente', suspended: 'Suspendido', rejected: 'Rechazado' }[u.status] || u.status || 'Sin estado')}</span>` : ''}</div>`).join('')}
-    </details>` : ''}
+
     <div class="card"><h2>Tus ingresos por mes</h2>
       <div class="spark tall">${byMonth.map(m => `<span style="height:${Math.max(2, (m.v / maxM) * 100)}%" title="${m.label}: ${fmtMoney(m.v)} (vendido ${fmtMoney(m.gmv)})"></span>`).join('')}</div>
       <div class="spark-labels">${byMonth.map(m => `<span>${m.label}</span>`).join('')}</div>
@@ -2480,6 +2535,10 @@ async function viewAdminMetrics() {
     <div class="card"><h2>Por fotógrafo</h2>${table(group('photographerUid', 'photographerName'), 'Fotógrafo')}</div>
     <div class="card"><h2>Por evento</h2>${table(group('eventId', 'eventName'), 'Evento')}</div>`;
   $$('[data-r]').forEach(b => b.onclick = () => { metricsRange = Number(b.dataset.r); viewAdminMetrics(); });
+  $('#m-plans').onclick = () => openDialog(`Planes vigentes (${active.length})`, active.length ? active.map(u => `<div class="item-row"><span class="grow"><strong>${esc(u.displayName || u.uid)}</strong> <span class="muted small">/${esc(u.slug || '')}</span><br>
+      <span class="muted small">${esc(PLANS[planOf(u)]?.label || planOf(u))} · ${isCourtesy(u) ? 'cortesía, no suma al ingreso' : `hasta ${esc(fmtTs(u.proUntil))} · ${fmtMoney(planSpec(planOf(u), S.settings).price || 0)}/mes`}</span></span>
+      ${u.status !== 'approved' ? `<span class="pill warn">${esc({ pending: 'Pendiente', suspended: 'Suspendido', rejected: 'Rechazado' }[u.status] || u.status || 'Sin estado')}</span>` : isCourtesy(u) ? '<span class="pill">Cortesía</span>' : '<span class="pill ok">Pago</span>'}</div>`).join('') : '<p class="muted">No hay planes vigentes.</p>');
+  $('#m-income').onclick = () => incomeDialog();
 }
 
 // ================================================================ superadmin: almacenamiento (R2)
