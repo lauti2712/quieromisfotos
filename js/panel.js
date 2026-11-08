@@ -18,7 +18,7 @@ import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, ACTIVI
 import { viewWeb } from './panel-web.js';
 import { sellerNet } from './pricing.js';
 import { viewPortfolio } from './panel-portfolio.js';
-import { drawWatermark, drawSampleScene, DEFAULT_WATERMARK, wantsLogo } from './watermark.js';
+import { drawWatermark, drawSampleScene, DEFAULT_WATERMARK, wantsLogo, strengthOf } from './watermark.js';
 import { uploadAsset, apiPost, apiGet, uploadSession, postWithToken, API_BASE } from './api.js';
 import { resizeToJpeg } from './image-proc.js';
 import { mountPhotos, uploadsInProgress } from './panel-photos.js';
@@ -1092,8 +1092,9 @@ function viewConfig() {
                 <label class="btn sm">${wm.logoUrl ? 'Cambiar logo' : 'Subir logo'}<input type="file" id="wm-logo-file" accept="image/png,image/webp" hidden></label>
               </div>
             </div>
-            <label class="field">Opacidad <span class="hint" id="wm-op-v">${Math.round(wm.opacity * 100)}%</span>
-              <input type="range" id="wm-op" min="0.1" max="0.7" step="0.05" value="${wm.opacity}"></label>
+            <label class="field">Intensidad de la marca de agua <span class="hint" id="wm-op-v">${Math.round(strengthOf(wm) * 100)}%</span>
+              <input type="range" id="wm-op" min="0.4" max="1" step="0.05" value="${strengthOf(wm)}">
+              <span class="hint">Desde 40%. Más intensa protege más tus fotos; más suave deja ver mejor la foto. Se aplica a las fotos que subas desde ahora.</span></label>
           </div>
           <div><canvas class="wm-preview" id="wm-canvas" width="960" height="640"></canvas>
             <p class="muted small">Vista previa de una muestra.</p></div>
@@ -1110,7 +1111,7 @@ function viewConfig() {
 
   let logo = { key: wm.logoKey || '', url: wm.logoUrl || '', img: null };
   const readWm = () => ({
-    useLogo: $('#wm-uselogo').checked && !!logo.key, opacity: Number($('#wm-op').value),
+    useLogo: $('#wm-uselogo').checked && !!logo.key, strength: Math.max(0.4, Number($('#wm-op').value)),
     logoKey: logo.key, logoUrl: logo.url,
   });
   const preview = () => {
