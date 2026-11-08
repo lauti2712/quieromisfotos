@@ -1,17 +1,21 @@
 // Marca de agua sobre un canvas 2D (sirve para canvas y OffscreenCanvas).
 // Siempre lleva el sitio (www.quieromisfotos.com.ar) en mosaico. En el centro va el logo del fotógrafo
 // si lo activó y está cargado; si no, el sitio.
-// wm: { useLogo: bool, opacity: 0..1, logoKey, logoUrl }   logo: ImageBitmap/HTMLImageElement opcional.
+// wm: { useLogo: bool, strength: 0.4..1 (intensidad que elige el fotógrafo), logoKey, logoUrl }   logo: ImageBitmap/HTMLImageElement opcional.
 
 export const SITE_MARK = 'www.quieromisfotos.com.ar';
-export const DEFAULT_WATERMARK = { useLogo: false, opacity: 0.35 };
+export const DEFAULT_WATERMARK = { useLogo: false, strength: 0.5 };
+export const MIN_STRENGTH = 0.4;
+// Intensidad guardada (del 40% al 100%). Los perfiles viejos (opacity) arrancan en la de por defecto.
+export const strengthOf = wm => Math.min(1, Math.max(MIN_STRENGTH, Number(wm?.strength) || DEFAULT_WATERMARK.strength));
 
 // Compatibilidad con perfiles guardados con el formato anterior ({ type: 'logo' | 'text', ... }).
 export const wantsLogo = wm => !!(wm && wm.logoKey && (wm.useLogo || wm.type === 'logo'));
 
 export function drawWatermark(ctx, w, h, wm, logo = null) {
   const opts = { ...DEFAULT_WATERMARK, ...wm };
-  const alpha = Math.min(0.9, Math.max(0.05, Number(opts.opacity) || 0.35));
+  const k = strengthOf(opts);
+  const alpha = 0.12 + 0.36 * k; // 40% → 0,26 · 50% → 0,30 · 100% → 0,48
   const tiled = SITE_MARK.toUpperCase();
   const big = Math.max(w, h);
 
@@ -21,9 +25,9 @@ export function drawWatermark(ctx, w, h, wm, logo = null) {
   ctx.lineJoin = 'round';
 
   // Mosaico diagonal con el sitio: letra fina, más chica y más espaciada para que no tape la foto.
-  const size = Math.max(10, Math.round(big * 0.017));
-  ctx.font = `600 ${size}px system-ui, -apple-system, Arial, sans-serif`;
-  ctx.globalAlpha = alpha * 0.55;
+  const size = Math.max(10, Math.round(big * (0.016 + 0.006 * k)));
+  ctx.font = `${k >= 0.75 ? 700 : 600} ${size}px system-ui, -apple-system, Arial, sans-serif`;
+  ctx.globalAlpha = alpha;
   const stepX = ctx.measureText(tiled).width + size * 6;
   const stepY = size * 9;
   ctx.translate(w / 2, h / 2);
@@ -37,7 +41,7 @@ export function drawWatermark(ctx, w, h, wm, logo = null) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
   // Centro: logo del fotógrafo o el sitio
-  ctx.globalAlpha = Math.min(0.95, alpha * 0.8);
+  ctx.globalAlpha = Math.min(0.8, alpha * 1.3);
   if (wantsLogo(opts) && logo) {
     drawLogo(ctx, logo, w / 2, h / 2, Math.min(w, h) * 0.4);
   } else {
