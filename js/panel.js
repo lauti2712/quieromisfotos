@@ -1740,7 +1740,7 @@ async function viewEvent(id) {
       ${users.length ? users.map(u => {
         const st = sets.get(u.uid) || {};
         return `<div class="item-row">${avatarHtml(u)}<div class="grow"><strong>${esc(u.displayName || u.uid)}</strong><br><span class="muted small">${fmtMoney(st.price)} por foto · ${st.photoCount || 0} fotos · 💾 ${fmtBytes(setBytes(st))} · ${(st.subalbums || []).length} sub-álbumes${st.closedAt ? ' · 📦 cerrado' : ''}</span></div>
-          <div class="row">${(st.photoCount || 0) > 0 && !st.originalsDeleted ? `<button class="btn sm" data-sclose="${u.uid}" title="Quedan 10 fotos de muestra y se libera el lugar">📦 Cerrar</button>` : ''}<button class="btn sm danger" data-sdel="${u.uid}" title="Borra sus fotos, archivos y su álbum (no se puede si tiene ventas)">🗑️ Forzar eliminación</button></div></div>`;
+          <div class="row">${(st.photoCount || 0) > 0 && !st.originalsDeleted ? `<button class="btn sm" data-sclose="${u.uid}" title="Quedan 10 fotos de muestra y se libera el lugar">📦 Cerrar</button>` : ''}<button class="btn sm" data-sprice="${u.uid}" title="Precio por foto y packs de este fotógrafo en el evento">💲 Precios</button><button class="btn sm danger" data-sdel="${u.uid}" title="Borra sus fotos, archivos y su álbum (no se puede si tiene ventas)">🗑️ Forzar eliminación</button></div></div>`;
       }).join('') : '<p class="muted">Todavía no se sumó ningún fotógrafo.</p>'}</div>`;
     $$('[data-sclose]').forEach(b => b.onclick = async () => {
       const u = users.find(x => x.uid === b.dataset.sclose);
@@ -1748,6 +1748,30 @@ async function viewEvent(id) {
       b.disabled = true;
       try { const r = await apiPost(`/events/${id}/close`, { uid: u.uid }); toast(`Álbum cerrado (${r.kept ?? 10} de muestra).`); viewEvent(id); }
       catch (e) { b.disabled = false; toast(errMsg(e), 'error'); }
+    });
+    // Superadmin: precio por foto, packs y comisión del álbum de un fotógrafo.
+    $$('[data-sprice]').forEach(b => b.onclick = () => {
+      const u = users.find(x => x.uid === b.dataset.sprice);
+      const st = sets.get(u.uid) || {};
+      const dlg = openDialog(`Precios · ${u.displayName || ''}`, `
+        <div class="stack">
+          <label class="field" style="max-width:240px">Precio por foto (ARS)<input type="number" id="sp-price" min="0" step="1" inputmode="numeric" value="${st.price || ''}"></label>
+          <label class="field" style="max-width:320px">Comisión de la plataforma<select id="sp-fee">
+            <option value="absorb" ${st.feeMode !== 'buyer' ? 'selected' : ''}>La paga el fotógrafo (el comprador ve el precio limpio)</option>
+            <option value="buyer" ${st.feeMode === 'buyer' ? 'selected' : ''}>Se suma al comprador como costo de servicio</option></select></label>
+          <div class="field"><span>Packs</span><div id="sp-packs"></div></div>
+          <p class="muted small" style="margin:0">Cambia solo este álbum. Las fotos con precio especial no cambian.</p>
+        </div>`,
+        '<button class="btn" data-close>Cancelar</button><button class="btn primary" id="sp-save">Guardar</button>');
+      const packs = packsEditor($('#sp-packs', dlg), st.packs || [], () => $('#sp-fee', dlg).value, () => Number($('#sp-price', dlg).value) || 0);
+      $('#sp-save', dlg).onclick = async () => {
+        const price = Math.round(Number($('#sp-price', dlg).value) || 0);
+        if (!(price > 0) && ev.status === 'published') return toast('El evento está publicado: el precio por foto tiene que ser mayor a 0.', 'error');
+        try {
+          await updateDoc(doc(db, 'events', id, 'sets', u.uid), { price, packs: packs.get(), feeMode: $('#sp-fee', dlg).value, updatedAt: serverTimestamp() });
+          dlg.close(); toast(`Precios de ${u.displayName || 'el fotógrafo'} guardados.`); viewEvent(id);
+        } catch (e) { toast(errMsg(e), 'error'); }
+      };
     });
     $$('[data-sdel]').forEach(b => b.onclick = async () => {
       const u = users.find(x => x.uid === b.dataset.sdel);
