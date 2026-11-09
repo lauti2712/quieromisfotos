@@ -4,6 +4,7 @@
 // - convertGuests (cron): si a las 2 horas de pagar sigue como invitado, se le crea la cuenta con el email que usó en
 //   Mercado Pago (o, si ya existe una con ese email, la compra pasa ahí) y se le avisa por mail cómo entrar.
 import { requireUser, verifyIdToken } from './firebase.js';
+import { verifyToken } from './tokens.js';
 import { adminQuery, adminCommit, adminGetMany, serviceToken } from './admin.js';
 import { sendMail, mailLayout } from './mail.js';
 import { json, httpError } from './http.js';
@@ -34,8 +35,14 @@ async function moveOrders(env, fromUid, toUid) {
 export async function claimOrders(req, env) {
   const claims = await requireUser(req, env);
   if (isGuest(claims)) throw httpError(400, 'Primero ingresá con tu cuenta');
-  const { anonToken } = await req.json().catch(() => ({}));
+  const { anonToken, orderKeys } = await req.json().catch(() => ({}));
   let moved = 0;
+  // Pedidos de invitado abiertos con su llave (link de MP o del mail): pasan a esta cuenta con todas las compras de ese invitado.
+  for (const k of (Array.isArray(orderKeys) ? orderKeys : []).slice(0, 5)) {
+    const t = await verifyToken(k, env.UPLOAD_SECRET, 'ord');
+    const [o] = t ? await adminGetMany(env, [`orders/${t.o}`]) : [];
+    if (o?.buyerGuest && o.buyerUid !== claims.sub) moved += (await moveOrders(env, o.buyerUid, claims.sub)).length;
+  }
   if (anonToken) {
     const anon = await verifyIdToken(anonToken, env).catch(() => null);
     if (anon && isGuest(anon) && anon.sub !== claims.sub) moved = (await moveOrders(env, anon.sub, claims.sub)).length;

@@ -94,7 +94,7 @@ async function createPreference(req, env, orderId, order, buyerEmail, attempt) {
   const api = apiUrl(env, req);
   // Si se compró desde el sitio de prueba, MP vuelve ahí.
   const fromStaging = req.headers.get('Origin') === 'https://prueba.quieromisfotos.com.ar';
-  const back = `${fromStaging ? 'https://prueba.quieromisfotos.com.ar/' : siteUrl(env)}#/pedido/${orderId}`;
+  const back = `${fromStaging ? 'https://prueba.quieromisfotos.com.ar/' : siteUrl(env)}#/pedido/${orderId}${order.buyerGuest ? `?k=${await orderKey(env, orderId)}` : ''}`;
   const items = [{ id: orderId, title: `Fotos — ${order.eventName}`.slice(0, 250), description: `${order.count} foto(s) digitales`, quantity: 1, unit_price: order.subtotal, currency_id: 'ARS', category_id: 'art' }];
   if (order.serviceFee) items.push({ id: 'servicio', title: 'Costo de servicio', quantity: 1, unit_price: order.serviceFee, currency_id: 'ARS' });
   const pref = await mpFetch(await sellerToken(env, order.photographerUid), '/checkout/preferences', {
@@ -226,8 +226,23 @@ export async function commitOrderUpdate(env, orderId, order, upd) {
 
 // Mail al comprador con el link a sus descargas (también quedan en Mis compras).
 async function mailDownloads(env, orderId, order) {
-  if (order.buyerGuest) return;
   const priv = await adminGet(env, `orderPrivate/${orderId}`);
+  if (order.buyerGuest) {
+    if (!priv?.mpPayerEmail) return;
+    const nG = order.count || (order.items || []).length;
+    await sendMail(env, {
+      to: priv.mpPayerEmail,
+      subject: `✅ Compra confirmada: fotos de ${order.eventName || 'tu evento'}`,
+      html: mailLayout({
+        title: '¡Compra confirmada!',
+        intro: `Tu pago se acreditó. Descargá ${nG === 1 ? 'tu foto' : `tus ${nG} fotos`} en alta calidad y sin marca de agua con el botón de abajo (funciona en cualquier celular o computadora).`,
+        rows: [['Evento', order.eventName || ''], ['Fotógrafo', order.photographerName || ''], ['Fotos', String(nG)], ['Total', `$${Number(order.total || 0).toLocaleString('es-AR')}`]],
+        cta: { label: '⬇️ Descargar mis fotos', url: await orderLinkUrl(env, orderId) },
+        foot: 'Guardá este mail para volver a tus fotos. También te creamos una cuenta con este mail: te llega otro mail para elegir tu contraseña.',
+      }),
+    });
+    return;
+  }
   if (!priv?.buyerEmail) return;
   const site = (env.SITE_URL || 'https://quieromisfotos.com.ar/').replace(/\/?$/, '/');
   const until = order.downloadExpiresAt ? new Date(order.downloadExpiresAt).toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Argentina/Buenos_Aires' }) : '';
@@ -282,6 +297,10 @@ export async function syncOrder(req, env, orderId) {
   if (order.status === 'approved') return json({ status: order.status });
   if (order.payMethod === 'transfer') return json({ status: (await syncTransferOrder(env, { ...order, id: orderId })).status });
   const { paymentId } = await req.json().catch(() => ({}));
+  return json({ status: (await syncMpPayment(env, orderId, order, paymentId)).status });
+}
+
+async function syncMpPayment(env, orderId, order, paymentId) {
   const token = await sellerToken(env, order.photographerUid);
   let payment = null;
   if (paymentId && /^\d{5,20}$/.test(String(paymentId))) {
@@ -291,9 +310,8 @@ export async function syncOrder(req, env, orderId) {
     const r = await mpFetch(token, `/v1/payments/search?external_reference=${orderId}&sort=date_created&criteria=desc`);
     payment = r.results?.[0] || null;
   }
-  if (!payment) return json({ status: order.status });
-  const updated = await applyPayment(env, orderId, order, payment);
-  return json({ status: updated.status });
+  if (!payment) return order;
+  return applyPayment(env, orderId, order, payment);
 }
 
 // POST /orders/{id}/checkout  (Bearer comprador) — reintentar el pago de un pedido pendiente/rechazado.
@@ -327,6 +345,10 @@ export async function downloadLinks(req, env, orderId) {
   // El comprador, y para revisar la calidad de lo que se entrega, el fotógrafo del pedido y el superadmin.
   const reviewer = order && (order.photographerUid === claims.sub || (claims.email === 'lautarom87@gmail.com' && claims.email_verified === true));
   if (!order || (order.buyerUid !== claims.sub && !reviewer)) throw httpError(404, 'Pedido no encontrado');
+  return json(await linksFor(req, env, orderId, order));
+}
+
+async function linksFor(req, env, orderId, order) {
   if (order.status !== 'approved') throw httpError(409, 'El pedido todavía no está pagado');
   if (order.downloadExpiresAt && order.downloadExpiresAt.getTime() < Date.now()) {
     // Si el fotógrafo extendió el álbum después de la compra, el plazo se corre con él.
@@ -341,7 +363,38 @@ export async function downloadLinks(req, env, orderId) {
     photoId: it.photoId,
     url: `${api}/dl/${await signToken({ typ: 'dl', o: orderId, e: order.eventId, u: order.photographerUid, p: it.photoId, n: i + 1, exp }, env.UPLOAD_SECRET)}`,
   })));
-  return json({ links, exp });
+  return { links, exp };
+}
+
+// ------------------------------------------------------------------ pedido con llave (sin cuenta)
+// La llave abre ese pedido en cualquier navegador: va en el link de vuelta de Mercado Pago y en el mail del invitado.
+export const orderKey = (env, orderId) => signToken({ typ: 'ord', o: orderId }, env.UPLOAD_SECRET);
+const orderLinkUrl = async (env, orderId) => `${siteUrl(env)}#/pedido/${orderId}?k=${await orderKey(env, orderId)}`;
+
+// POST /orders/{id}/guest {k, paymentId?, links?}: estado del pedido (consulta el pago si sigue pendiente) y, si se pide,
+// los links de descarga. Solo datos del pedido que ya ve el comprador.
+export async function guestOrder(req, env, orderId) {
+  const { k, paymentId, links } = await req.json().catch(() => ({}));
+  const t = await verifyToken(k, env.UPLOAD_SECRET, 'ord');
+  if (!t || t.o !== orderId) throw httpError(404, 'Pedido no encontrado');
+  let order = await adminGet(env, `orders/${orderId}`);
+  if (!order) throw httpError(404, 'Pedido no encontrado');
+  if (order.status === 'pending' && order.payMethod !== 'transfer') order = await syncMpPayment(env, orderId, order, paymentId).catch(() => order);
+  const iso = d => d?.toISOString?.() || null;
+  const pick = ['status', 'payMethod', 'eventId', 'eventName', 'eventDate', 'photographerUid', 'photographerName', 'items', 'count', 'lines', 'subtotal', 'serviceFee', 'total', 'transferAmount', 'transferAlias', 'transferHolder', 'buyerGuest'];
+  const o = { id: orderId, ...Object.fromEntries(pick.filter(f => order[f] !== undefined).map(f => [f, order[f]])),
+    createdAt: iso(order.createdAt), paidAt: iso(order.paidAt), downloadExpiresAt: iso(order.downloadExpiresAt), transferExpiresAt: iso(order.transferExpiresAt) };
+  const priv = order.buyerGuest ? await adminGet(env, `orderPrivate/${orderId}`).catch(() => null) : null;
+  return json({ order: o, payerEmail: priv?.mpPayerEmail || '', ...(links && order.status === 'approved' ? await linksFor(req, env, orderId, order) : {}) });
+}
+
+// POST /orders/{id}/link (superadmin o el fotógrafo del pedido): link con llave para mandarle al comprador.
+export async function orderLink(req, env, orderId) {
+  const claims = await requireUser(req, env);
+  const order = await adminGet(env, `orders/${orderId}`);
+  const ok = order && (order.photographerUid === claims.sub || (claims.email === 'lautarom87@gmail.com' && claims.email_verified === true));
+  if (!ok) throw httpError(404, 'Pedido no encontrado');
+  return json({ url: await orderLinkUrl(env, orderId) });
 }
 
 // POST /review/original/{photoId}  (superadmin o el fotógrafo de la foto) -> link de 15 min al original, para revisar la calidad.

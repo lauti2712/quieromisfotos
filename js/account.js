@@ -108,7 +108,12 @@ export function requireLogin(reason) {
 async function afterLogin(anonToken) {
   await auth.currentUser?.getIdToken(true).catch(() => {}); // al vincular, el token tiene que dejar de ser de invitado
   await applyUser(auth.currentUser);
-  if (anonToken !== undefined) await apiPost('/orders/claim', anonToken ? { anonToken } : {}).catch(e => console.warn('claim', e));
+  let orderKey = '';
+  try { orderKey = sessionStorage.getItem('qmf.orderKey') || ''; } catch { /* nada */ }
+  if (anonToken !== undefined || orderKey) {
+    await apiPost('/orders/claim', { ...(anonToken ? { anonToken } : {}), ...(orderKey ? { orderKeys: [orderKey] } : {}) }).catch(e => console.warn('claim', e));
+    try { sessionStorage.removeItem('qmf.orderKey'); } catch { /* nada */ }
+  }
   window.dispatchEvent(new CustomEvent('account:change', { detail: { user: current } }));
 }
 

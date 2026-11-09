@@ -1,12 +1,22 @@
 // Página del pedido: estado del pago en vivo y descarga de los originales.
 import { db, doc, getDoc, watchDoc } from './fb.js';
 import { $, $$, esc, fmtMoney, fmtTs, toast, errMsg } from './util.js';
-import { apiPost } from './api.js';
+import { apiPost, API_BASE } from './api.js';
 import { cart } from './cart.js';
 import { currentUser, guestUser, requireLogin, guestSaveHtml, bindGuestSave } from './account.js';
 
 let unsub = null;
 let payerEmail = ''; // invitado: el email con el que pagó en Mercado Pago
+let orderKey = '';   // llave del pedido (link de vuelta de MP / mail): se abre sin cuenta, en cualquier navegador
+
+// Con llave: los datos y las descargas vienen del Worker (no hace falta ingresar).
+async function guestApi(orderId, body = {}) {
+  const res = await fetch(`${API_BASE}/orders/${orderId}/guest`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ k: orderKey, ...body }) });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(d.error || 'No se pudo abrir el pedido');
+  return d;
+}
+const asTs = iso => (iso ? { toMillis: () => Date.parse(iso), toDate: () => new Date(iso) } : null);
 
 // Celular con "Compartir archivos" (iPhone, Android): las fotos se guardan directo en la galería.
 function canShareFiles() {
@@ -22,6 +32,25 @@ export async function renderOrder(app, orderId, query) {
   document.title = 'Tu pedido · Quiero Mis Fotos';
   unsub?.();
   app.innerHTML = '<div class="spinner"></div>';
+  // Link con llave (sin cuenta, o en otro navegador que el de la compra).
+  orderKey = query.get('k') || '';
+  if (orderKey && !currentUser()) {
+    const paymentId0 = query.get('payment_id') || query.get('collection_id');
+    let firstLoad = true;
+    const load = async () => {
+      if (!location.hash.startsWith(`#/pedido/${orderId}`)) return;
+      try {
+        const r = await guestApi(orderId, firstLoad && paymentId0 ? { paymentId: paymentId0 } : {});
+        firstLoad = false;
+        payerEmail = r.payerEmail || payerEmail;
+        const o = { ...r.order, createdAt: asTs(r.order.createdAt), paidAt: asTs(r.order.paidAt), downloadExpiresAt: asTs(r.order.downloadExpiresAt), transferExpiresAt: asTs(r.order.transferExpiresAt) };
+        if (o.status === 'approved') o.items.forEach(i => cart.has(i.photoId) && cart.remove(i.photoId));
+        draw(app, o);
+        if (o.status === 'pending') setTimeout(load, 4000);
+      } catch (e) { app.innerHTML = `<div class="empty"><h2>No pudimos abrir tu pedido</h2><p class="muted">${esc(errMsg(e))}</p></div>`; }
+    };
+    return load();
+  }
   if (!currentUser() && !guestUser()) {
     app.innerHTML = `<div class="empty"><h2>Ingresá para ver tu pedido</h2><button class="btn primary" id="go">Ingresar</button></div>`;
     $('#go').onclick = () => requireLogin().then(() => renderOrder(app, orderId, query));
@@ -105,10 +134,11 @@ function draw(app, o) {
 
   const review = currentUser() && o.buyerUid !== currentUser().uid;
   app.innerHTML = `
-    ${review ? '<div class="notice small">👁️ <strong>Vista de revisión:</strong> ves este pedido como lo ve el comprador y descargás los mismos archivos que recibió.</div>' : ''}
+    ${review ? `<div class="notice small stack">👁️ <span><strong>Vista de revisión:</strong> ves este pedido como lo ve el comprador y descargás los mismos archivos que recibió.</span>
+      ${o.status === 'approved' ? '<div><button class="btn sm primary" id="buyer-link">🔗 Link de descarga para el comprador</button></div><div id="buyer-link-out"></div>' : ''}</div>` : ''}
     <a href="#/cuenta" class="muted small" style="text-decoration:none">← Mis compras</a>
     <div class="notice ${head[2]}" style="margin-top:10px"><strong>${head[0]}</strong><br>${head[1]}</div>
-    ${!currentUser() && guestUser() && o.status === 'approved' ? guestSaveHtml(payerEmail) : ''}
+    ${!currentUser() && (guestUser() || orderKey) && o.status === 'approved' ? guestSaveHtml(payerEmail) : ''}
     <div class="card stack">
       <div class="row" style="justify-content:space-between;align-items:flex-start">
         <div>
@@ -139,13 +169,26 @@ function draw(app, o) {
     </div>`;
 
   bindGuestSave(app);
+  // Si el comprador guarda la cuenta desde este link (otro navegador), la compra pasa a esa cuenta.
+  if (orderKey) { try { sessionStorage.setItem('qmf.orderKey', orderKey); } catch { /* nada */ } }
+  $('#buyer-link')?.addEventListener('click', async e => {
+    e.target.disabled = true;
+    try {
+      const { url } = await apiPost(`/orders/${o.id}/link`);
+      const msg = `Hola! Te dejo el link para descargar tus fotos de ${o.eventName || 'tu evento'} (funciona en cualquier celular): ${url}`;
+      $('#buyer-link-out', app).innerHTML = `<code style="display:block;word-break:break-all;font-size:.8rem;margin:6px 0">${esc(url)}</code>
+        <div class="row"><button class="btn sm" id="bl-copy">Copiar link</button><a class="btn sm" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(msg)}">💬 Mandar por WhatsApp</a></div>`;
+      $('#bl-copy', app).onclick = () => navigator.clipboard.writeText(url).then(() => toast('Link copiado'), () => toast('No se pudo copiar', 'error'));
+    } catch (err) { toast(errMsg(err), 'error'); }
+    e.target.disabled = false;
+  });
   $$('[data-copy]', app).forEach(b => b.onclick = async () => {
     try { await navigator.clipboard.writeText(b.dataset.copy); toast('Copiado'); } catch { toast(b.dataset.copy); }
   });
   $('#tr-done')?.addEventListener('click', async e => {
     e.target.disabled = true; e.target.textContent = 'Buscando tu transferencia…';
     try {
-      const r = await apiPost(`/orders/${o.id}/sync`);
+      const r = orderKey && !currentUser() ? (await guestApi(o.id)).order : await apiPost(`/orders/${o.id}/sync`);
       if (r.status !== 'approved') toast('Todavía no la vemos. A veces tarda unos minutos: esta página se actualiza sola.');
     } catch (err) { toast(errMsg(err), 'error'); }
     e.target.disabled = false; e.target.textContent = '✅ Ya transferí';
@@ -159,7 +202,7 @@ function draw(app, o) {
   let links = null;
   const getLinks = async () => {
     if (links && links.exp * 1000 > Date.now() + 30_000) return links;
-    links = await apiPost(`/orders/${o.id}/downloads`);
+    links = orderKey && !currentUser() ? await guestApi(o.id, { links: true }) : await apiPost(`/orders/${o.id}/downloads`);
     return links;
   };
   const fire = url => { const a = document.createElement('a'); a.href = url; a.download = ''; document.body.appendChild(a); a.click(); a.remove(); };

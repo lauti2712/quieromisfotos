@@ -50,7 +50,7 @@ import { isFree, albumPhotoLimit, setActive, activeAlbumLimit } from './plans.js
 import { signToken, verifyToken } from './tokens.js';
 import { json, httpError, apiUrl } from './http.js';
 import { connectUrl, callback, disconnect } from './mp.js';
-import { checkout, webhook, syncOrder, retryCheckout, downloadLinks, download, reviewOriginal } from './orders.js';
+import { checkout, webhook, syncOrder, retryCheckout, downloadLinks, download, reviewOriginal, guestOrder, orderLink } from './orders.js';
 import { createTag } from './tags.js';
 import { scanBibsRequest } from './bibs.js';
 import { addFaces, myFaces, matchFaces, myFace } from './faces.js';
@@ -219,6 +219,8 @@ async function route(req, env, ctx) {
     if (parts[2] === 'sync') return syncOrder(req, env, parts[1]);
     if (parts[2] === 'checkout') return retryCheckout(req, env, parts[1]);
     if (parts[2] === 'downloads') return downloadLinks(req, env, parts[1]);
+    if (parts[2] === 'guest') return guestOrder(req, env, parts[1]);
+    if (parts[2] === 'link') return orderLink(req, env, parts[1]);
     if (parts[2] === 'mark-paid') return markPaid(req, env, parts[1]);
   }
   if (m === 'GET' && parts[0] === 'dl' && parts.length === 2) return download(req, env, parts[1]);
