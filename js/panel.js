@@ -2410,7 +2410,7 @@ async function viewAdminCustomers() {
   const get = (uid, base = {}) => { if (!map.has(uid)) map.set(uid, { uid, name: '', email: '', createdAt: 0, lastLoginAt: 0, orders: 0, photos: 0, spent: 0, lastBuy: 0, events: new Set(), ...base }); return map.get(uid); };
   for (const d of cs?.docs || []) {
     const c = d.data();
-    Object.assign(get(d.id), { name: c.name || '', email: c.email || '', provider: c.provider || '', createdAt: ts(c.createdAt), lastLoginAt: ts(c.lastLoginAt) });
+    Object.assign(get(d.id), { name: c.name || '', email: c.email || c.phone || '', provider: c.provider || '', createdAt: ts(c.createdAt), lastLoginAt: ts(c.lastLoginAt) });
   }
   // Los que compraron antes de existir el registro salen de sus pedidos.
   for (const d of os.docs) {
@@ -2418,7 +2418,7 @@ async function viewAdminCustomers() {
     if (!o.buyerUid || o.status !== 'approved') continue;
     const c = get(o.buyerUid);
     const pv = priv.get(d.id) || {};
-    if (!c.email) c.email = pv.buyerEmail || o.buyerEmail || '';
+    if (!c.email) c.email = pv.buyerEmail || pv.buyerPhone || o.buyerEmail || '';
     if (!c.name) c.name = pv.buyerName || o.buyerName || '';
     c.orders++; c.photos += o.count || 0; c.spent += o.total || 0;
     c.lastBuy = Math.max(c.lastBuy, ts(o.paidAt || o.createdAt));
