@@ -2436,7 +2436,7 @@ async function viewAdminCustomers() {
 
   $('#view').innerHTML = `
     <div class="row" style="justify-content:space-between;margin-bottom:14px">
-      <h1 style="margin:0">Clientes</h1><div class="row"><button class="btn" id="cu-link" title="Para quien no recibe el SMS: le mandás un link para entrar con su celular">🔑 Acceso sin SMS</button><button class="btn" id="cu-csv">⬇️ Exportar CSV</button></div>
+      <h1 style="margin:0">Clientes</h1><button class="btn" id="cu-csv">⬇️ Exportar CSV</button>
     </div>
     <div class="stats">
       <div class="stat"><span class="muted small">Registrados</span><strong>${all.length}</strong></div>
@@ -2470,30 +2470,6 @@ async function viewAdminCustomers() {
     window.open(`index.html#/pedido/${o.id}`, '_blank');
   };
   $$('[data-cf]').forEach(b => b.onclick = () => { custFilter = b.dataset.cf; viewAdminCustomers(); });
-  // Acceso sin SMS: link de un solo uso (48 h) para entrar con la cuenta de ese celular.
-  $('#cu-link').onclick = () => {
-    const dlg = openDialog('🔑 Acceso sin SMS', `
-      <p class="muted small" style="margin:0">Para un comprador al que no le llega el código. Generás un link y se lo mandás por WhatsApp: al tocarlo entra con la cuenta de su celular. Vale 48 horas y una sola vez.</p>
-      <label class="field">Celular<input type="tel" id="ll-phone" inputmode="tel" placeholder="Ej: 342 555-1234"><span class="hint">Con código de área. Si no es de Argentina, con código de país.</span></label>
-      <label class="field">Nombre (opcional)<input type="text" id="ll-name" maxlength="60"></label>
-      <div id="ll-out"></div>`,
-      '<button class="btn" data-close>Cerrar</button><button class="btn primary" id="ll-go">Generar link</button>');
-    $('#ll-go', dlg).onclick = async e => {
-      const raw = $('#ll-phone', dlg).value;
-      const d = waNumber(raw);
-      if (d.length < 12) return toast('Escribí el celular con código de área.', 'error');
-      e.target.disabled = true;
-      try {
-        const r = await apiPost('/admin/login-link', { phone: d, name: $('#ll-name', dlg).value.trim() });
-        const msg = `Hola! Te dejo el link para entrar a Quiero Mis Fotos con tu celular (vale 48 horas, una sola vez): ${r.url}`;
-        $('#ll-out', dlg).innerHTML = `<div class="notice ok stack"><span>${r.created ? 'Creamos la cuenta de' : 'Link para la cuenta de'} <strong>${esc(r.phone)}</strong>.</span>
-          <code style="word-break:break-all;font-size:.8rem">${esc(r.url)}</code>
-          <div class="row"><a class="btn sm primary" target="_blank" rel="noopener" href="${esc(waLink(d, msg))}">💬 Mandar por WhatsApp</a><button class="btn sm" id="ll-copy">Copiar link</button></div></div>`;
-        $('#ll-copy', dlg).onclick = () => navigator.clipboard.writeText(r.url).then(() => toast('Link copiado'), () => toast('No se pudo copiar', 'error'));
-      } catch (err) { toast(errMsg(err), 'error'); }
-      e.target.disabled = false;
-    };
-  };
   $('#cu-csv').onclick = () => {
     const cell = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const rows = [['Nombre', 'Email', 'Fotógrafo', 'Alta', 'Último ingreso', 'Compras', 'Fotos', 'Gastó', 'Última compra', 'Eventos'],
