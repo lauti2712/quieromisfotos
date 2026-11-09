@@ -11,7 +11,9 @@ export * from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyD8-421zYevgPvfuS9mvF_6LYE3GdALzLA',
-  authDomain: 'quieromisfotos-71629.firebaseapp.com',
+  // Ingreso con Google por nuestro propio dominio (el Worker reenvía /__/auth a Firebase): en celulares, el handler en
+  // firebaseapp.com fallaba con "The requested action is invalid" por estar en otro sitio.
+  authDomain: ['quieromisfotos.com.ar', 'prueba.quieromisfotos.com.ar'].includes(location.hostname) ? location.hostname : 'quieromisfotos-71629.firebaseapp.com',
   projectId: 'quieromisfotos-71629',
   storageBucket: 'quieromisfotos-71629.firebasestorage.app',
   messagingSenderId: '566210366600',
