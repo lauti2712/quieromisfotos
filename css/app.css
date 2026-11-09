@@ -773,4 +773,4 @@ body:not(.with-tabbar) .up-fab { bottom: calc(16px + env(safe-area-inset-bottom)
 .place-list li { padding: 9px 10px; border-radius: 8px; cursor: pointer; font-size: .95rem; }
 .place-list li.on, .place-list li[data-i]:hover { background: var(--surface-2); }
 .place-list li.none { color: var(--muted); cursor: default; font-size: .88rem; }
-.place-wrap > input:invalid:not(:focus) { border-color: #d33; }
+.place-wrap > input:invalid:not(:placeholder-shown):not(:focus) { border-color: #d33; }
