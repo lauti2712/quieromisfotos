@@ -7,6 +7,9 @@ routes = [
   { pattern = "api.quieromisfotos.com.ar", custom_domain = true },
   # Webs de los fotógrafos: {slug}.quieromisfotos.com.ar (DNS: AAAA * 100:: con proxy)
   { pattern = "*.quieromisfotos.com.ar/*", zone_name = "quieromisfotos.com.ar" },
+  # Ingreso con Google por nuestro dominio (proxy al handler de Firebase). El oficial necesita el DNS con proxy (nube naranja).
+  { pattern = "quieromisfotos.com.ar/__/*", zone_name = "quieromisfotos.com.ar" },
+  { pattern = "prueba.quieromisfotos.com.ar/__/*", zone_name = "quieromisfotos.com.ar" },
 ]
 
 # Recalcula el uso de R2 todos los días (06:00 UTC).

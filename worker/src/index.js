@@ -82,6 +82,12 @@ const NOTIFY_AT_PHOTOS = 20; // aviso a seguidores cuando el álbum llega a esta
 
 export default {
   async fetch(req, env, ctx) {
+    // Ingreso con Google desde nuestro dominio (quieromisfotos.com.ar/__/auth/…): se reenvía al handler de Firebase.
+    // Así el celular no lo trata como otro sitio (Chrome en Android fallaba con "The requested action is invalid").
+    const u0 = new URL(req.url);
+    if (u0.pathname.startsWith('/__/') && /(^|\.)quieromisfotos\.com\.ar$/.test(u0.hostname)) {
+      return fetch(new Request(`https://${env.FIREBASE_PROJECT_ID}.firebaseapp.com${u0.pathname}${u0.search}`, req));
+    }
     const cors = corsHeaders(req, env);
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
     try {
