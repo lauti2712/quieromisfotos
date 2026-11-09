@@ -180,7 +180,25 @@ export function openLogin(reason = '', opts = {}) {
     const email = $('#l-mail', dlg).value.trim(), pass = $('#l-pass', dlg).value;
     const tok = await anonTok();
     try {
-      if (mode === 'login') { await signInWithEmailAndPassword(auth, email, pass); await afterLogin(tok); }
+      if (mode === 'login') {
+        try { await signInWithEmailAndPassword(auth, email, pass); }
+        catch (err) {
+          // Firebase no dice si el mail no existe o la contraseña está mal: se ofrece crear la cuenta y, si el mail ya
+          // existía, se avisa que la contraseña no es correcta.
+          if (!['auth/invalid-credential', 'auth/user-not-found', 'auth/invalid-login-credentials'].includes(err.code)) throw err;
+          if (pass.length < 6) throw new Error('La contraseña tiene que tener al menos 6 caracteres.');
+          if (!confirm(`No encontramos una cuenta con ${email} y esa contraseña.\n\n¿Querés crear una cuenta nueva con estos datos?`)) return;
+          try { guest ? await linkWithCredential(guest, EmailAuthProvider.credential(email, pass)) : await createUserWithEmailAndPassword(auth, email, pass); }
+          catch (e2) {
+            if (e2.code === 'auth/email-already-in-use' || e2.code === 'auth/credential-already-in-use') throw new Error('Ya existe una cuenta con ese mail, pero la contraseña no es correcta. Tocá "Olvidé mi contraseña" para crear una nueva.');
+            throw e2;
+          }
+          recordCustomer(auth.currentUser, true);
+          await afterLogin(guest ? '' : undefined); // pide el WhatsApp al entrar (ensureWhatsapp)
+          return done();
+        }
+        await afterLogin(tok);
+      }
       else {
         if (waNumber($('#l-wa', dlg).value).length < 12) throw new Error('Escribí tu WhatsApp con código de área (ej: 342 555-1234).');
         // Invitado: se vincula (mismo usuario, mismas compras). Si no, cuenta nueva.
