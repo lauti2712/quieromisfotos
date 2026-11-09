@@ -58,6 +58,8 @@ export async function commitPhoto(req, env, s, eid, pid, publicBase) {
     { inc: setPath, fields: { photoCount: 1, bytesOriginal: orig.size, bytesPublic, [`hourCounts.${hourOf(takenAt)}`]: 1 } },
     // La galería pública muestra "subiendo fotos…" mientras llegan fotos nuevas.
     { update: setPath, data: { lastUploadAt: new Date(now) }, mask: ['lastUploadAt'] },
+    // Tarjeta del evento: cantidad de fotos (la recalcula también el escaneo diario).
+    { inc: `events/${eid}`, fields: { photoCount: 1 } },
   ];
   // Tarjeta del evento: el nombre del fotógrafo (con su primera foto) y, si no eligió portada, una de sus fotos.
   // Se pone con la primera y se cambia con la foto 15 (suele ser más representativa que la primera de la tanda).
@@ -74,6 +76,9 @@ export async function commitPhoto(req, env, s, eid, pid, publicBase) {
   if (!expiresAt) {
     expiresAt = now + rulesFor(user, st || {}).days * DAY;
     ops.push({ update: setPath, data: { expiresAt: new Date(expiresAt) } });
+    // Hasta cuándo se vende el evento (el álbum que más dura).
+    const ev = await adminGet(env, `events/${eid}`).catch(() => null);
+    if (ev && expiresAt > (ev.saleUntil?.getTime?.() || 0)) ops.push({ update: `events/${eid}`, data: { saleUntil: new Date(expiresAt) }, mask: ['saleUntil'] });
   }
   const ok = await adminCommit(env, ops);
   return json({ ok: true, already: !ok, expiresAt, photo: { ...photo, takenAt, createdAt: now } });
@@ -115,7 +120,7 @@ export async function deletePhotos(req, env, s, eid) {
     if (h) dec[`hourCounts.${hourOf(h)}`] = (dec[`hourCounts.${hourOf(h)}`] || 0) - 1;
     deleted.push(id);
   });
-  if (dec.photoCount) ops.push({ inc: setPath, fields: dec });
+  if (dec.photoCount) ops.push({ inc: setPath, fields: dec }, { inc: `events/${eid}`, fields: { photoCount: dec.photoCount } });
   if (ops.length) await adminCommit(env, ops);
   // R2 después de Firestore: si algo falla en el medio, queda un archivo suelto (lo limpia el escaneo), nunca una foto rota.
   const priv = keys.filter(k => !k.endsWith('.jpg')), pub = keys.filter(k => k.endsWith('.jpg'));

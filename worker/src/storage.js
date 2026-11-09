@@ -85,6 +85,7 @@ export async function scanStorage(env) {
   retention.upcoming.sort((a, b) => a.deleteAt - b.deleteAt).splice(40);
   // Tarjetas de eventos viejos (antes de que el Worker los completara al subir): nombres de los fotógrafos y portada automática.
   await fillEventCards(env, ids, docs, sets).catch(e => console.error('tarjetas', e));
+  await syncEventCounts(env, ids, docs).catch(e => console.error('conteos', e));
   // Índices de caras de álbumes que ya no existen o cuyos originales se borraron (Privacidad: se borran con el álbum).
   const fids = Object.keys(faceKeys);
   if (fids.length) {
@@ -187,6 +188,33 @@ async function sendWarnings(env, warnings) {
 
 // Eventos con fotos sin photographerNames o sin portada: se completan (de a 30 por día). La portada automática es una
 // muestra al azar del álbum con más fotos (ya lleva marca de agua); la que elige el fotógrafo (coverUrl) tiene prioridad.
+// Tarjeta del evento: total de fotos y hasta cuándo se vende (el álbum que más dura entre los que no cerraron).
+async function syncEventCounts(env, ids, docs) {
+  const byEvent = {};
+  ids.forEach((id, i) => {
+    const eid = id.split('/')[0], s = docs[i];
+    if (!s) return;
+    const e = (byEvent[eid] ||= { photos: 0, until: 0 });
+    e.photos += s.photoCount || 0;
+    if (!s.originalsDeleted) e.until = Math.max(e.until, setAvailableUntil(s) || 0);
+  });
+  const eids = Object.keys(byEvent);
+  for (let i = 0; i < eids.length; i += 100) {
+    const chunk = eids.slice(i, i + 100);
+    const evs = await adminGetMany(env, chunk.map(e => `events/${e}`));
+    const ops = [];
+    chunk.forEach((eid, j) => {
+      const ev = evs[j], c = byEvent[eid];
+      if (!ev) return;
+      const until = c.until ? new Date(c.until) : null;
+      if ((ev.photoCount || 0) !== c.photos || (ev.saleUntil?.getTime?.() || 0) !== (c.until || 0)) {
+        ops.push({ update: `events/${eid}`, data: { photoCount: c.photos, saleUntil: until }, mask: ['photoCount', 'saleUntil'] });
+      }
+    });
+    if (ops.length) await adminCommit(env, ops);
+  }
+}
+
 async function fillEventCards(env, ids, docs, sets) {
   const byEvent = {};
   ids.forEach((id, i) => { const [eid, uid] = id.split('/'); if (docs[i] && sets[id].objs.length) (byEvent[eid] ||= []).push({ uid, set: docs[i], objs: sets[id].objs }); });

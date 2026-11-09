@@ -77,6 +77,8 @@ async function applyExtensionPayment(env, id, ext, payment) {
   const extendedUntil = new Date(from + ext.days * 86400_000);
   await adminUpdate(env, setPath, { extendedUntil });
   await adminUpdate(env, `extensions/${id}`, { extendedUntil });
+  const ev = await adminGet(env, `events/${ext.eventId}`).catch(() => null);
+  if (ev && extendedUntil > (ev.saleUntil || 0)) await adminUpdate(env, `events/${ext.eventId}`, { saleUntil: extendedUntil }).catch(() => {});
   return { ...ext, ...upd, status: 'approved', extendedUntil };
 }
 

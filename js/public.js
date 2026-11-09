@@ -170,16 +170,26 @@ async function drawUpcoming(tax) {
 
 export const isUpcoming = ev => !!ev.date && ev.date > todayIso();
 
+// Días que le quedan a la venta del evento (ev.saleUntil lo mantiene el Worker): "Quedan 5 días", "Último día".
+function saleLeftHtml(ev) {
+  const until = ev.saleUntil?.toMillis?.() || 0;
+  if (!until || !(ev.photoCount > 0)) return '';
+  const days = Math.ceil((until - Date.now()) / 86400000);
+  if (days <= 0) return '';
+  return `<span class="muted small">⏳ ${days === 1 ? 'Último día para comprarlas' : `Quedan ${days} días para comprarlas`}</span>`;
+}
+
 function eventCard(ev, tax) {
   const tags = tagPills(ev.tagIds, tax, 3);
   return `
     <a class="event-card" href="#/evento/${ev.id}">
       ${coverHtml(ev, isUpcoming(ev) ? '📅 Próximamente' : '')}
       <div class="body">
-        <span class="date">${esc(fmtDate(ev.date))}</span>
+        <span class="date">${esc(fmtDate(ev.date))}${ev.photoCount > 0 ? ` <span class="ev-count">· ${ev.photoCount.toLocaleString('es-AR')} foto${ev.photoCount === 1 ? '' : 's'}</span>` : ''}</span>
         <span class="name">${esc(ev.name)}</span>
         ${ev.location ? `<span class="muted small">📍 ${esc(ev.location)}</span>` : ''}
         ${(ev.photographerNames || []).length ? `<span class="muted small">📷 ${esc(ev.photographerNames.join(', '))}</span>` : ''}
+        ${saleLeftHtml(ev)}
         ${tags.length ? `<div class="pills">${tags.map(t => `<span class="pill">${esc(t.name)}</span>`).join('')}</div>` : ''}
       </div>
     </a>`;

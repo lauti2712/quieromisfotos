@@ -122,7 +122,7 @@ def event_card(ev):
     src = ev.get('coverUrl') or ev.get('autoCoverUrl')
     cover = f'<img src="{e(src)}" alt="" loading="lazy">' if src else f'<span class="initial">{e((ev.get("name") or "?")[:2].upper())}</span>'
     return f'''<a class="event-card" href="/e/{e(ev["id"])}/"><div class="cover">{cover}</div><div class="body">
-      <span class="date">{e(fmt_date(ev.get("date")))}</span><span class="name">{e(ev.get("name"))}</span>
+      <span class="date">{e(fmt_date(ev.get("date")))}{f' <span class="ev-count">· {ev["photoCount"]:,} foto{"" if ev["photoCount"] == 1 else "s"}</span>'.replace(",", ".") if (ev.get("photoCount") or 0) > 0 else ""}</span><span class="name">{e(ev.get("name"))}</span>
       {f'<span class="muted small">📍 {e(ev["location"])}</span>' if ev.get('location') else ''}
       {f'<span class="muted small">📷 {e(", ".join(ev["photographerNames"]))}</span>' if ev.get('photographerNames') else ''}
       {f'<div class="pills">{"".join(f"<span class=pill>{e(t)}</span>" for t in tags)}</div>' if tags else ''}</div></a>'''
