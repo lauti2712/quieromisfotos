@@ -2424,6 +2424,7 @@ async function viewAdminCustomers() {
     c.lastBuy = Math.max(c.lastBuy, ts(o.paidAt || o.createdAt));
     if (!c.createdAt) c.createdAt = ts(o.createdAt);
     c.events.add(o.eventName || o.eventId);
+    (c.orderIds ||= []).push(d.id);
   }
   const all = [...map.values()].map(c => ({ ...c, photographer: photogs.has(c.uid) }));
   const q = normalize(custQ);
@@ -2454,7 +2455,7 @@ async function viewAdminCustomers() {
       ${list.slice(0, 500).map(c => `<tr>
         <td><strong>${esc(c.name || '—')}</strong>${c.photographer ? ' <span class="pill">Fotógrafo</span>' : ''}<br><span class="muted small">${esc(c.email)}</span>${c.whatsapp ? ` · <a class="small" target="_blank" rel="noopener" href="${esc(waLink(c.whatsapp))}">💬 ${esc(c.whatsapp)}</a>` : ''}</td>
         <td>${d(c.createdAt)}</td><td>${d(c.lastLoginAt)}</td><td>${c.orders}</td><td>${c.photos}</td><td>${c.spent ? fmtMoney(c.spent) : '—'}</td>
-        <td>${d(c.lastBuy)}</td><td class="small">${esc([...c.events].slice(0, 3).join(', '))}${c.events.size > 3 ? ` +${c.events.size - 3}` : ''}</td></tr>`).join('')}
+        <td>${d(c.lastBuy)}</td><td class="small">${esc([...c.events].slice(0, 3).join(', '))}${c.events.size > 3 ? ` +${c.events.size - 3}` : ''}${(c.orderIds || []).slice(0, 5).map(id => `<br><a target="_blank" href="index.html#/pedido/${id}" title="Ver la compra y el link de descarga para el comprador">🧾 ${esc(id.slice(0, 8))}</a>`).join('')}</td></tr>`).join('')}
     </table></div>${list.length > 500 ? '<p class="muted small">Se muestran los primeros 500: usá la búsqueda o exportá el CSV.</p>' : ''}`
       : '<div class="empty">No hay clientes con ese filtro.</div>'}</div>
     <p class="muted small">Desde el 14/10/2026 se registra a todos los que ingresan al sitio. Antes, solo figuran los que compraron.</p>`;
