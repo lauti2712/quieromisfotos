@@ -298,7 +298,7 @@ service cloud.firestore {
     match /customers/{cid} {
       allow read: if isSuper() || (signedIn() && uid() == cid);
       allow create, update: if signedIn() && uid() == cid
-        && request.resource.data.keys().hasOnly(['name', 'email', 'phone', 'provider', 'createdAt', 'lastLoginAt'])
+        && request.resource.data.keys().hasOnly(['name', 'email', 'phone', 'whatsapp', 'provider', 'createdAt', 'lastLoginAt'])
         && request.resource.data.email == request.auth.token.get('email', '')
         && request.resource.data.get('phone', '') == request.auth.token.get('phone_number', '')
         && request.resource.data.lastLoginAt == request.time;

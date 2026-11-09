@@ -1,11 +1,12 @@
 // Página del pedido: estado del pago en vivo y descarga de los originales.
-import { db, doc, watchDoc } from './fb.js';
+import { db, doc, getDoc, watchDoc } from './fb.js';
 import { $, $$, esc, fmtMoney, fmtTs, toast, errMsg } from './util.js';
 import { apiPost } from './api.js';
 import { cart } from './cart.js';
-import { currentUser, requireLogin } from './account.js';
+import { currentUser, guestUser, requireLogin, guestSaveHtml, bindGuestSave } from './account.js';
 
 let unsub = null;
+let payerEmail = ''; // invitado: el email con el que pagó en Mercado Pago
 
 // Celular con "Compartir archivos" (iPhone, Android): las fotos se guardan directo en la galería.
 function canShareFiles() {
@@ -21,7 +22,7 @@ export async function renderOrder(app, orderId, query) {
   document.title = 'Tu pedido · Quiero Mis Fotos';
   unsub?.();
   app.innerHTML = '<div class="spinner"></div>';
-  if (!currentUser()) {
+  if (!currentUser() && !guestUser()) {
     app.innerHTML = `<div class="empty"><h2>Ingresá para ver tu pedido</h2><button class="btn primary" id="go">Ingresar</button></div>`;
     $('#go').onclick = () => requireLogin().then(() => renderOrder(app, orderId, query));
     return;
@@ -34,6 +35,8 @@ export async function renderOrder(app, orderId, query) {
   if (paymentId) { synced = true; sync(); }
 
   let first = true;
+  payerEmail = '';
+  if (!currentUser()) getDoc(doc(db, 'orderPrivate', orderId)).then(s => { payerEmail = s.data()?.mpPayerEmail || ''; }).catch(() => {});
   unsub = watchDoc(doc(db, 'orders', orderId), snap => {
     if (!snap.exists()) { app.innerHTML = '<div class="empty"><h2>Pedido no encontrado</h2></div>'; return; }
     const o = { id: snap.id, ...snap.data() };
@@ -105,6 +108,7 @@ function draw(app, o) {
     ${review ? '<div class="notice small">👁️ <strong>Vista de revisión:</strong> ves este pedido como lo ve el comprador y descargás los mismos archivos que recibió.</div>' : ''}
     <a href="#/cuenta" class="muted small" style="text-decoration:none">← Mis compras</a>
     <div class="notice ${head[2]}" style="margin-top:10px"><strong>${head[0]}</strong><br>${head[1]}</div>
+    ${!currentUser() && guestUser() && o.status === 'approved' ? guestSaveHtml(payerEmail) : ''}
     <div class="card stack">
       <div class="row" style="justify-content:space-between;align-items:flex-start">
         <div>
@@ -134,6 +138,7 @@ function draw(app, o) {
       </div>
     </div>`;
 
+  bindGuestSave(app);
   $$('[data-copy]', app).forEach(b => b.onclick = async () => {
     try { await navigator.clipboard.writeText(b.dataset.copy); toast('Copiado'); } catch { toast(b.dataset.copy); }
   });

@@ -2410,7 +2410,7 @@ async function viewAdminCustomers() {
   const get = (uid, base = {}) => { if (!map.has(uid)) map.set(uid, { uid, name: '', email: '', createdAt: 0, lastLoginAt: 0, orders: 0, photos: 0, spent: 0, lastBuy: 0, events: new Set(), ...base }); return map.get(uid); };
   for (const d of cs?.docs || []) {
     const c = d.data();
-    Object.assign(get(d.id), { name: c.name || '', email: c.email || c.phone || '', provider: c.provider || '', createdAt: ts(c.createdAt), lastLoginAt: ts(c.lastLoginAt) });
+    Object.assign(get(d.id), { name: c.name || '', email: c.email || c.phone || '', whatsapp: c.whatsapp || '', provider: c.provider || '', createdAt: ts(c.createdAt), lastLoginAt: ts(c.lastLoginAt) });
   }
   // Los que compraron antes de existir el registro salen de sus pedidos.
   for (const d of os.docs) {
@@ -2452,7 +2452,7 @@ async function viewAdminCustomers() {
     <div class="card">${list.length ? `<div class="table-wrap"><table class="list">
       <tr><th>Cliente</th><th>Alta</th><th>Último ingreso</th><th>Compras</th><th>Fotos</th><th>Gastó</th><th>Última compra</th><th>Eventos</th></tr>
       ${list.slice(0, 500).map(c => `<tr>
-        <td><strong>${esc(c.name || '—')}</strong>${c.photographer ? ' <span class="pill">Fotógrafo</span>' : ''}<br><span class="muted small">${esc(c.email)}</span></td>
+        <td><strong>${esc(c.name || '—')}</strong>${c.photographer ? ' <span class="pill">Fotógrafo</span>' : ''}<br><span class="muted small">${esc(c.email)}</span>${c.whatsapp ? ` · <a class="small" target="_blank" rel="noopener" href="${esc(waLink(c.whatsapp))}">💬 ${esc(c.whatsapp)}</a>` : ''}</td>
         <td>${d(c.createdAt)}</td><td>${d(c.lastLoginAt)}</td><td>${c.orders}</td><td>${c.photos}</td><td>${c.spent ? fmtMoney(c.spent) : '—'}</td>
         <td>${d(c.lastBuy)}</td><td class="small">${esc([...c.events].slice(0, 3).join(', '))}${c.events.size > 3 ? ` +${c.events.size - 3}` : ''}</td></tr>`).join('')}
     </table></div>${list.length > 500 ? '<p class="muted small">Se muestran los primeros 500: usá la búsqueda o exportá el CSV.</p>' : ''}`
@@ -2472,8 +2472,8 @@ async function viewAdminCustomers() {
   $$('[data-cf]').forEach(b => b.onclick = () => { custFilter = b.dataset.cf; viewAdminCustomers(); });
   $('#cu-csv').onclick = () => {
     const cell = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const rows = [['Nombre', 'Email', 'Fotógrafo', 'Alta', 'Último ingreso', 'Compras', 'Fotos', 'Gastó', 'Última compra', 'Eventos'],
-      ...list.map(c => [c.name, c.email, c.photographer ? 'sí' : '', d(c.createdAt), d(c.lastLoginAt), c.orders, c.photos, c.spent, d(c.lastBuy), [...c.events].join(' | ')])];
+    const rows = [['Nombre', 'Email', 'WhatsApp', 'Fotógrafo', 'Alta', 'Último ingreso', 'Compras', 'Fotos', 'Gastó', 'Última compra', 'Eventos'],
+      ...list.map(c => [c.name, c.email, c.whatsapp, c.photographer ? 'sí' : '', d(c.createdAt), d(c.lastLoginAt), c.orders, c.photos, c.spent, d(c.lastBuy), [...c.events].join(' | ')])];
     const blob = new Blob(['\ufeff' + rows.map(r => r.map(cell).join(';')).join('\n')], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = `clientes-quieromisfotos-${todayIso()}.csv`; a.click();

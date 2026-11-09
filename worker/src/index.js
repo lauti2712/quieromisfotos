@@ -58,6 +58,7 @@ import { commitPhoto, deletePhotos, orderDownloadUntil } from './photos.js';
 import { closeAlbum, forceDeleteAlbum } from './samples.js';
 import { incomeRequest } from './income.js';
 import { createLoginLink, useLoginLink } from './loginlink.js';
+import { claimOrders, convertGuests } from './guests.js';
 import { statsHit } from './stats.js';
 import { sharePage } from './share.js';
 import { teamInvite, teamJoin, teamRemove, teamEvents, teamRefresh, canUploadForTeam } from './team.js';
@@ -101,6 +102,7 @@ export default {
     // Cada 5 minutos: avisos a seguidores y suscripciones (de a pocas). Una tarea por vez para no pasar el límite de pedidos.
     if (event.cron === PUSH_CRON) {
       ctx.waitUntil(matchPendingTransfers(env).catch(e => console.error('transferencias', e)));
+      ctx.waitUntil(convertGuests(env).catch(e => console.error('invitados', e)));
       ctx.waitUntil(drainPushQueue(env).catch(e => { console.error('push', e); return 99; })
         .then(sent => (sent > 5 ? null : syncDueSubscriptions(env))).catch(e => console.error('subs', e)));
       return;
@@ -183,6 +185,7 @@ async function route(req, env, ctx) {
   if (m === 'GET' && url.pathname === '/admin/income') return incomeRequest(req, env);
   if (m === 'POST' && url.pathname === '/admin/login-link') return createLoginLink(req, env);
   if (m === 'POST' && url.pathname === '/auth/link') return useLoginLink(req, env);
+  if (m === 'POST' && url.pathname === '/orders/claim') return claimOrders(req, env);
   if (m === 'POST' && url.pathname === '/admin/mail/test') {
     const c = await requireUser(req, env);
     if (c.email !== 'lautarom87@gmail.com' || c.email_verified !== true) throw httpError(403, 'Solo superadmin');
