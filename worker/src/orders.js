@@ -35,7 +35,8 @@ export function downloadUntil(paidAt, set) {
 // ------------------------------------------------------------------ POST /checkout
 export async function checkout(req, env) {
   const claims = await requireUser(req, env);
-  if (!claims.email) throw httpError(400, 'Tu cuenta necesita un email');
+  // Email o celular confirmado (ingreso por SMS): sin mail no llega el mail de descarga, pero las fotos quedan en Mis compras.
+  if (!claims.email && !claims.phone_number) throw httpError(400, 'Tu cuenta necesita un email o un celular');
   const { eventId, photographerUid, photoIds, method } = await req.json().catch(() => ({}));
   const ids = [...new Set(Array.isArray(photoIds) ? photoIds : [])];
   if (!ID_RE.test(eventId || '') || !ID_RE.test(photographerUid || '') || !ids.length || ids.length > MAX_ITEMS || !ids.every(i => ID_RE.test(i))) {
@@ -78,7 +79,7 @@ export async function checkout(req, env) {
     total: t.total, feeMode: t.feeMode, status: 'pending', createdAt: new Date(),
   };
   await adminSet(env, `orders/${orderId}`, order, { mustNotExist: true });
-  await adminSet(env, `orderPrivate/${orderId}`, { buyerUid: claims.sub, buyerEmail: claims.email, buyerName: claims.name || '', createdAt: order.createdAt });
+  await adminSet(env, `orderPrivate/${orderId}`, { buyerUid: claims.sub, buyerEmail: claims.email || '', ...(claims.phone_number ? { buyerPhone: claims.phone_number } : {}), buyerName: claims.name || '', createdAt: order.createdAt });
 
   const pref = await createPreference(req, env, orderId, order, claims.email, 0);
   return json({ orderId, initPoint: pref.init_point });

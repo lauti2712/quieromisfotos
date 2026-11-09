@@ -1,10 +1,11 @@
-// Cuenta del comprador en el sitio público: ingresar (Google / email), Mis compras, salir.
+// Cuenta del comprador en el sitio público: ingresar (Google / email / celular por SMS), Mis compras, salir.
 import {
   db, auth, collection, doc, getDoc, getDocs, setDoc, query, where, orderBy, limit, serverTimestamp, Timestamp,
   onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword,
   createUserWithEmailAndPassword, sendPasswordResetEmail, signOut, updateProfile,
+  RecaptchaVerifier, signInWithPhoneNumber,
 } from './fb.js';
-import { $, esc, fmtMoney, fmtTs, toast, errMsg, initials, inAppNotice, bindInAppNotice } from './util.js';
+import { $, esc, fmtMoney, fmtTs, toast, errMsg, initials, inAppNotice, bindInAppNotice, waNumber } from './util.js';
 
 let current = null;
 const waiters = [];
@@ -34,7 +35,7 @@ function recordCustomer(user) {
   try { if (sessionStorage.getItem(k)) return; sessionStorage.setItem(k, '1'); } catch { /* modo privado */ }
   const created = Date.parse(user.metadata?.creationTime || '') || Date.now();
   setDoc(doc(db, 'customers', user.uid), {
-    name: user.displayName || '', email: user.email || '',
+    name: user.displayName || '', email: user.email || '', ...(user.phoneNumber ? { phone: user.phoneNumber } : {}),
     provider: user.providerData?.[0]?.providerId || 'password',
     createdAt: Timestamp.fromMillis(created), lastLoginAt: serverTimestamp(),
   }, { merge: true }).catch(e => console.warn('customer', e));
@@ -45,11 +46,11 @@ function drawHeader() {
   if (!el) return;
   // Los fotógrafos van directo a su panel; "Mi cuenta" (compras) es para clientes.
   document.getElementById('soy-fotografo')?.classList.toggle('hidden', isPhotographer);
-  const avatar = current ? `<span class="avatar xs">${current.photoURL ? `<img src="${esc(current.photoURL)}" alt="" referrerpolicy="no-referrer">` : esc(initials(current.displayName || current.email))}</span>` : '';
+  const avatar = current ? `<span class="avatar xs">${current.photoURL ? `<img src="${esc(current.photoURL)}" alt="" referrerpolicy="no-referrer">` : esc(initials(current.displayName || current.email || current.phoneNumber || "?"))}</span>` : '';
   el.innerHTML = current && isPhotographer
     ? `<a class="btn sm acct-btn" href="panel.html" aria-label="Mi panel">${avatar}<span class="acct-label">Mi panel</span></a>`
     : current
-    ? `<a class="btn sm acct-btn" href="#/cuenta" aria-label="Mi cuenta"><span class="avatar xs">${current.photoURL ? `<img src="${esc(current.photoURL)}" alt="" referrerpolicy="no-referrer">` : esc(initials(current.displayName || current.email))}</span><span class="acct-label">Mi cuenta</span></a>`
+    ? `<a class="btn sm acct-btn" href="#/cuenta" aria-label="Mi cuenta"><span class="avatar xs">${current.photoURL ? `<img src="${esc(current.photoURL)}" alt="" referrerpolicy="no-referrer">` : esc(initials(current.displayName || current.email || current.phoneNumber || "?"))}</span><span class="acct-label">Mi cuenta</span></a>`
     : '<button class="btn sm acct-btn" id="acct-login"><span class="acct-label">Ingresar</span><span class="acct-icon" aria-hidden="true">👤</span></button>';
   $('#acct-login')?.addEventListener('click', () => openLogin());
 }
@@ -74,6 +75,13 @@ export function openLogin(reason = '') {
         <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>
         Continuar con Google
       </button>
+      <button class="btn block" id="l-phone">📱 Entrar con mi celular</button>
+      <form id="lp-form" class="stack hidden">
+        <label class="field">Tu celular (con código de área)<input type="tel" id="lp-num" inputmode="tel" autocomplete="tel" placeholder="Ej: 342 555-1234"><span class="hint">Te mandamos un código por SMS. No hace falta tener mail.</span></label>
+        <label class="field" id="lp-name-f">Tu nombre (opcional)<input type="text" id="lp-name" autocomplete="name" maxlength="60"></label>
+        <label class="field hidden" id="lp-code-f">Código que te llegó por SMS<input type="text" id="lp-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456"></label>
+        <button class="btn primary block" type="submit" id="lp-send">Enviarme el código</button>
+      </form>
       <div class="divider">o con email</div>
       <form id="l-form" class="stack">
         <label class="field hidden" id="l-name-f">Nombre<input type="text" id="l-name" autocomplete="name"></label>
@@ -95,6 +103,35 @@ export function openLogin(reason = '') {
   const done = () => { dlg.close(); toast('¡Listo! Ya ingresaste.'); };
   $('#l-google', dlg).onclick = async () => {
     try { await signInWithPopup(auth, new GoogleAuthProvider()); done(); } catch (e) { toast(errMsg(e), 'error'); }
+  };
+  // Celular: código por SMS (Firebase Auth). El reCAPTCHA es invisible y va atado al botón.
+  let confirmation = null, verifier = null;
+  $('#l-phone', dlg).onclick = () => { $('#lp-form', dlg).classList.remove('hidden'); $('#l-phone', dlg).classList.add('hidden'); $('#lp-num', dlg).focus(); };
+  $('#lp-form', dlg).onsubmit = async e => {
+    e.preventDefault();
+    const btn = $('#lp-send', dlg);
+    btn.disabled = true;
+    try {
+      if (!confirmation) {
+        const d = waNumber($('#lp-num', dlg).value);
+        if (d.length < 12) throw new Error('Escribí tu celular con código de área (ej: 342 555-1234).');
+        verifier ||= new RecaptchaVerifier(auth, btn, { size: 'invisible' });
+        auth.languageCode = 'es';
+        confirmation = await signInWithPhoneNumber(auth, `+${d}`, verifier);
+        $('#lp-code-f', dlg).classList.remove('hidden'); $('#lp-num', dlg).disabled = true;
+        btn.textContent = 'Entrar'; $('#lp-code', dlg).focus();
+        toast('Te mandamos el código por SMS');
+      } else {
+        const cred = await confirmation.confirm($('#lp-code', dlg).value.trim());
+        const name = $('#lp-name', dlg).value.trim();
+        if (name && !cred.user.displayName) await updateProfile(cred.user, { displayName: name }).then(drawHeader).catch(() => {});
+        done();
+      }
+    } catch (err) {
+      toast(errMsg(err), 'error');
+      if (!confirmation) { try { verifier?.clear(); } catch { /* nada */ } verifier = null; }
+    }
+    btn.disabled = false;
   };
   $('#l-toggle', dlg).onclick = () => {
     mode = mode === 'login' ? 'signup' : 'login';
@@ -145,7 +182,7 @@ export async function renderAccount(app) {
       <span class="avatar lg">${u.photoURL ? `<img src="${esc(u.photoURL)}" alt="" referrerpolicy="no-referrer">` : esc(initials(u.displayName || u.email))}</span>
       <div style="flex:1;min-width:200px">
         <h1 style="margin-bottom:2px">${esc(u.displayName || 'Mi cuenta')}</h1>
-        <div class="muted">${esc(u.email || '')}</div>
+        <div class="muted">${esc(u.email || u.phoneNumber || '')}</div>
       </div>
       <button class="btn" id="logout">Salir</button>
     </div>
