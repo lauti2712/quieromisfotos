@@ -1,4 +1,5 @@
 // Compras: checkout (preferencia de MP con comisión), aviso de pago (webhook), sincronización y descargas.
+import { isGuest } from './guests.js';
 import { computeTotals, splitPhotos } from '../../js/pricing.js';
 import { adminGet, adminGetMany, adminSet, adminUpdate, adminQuery, adminCommit } from './admin.js';
 import { requireUser } from './firebase.js';
@@ -35,9 +36,10 @@ export function downloadUntil(paidAt, set) {
 // ------------------------------------------------------------------ POST /checkout
 export async function checkout(req, env) {
   const claims = await requireUser(req, env);
-  // Email o celular confirmado (ingreso por SMS): sin mail no llega el mail de descarga, pero las fotos quedan en Mis compras.
-  if (!claims.email && !claims.phone_number) throw httpError(400, 'Tu cuenta necesita un email o un celular');
+  // Invitado (sin cuenta): puede pagar con Mercado Pago; por transferencia necesita una cuenta (ve el alias del fotógrafo).
+  const guest = isGuest(claims);
   const { eventId, photographerUid, photoIds, method } = await req.json().catch(() => ({}));
+  if (guest && method === 'transfer') throw httpError(403, 'Para pagar por transferencia ingresá con tu cuenta (Google o email).');
   const ids = [...new Set(Array.isArray(photoIds) ? photoIds : [])];
   if (!ID_RE.test(eventId || '') || !ID_RE.test(photographerUid || '') || !ids.length || ids.length > MAX_ITEMS || !ids.every(i => ID_RE.test(i))) {
     throw httpError(400, 'Pedido inválido');
@@ -76,7 +78,7 @@ export async function checkout(req, env) {
     photographerUid, photographerName: ph.displayName || '', eventId, eventName: ev.name || '', eventDate: ev.date || '',
     items: photos.map(p => ({ photoId: p.id, thumbUrl: p.thumbUrl || '', fileName: p.fileName || '', uploadedBy: p.uploadedBy || photographerUid })),
     count: ids.length, lines: t.lines, subtotal: t.subtotal, serviceFee: t.serviceFee, platformFee: t.platformFee,
-    total: t.total, feeMode: t.feeMode, status: 'pending', createdAt: new Date(),
+    total: t.total, feeMode: t.feeMode, status: 'pending', createdAt: new Date(), ...(guest ? { buyerGuest: true } : {}),
   };
   await adminSet(env, `orders/${orderId}`, order, { mustNotExist: true });
   await adminSet(env, `orderPrivate/${orderId}`, { buyerUid: claims.sub, buyerEmail: claims.email || '', ...(claims.phone_number ? { buyerPhone: claims.phone_number } : {}), buyerName: claims.name || '', createdAt: order.createdAt });
@@ -160,6 +162,8 @@ async function applyPayment(env, orderId, order, payment) {
     return order;
   }
   const upd = { mpPaymentId: String(payment.id), mpStatus: payment.status, mpStatusDetail: payment.status_detail || '' };
+  // Invitado: el email con el que pagó en Mercado Pago (para crearle la cuenta y guardar su compra).
+  if (order.buyerGuest && payment.payer?.email) await adminUpdate(env, `orderPrivate/${orderId}`, { mpPayerEmail: String(payment.payer.email).slice(0, 120) }).catch(() => {});
   // Cuándo libera Mercado Pago este pago (y con él la comisión de la plataforma): lo usa Ingresos del superadmin.
   if (payment.money_release_date) upd.mpReleaseAt = new Date(payment.money_release_date);
   if (status === 'approved') {
@@ -222,6 +226,7 @@ export async function commitOrderUpdate(env, orderId, order, upd) {
 
 // Mail al comprador con el link a sus descargas (también quedan en Mis compras).
 async function mailDownloads(env, orderId, order) {
+  if (order.buyerGuest) return;
   const priv = await adminGet(env, `orderPrivate/${orderId}`);
   if (!priv?.buyerEmail) return;
   const site = (env.SITE_URL || 'https://quieromisfotos.com.ar/').replace(/\/?$/, '/');
@@ -229,13 +234,13 @@ async function mailDownloads(env, orderId, order) {
   const n = order.count || (order.items || []).length;
   await sendMail(env, {
     to: priv.buyerEmail,
-    subject: `✅ Tus fotos de ${order.eventName || 'tu evento'} están listas`,
+    subject: `✅ Compra confirmada: fotos de ${order.eventName || 'tu evento'}`,
     html: mailLayout({
-      title: '¡Tus fotos están listas!',
-      intro: `${priv.buyerName ? `Hola ${priv.buyerName.split(' ')[0]}, ` : ''}ya podés descargar ${n === 1 ? 'tu foto' : `tus ${n} fotos`} en alta calidad, sin marca de agua.`,
+      title: '¡Compra confirmada!',
+      intro: `${priv.buyerName ? `Hola ${priv.buyerName.split(' ')[0]}, ` : ''}tu pago se acreditó. ${n === 1 ? 'Tu foto está' : `Tus ${n} fotos están`} en <strong>Mis compras</strong>, para descargar en alta calidad y sin marca de agua desde Quiero Mis Fotos.`,
       rows: [['Evento', order.eventName || ''], ['Fotógrafo', order.photographerName || ''], ['Fotos', String(n)], ['Total', `$${Number(order.total || 0).toLocaleString('es-AR')}`], ...(until ? [['Disponibles hasta', until]] : [])],
-      cta: { label: '⬇️ Descargar mis fotos', url: `${site}#/pedido/${orderId}` },
-      foot: 'Guardá este mail: con el botón volvés a tus fotos cuando quieras. También están en <strong>Mis compras</strong>, ingresando con la misma cuenta.',
+      cta: { label: 'Ver mi compra', url: `${site}#/pedido/${orderId}` },
+      foot: 'Las fotos se descargan desde la app, ingresando con la misma cuenta con la que compraste.',
     }),
   });
 }

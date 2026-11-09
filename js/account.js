@@ -1,39 +1,54 @@
 // Cuenta del comprador en el sitio público: ingresar (Google / email), Mis compras, salir.
+// Se puede comprar sin cuenta: al pagar se crea un "invitado" (usuario anónimo de Firebase) y después de pagar se le ofrece
+// guardar la compra en una cuenta (se vincula: mismo usuario, mismas compras). Si no lo hace, el Worker le crea la cuenta
+// con el email que usó en Mercado Pago (guests.js). Al registrarse se pide el WhatsApp (customers/{uid}.whatsapp).
 import {
   db, auth, collection, doc, getDoc, getDocs, setDoc, query, where, orderBy, limit, serverTimestamp, Timestamp,
   onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword,
   createUserWithEmailAndPassword, sendPasswordResetEmail, signOut, updateProfile,
-  signInWithCustomToken,
+  signInWithCustomToken, signInAnonymously, linkWithPopup, linkWithCredential, EmailAuthProvider, signInWithCredential,
 } from './fb.js';
-import { API_BASE } from './api.js';
-import { $, esc, fmtMoney, fmtTs, toast, errMsg, initials, inAppNotice, bindInAppNotice } from "./util.js";
+import { API_BASE, apiPost } from './api.js';
+import { $, esc, fmtMoney, fmtTs, toast, errMsg, initials, inAppNotice, bindInAppNotice, waNumber } from './util.js';
 
-let current = null;
+let current = null; // cuenta real (Google o email)
+let guest = null;   // invitado (compró sin cuenta en este dispositivo)
 const waiters = [];
 
 let isPhotographer = false; // la cuenta tiene perfil de fotógrafo (o es superadmin)
 
-onAuthStateChanged(auth, async user => {
-  current = user;
+onAuthStateChanged(auth, user => applyUser(user));
+
+async function applyUser(user) {
+  current = user && !user.isAnonymous ? user : null;
+  guest = user && user.isAnonymous ? user : null;
   isPhotographer = false;
-  if (user) {
+  if (current) {
     try {
-      const snap = await getDoc(doc(db, 'users', user.uid));
+      const snap = await getDoc(doc(db, 'users', current.uid));
       isPhotographer = snap.exists() && ['photographer', 'superadmin'].includes(snap.data().role);
     } catch { /* sin perfil */ }
   }
   drawHeader();
-  if (user) recordCustomer(user);
-  if (user) waiters.splice(0).forEach(fn => fn(user));
-  window.dispatchEvent(new CustomEvent('account:change', { detail: { user } }));
-});
+  if (current) { recordCustomer(current); if (!isPhotographer) ensureWhatsapp(current); }
+  if (current) waiters.splice(0).forEach(fn => fn(current));
+  window.dispatchEvent(new CustomEvent('account:change', { detail: { user: current } }));
+}
 
 export const currentUser = () => current;
+export const guestUser = () => guest;
+
+// Para pagar: la cuenta si ingresó; si no, el invitado de este dispositivo (se crea en el momento).
+export async function buyerSession() {
+  if (current) return current;
+  if (auth.currentUser) return auth.currentUser;
+  return (await signInAnonymously(auth)).user;
+}
 
 // Registro de clientes (customers/{uid}): alta y último ingreso, una vez por sesión del navegador.
-function recordCustomer(user) {
+function recordCustomer(user, force = false) {
   const k = `qmf.cust.${user.uid}`;
-  try { if (sessionStorage.getItem(k)) return; sessionStorage.setItem(k, '1'); } catch { /* modo privado */ }
+  try { if (!force && sessionStorage.getItem(k)) return; sessionStorage.setItem(k, '1'); } catch { /* modo privado */ }
   const created = Date.parse(user.metadata?.creationTime || '') || Date.now();
   setDoc(doc(db, 'customers', user.uid), {
     name: user.displayName || '', email: user.email || '', ...(user.phoneNumber ? { phone: user.phoneNumber } : {}),
@@ -42,16 +57,43 @@ function recordCustomer(user) {
   }, { merge: true }).catch(e => console.warn('customer', e));
 }
 
+// WhatsApp obligatorio para los compradores con cuenta: si no lo tiene, se le pide (una vez por sesión si lo cierra).
+async function saveWhatsapp(user, raw) {
+  const d = waNumber(raw);
+  if (d.length < 12) throw new Error('Escribí tu WhatsApp con código de área (ej: 342 555-1234).');
+  await setDoc(doc(db, 'customers', user.uid), { whatsapp: d, email: user.email || '', lastLoginAt: serverTimestamp() }, { merge: true });
+}
+async function ensureWhatsapp(user) {
+  try { if (sessionStorage.getItem(`qmf.wa.${user.uid}`)) return; } catch { /* nada */ }
+  const s = await getDoc(doc(db, 'customers', user.uid)).catch(() => null);
+  if (s?.data()?.whatsapp || current?.uid !== user.uid) return;
+  const dlg = document.createElement('dialog');
+  dlg.innerHTML = `<div class="dlg-head"><h2>📱 Tu WhatsApp</h2><button class="btn ghost sm" data-close aria-label="Cerrar">✕</button></div>
+    <form class="dlg-body stack" id="wa-f">
+      <p class="muted" style="margin:0">Lo usamos para ayudarte si tenés algún problema con tu compra o con la descarga de tus fotos.</p>
+      <label class="field">WhatsApp<input type="tel" id="wa-in" inputmode="tel" autocomplete="tel" required placeholder="Ej: 342 555-1234"></label>
+      <button class="btn primary block" type="submit">Guardar</button>
+    </form>`;
+  document.body.appendChild(dlg);
+  dlg.addEventListener('close', () => { try { sessionStorage.setItem(`qmf.wa.${user.uid}`, '1'); } catch { /* nada */ } dlg.remove(); });
+  dlg.querySelector('[data-close]').onclick = () => dlg.close();
+  $('#wa-f', dlg).onsubmit = async e => {
+    e.preventDefault();
+    try { await saveWhatsapp(user, $('#wa-in', dlg).value); dlg.close(); toast('¡Gracias!'); } catch (err) { toast(errMsg(err), 'error'); }
+  };
+  dlg.showModal();
+}
+
 function drawHeader() {
   const el = document.getElementById('acct');
   if (!el) return;
   // Los fotógrafos van directo a su panel; "Mi cuenta" (compras) es para clientes.
   document.getElementById('soy-fotografo')?.classList.toggle('hidden', isPhotographer);
-  const avatar = current ? `<span class="avatar xs">${current.photoURL ? `<img src="${esc(current.photoURL)}" alt="" referrerpolicy="no-referrer">` : esc(initials(current.displayName || current.email || current.phoneNumber || "?"))}</span>` : '';
+  const avatar = current ? `<span class="avatar xs">${current.photoURL ? `<img src="${esc(current.photoURL)}" alt="" referrerpolicy="no-referrer">` : esc(initials(current.displayName || current.email || '?'))}</span>` : '';
   el.innerHTML = current && isPhotographer
     ? `<a class="btn sm acct-btn" href="panel.html" aria-label="Mi panel">${avatar}<span class="acct-label">Mi panel</span></a>`
     : current
-    ? `<a class="btn sm acct-btn" href="#/cuenta" aria-label="Mi cuenta"><span class="avatar xs">${current.photoURL ? `<img src="${esc(current.photoURL)}" alt="" referrerpolicy="no-referrer">` : esc(initials(current.displayName || current.email || current.phoneNumber || "?"))}</span><span class="acct-label">Mi cuenta</span></a>`
+    ? `<a class="btn sm acct-btn" href="#/cuenta" aria-label="Mi cuenta">${avatar}<span class="acct-label">Mi cuenta</span></a>`
     : '<button class="btn sm acct-btn" id="acct-login"><span class="acct-label">Ingresar</span><span class="acct-icon" aria-hidden="true">👤</span></button>';
   $('#acct-login')?.addEventListener('click', () => openLogin());
 }
@@ -62,9 +104,18 @@ export function requireLogin(reason) {
   return new Promise(resolve => { waiters.push(resolve); openLogin(reason); });
 }
 
-export function openLogin(reason = '') {
+// Después de ingresar desde un invitado: sus compras pasan a la cuenta (si se vinculó, ya están; solo se marca).
+async function afterLogin(anonToken) {
+  await auth.currentUser?.getIdToken(true).catch(() => {}); // al vincular, el token tiene que dejar de ser de invitado
+  await applyUser(auth.currentUser);
+  if (anonToken !== undefined) await apiPost('/orders/claim', anonToken ? { anonToken } : {}).catch(e => console.warn('claim', e));
+  window.dispatchEvent(new CustomEvent('account:change', { detail: { user: current } }));
+}
+
+// opts: { mode: 'login' | 'signup', email }
+export function openLogin(reason = '', opts = {}) {
   document.querySelector('dialog.login')?.close();
-  let mode = 'login';
+  let mode = opts.mode || 'login';
   const dlg = document.createElement('dialog');
   dlg.className = 'login';
   dlg.innerHTML = `
@@ -79,8 +130,9 @@ export function openLogin(reason = '') {
       <div class="divider">o con email</div>
       <form id="l-form" class="stack">
         <label class="field hidden" id="l-name-f">Nombre<input type="text" id="l-name" autocomplete="name"></label>
-        <label class="field">Email<input type="email" id="l-mail" required autocomplete="email"></label>
+        <label class="field">Email<input type="email" id="l-mail" required autocomplete="email" value="${esc(opts.email || '')}"></label>
         <label class="field">Contraseña<input type="password" id="l-pass" required minlength="6" autocomplete="current-password"></label>
+        <label class="field hidden" id="l-wa-f">WhatsApp<input type="tel" id="l-wa" inputmode="tel" autocomplete="tel" placeholder="Ej: 342 555-1234"><span class="hint">Por si tenés algún problema con tu compra.</span></label>
         <button class="btn primary block" type="submit" id="l-submit">Ingresar</button>
       </form>
       <div class="row" style="justify-content:space-between">
@@ -95,31 +147,55 @@ export function openLogin(reason = '') {
   bindInAppNotice(dlg);
 
   const done = () => { dlg.close(); toast('¡Listo! Ya ingresaste.'); };
+  // Si es un invitado, el token del invitado: para pasar sus compras a la cuenta con la que ingrese.
+  const anonTok = async () => (guest ? guest.getIdToken().catch(() => '') : undefined);
   $('#l-google', dlg).onclick = async () => {
-    try { await signInWithPopup(auth, new GoogleAuthProvider()); done(); } catch (e) { toast(errMsg(e), 'error'); }
+    const tok = await anonTok();
+    try {
+      const provider = new GoogleAuthProvider();
+      if (guest) {
+        try { await linkWithPopup(guest, provider); return afterLogin('').then(done); } catch (e) {
+          if (e.code !== 'auth/credential-already-in-use') throw e;
+          await signInWithCredential(auth, GoogleAuthProvider.credentialFromError(e)); // ya tenía cuenta con ese Google
+        }
+      } else await signInWithPopup(auth, provider);
+      await afterLogin(tok); done();
+    } catch (e) { toast(errMsg(e), 'error'); }
   };
-  $('#l-toggle', dlg).onclick = () => {
-    mode = mode === 'login' ? 'signup' : 'login';
+  const setMode = m => {
+    mode = m;
     const su = mode === 'signup';
     $('#l-title', dlg).textContent = su ? 'Crear cuenta' : 'Ingresar';
     $('#l-submit', dlg).textContent = su ? 'Crear cuenta' : 'Ingresar';
     $('#l-toggle', dlg).textContent = su ? 'Ya tengo cuenta' : 'Crear cuenta';
     $('#l-name-f', dlg).classList.toggle('hidden', !su);
+    $('#l-wa-f', dlg).classList.toggle('hidden', !su);
+    $('#l-wa', dlg).required = su;
     $('#l-pass', dlg).autocomplete = su ? 'new-password' : 'current-password';
   };
+  setMode(mode);
+  $('#l-toggle', dlg).onclick = () => setMode(mode === 'login' ? 'signup' : 'login');
   $('#l-form', dlg).onsubmit = async e => {
     e.preventDefault();
     const email = $('#l-mail', dlg).value.trim(), pass = $('#l-pass', dlg).value;
+    const tok = await anonTok();
     try {
-      if (mode === 'login') await signInWithEmailAndPassword(auth, email, pass);
+      if (mode === 'login') { await signInWithEmailAndPassword(auth, email, pass); await afterLogin(tok); }
       else {
-        const cred = await createUserWithEmailAndPassword(auth, email, pass);
+        if (waNumber($('#l-wa', dlg).value).length < 12) throw new Error('Escribí tu WhatsApp con código de área (ej: 342 555-1234).');
+        // Invitado: se vincula (mismo usuario, mismas compras). Si no, cuenta nueva.
+        const cred = guest ? await linkWithCredential(guest, EmailAuthProvider.credential(email, pass)) : await createUserWithEmailAndPassword(auth, email, pass);
         const name = $('#l-name', dlg).value.trim();
         if (name) await updateProfile(cred.user, { displayName: name }).catch(() => {});
-        drawHeader();
+        await saveWhatsapp(cred.user, $('#l-wa', dlg).value).catch(() => {});
+        recordCustomer(cred.user, true);
+        await afterLogin(guest ? '' : undefined);
       }
       done();
-    } catch (err) { toast(errMsg(err), 'error'); }
+    } catch (err) {
+      toast(err.code === 'auth/email-already-in-use' || err.code === 'auth/credential-already-in-use'
+        ? 'Ya hay una cuenta con ese email: tocá "Ya tengo cuenta" e ingresá con tu contraseña.' : errMsg(err), 'error');
+    }
   };
   $('#l-reset', dlg).onclick = async () => {
     const email = $('#l-mail', dlg).value.trim();
@@ -136,18 +212,22 @@ const STATUS = {
 
 export async function renderAccount(app) {
   document.title = 'Mi cuenta · Quiero Mis Fotos';
-  if (!current) {
+  if (!current && !guest) {
     app.innerHTML = `<div class="empty"><h2>Ingresá a tu cuenta</h2><p>Para ver tus compras y descargar tus fotos.</p><button class="btn primary" id="go-login">Ingresar</button></div>`;
     $('#go-login').onclick = () => openLogin();
     return;
   }
-  const u = current;
-  app.innerHTML = `
+  const u = current || guest;
+  // Invitado: sus compras de este dispositivo + guardar la cuenta.
+  if (!current) {
+    app.innerHTML = `${guestSaveHtml()}<h2>Compras en este dispositivo</h2><div id="orders"><div class="spinner"></div></div>`;
+    bindGuestSave(app);
+  } else app.innerHTML = `
     <div class="profile-head" style="margin-bottom:18px">
       <span class="avatar lg">${u.photoURL ? `<img src="${esc(u.photoURL)}" alt="" referrerpolicy="no-referrer">` : esc(initials(u.displayName || u.email))}</span>
       <div style="flex:1;min-width:200px">
         <h1 style="margin-bottom:2px">${esc(u.displayName || 'Mi cuenta')}</h1>
-        <div class="muted">${esc(u.email || u.phoneNumber || '')}</div>
+        <div class="muted">${esc(u.email || '')}</div>
       </div>
       <button class="btn" id="logout">Salir</button>
     </div>
@@ -157,13 +237,13 @@ export async function renderAccount(app) {
     <div id="follows"><div class="spinner"></div></div>
     <div id="myface"></div>
     <p class="muted small" style="margin-top:24px" id="photog-hint">¿Sos fotógrafo? <a href="#/soy-fotografo">Mirá cómo vender tus fotos</a>.</p>`;
-  $('#logout').onclick = async () => { await signOut(auth); location.hash = '#/'; };
-
-  drawFollows(u).catch(() => { $('#follows').innerHTML = ''; });
-  drawMyFace().catch(() => {});
-
-  // Un fotógrafo que entra a "Mis compras" no ve la invitación a vender.
-  if (isPhotographer) $('#photog-hint')?.remove();
+  if (current) {
+    $('#logout').onclick = async () => { await signOut(auth); location.hash = '#/'; };
+    drawFollows(u).catch(() => { $('#follows').innerHTML = ''; });
+    drawMyFace().catch(() => {});
+    // Un fotógrafo que entra a "Mis compras" no ve la invitación a vender.
+    if (isPhotographer) $('#photog-hint')?.remove();
+  }
 
   try {
     const snap = await getDocs(query(collection(db, 'orders'), where('buyerUid', '==', u.uid), orderBy('createdAt', 'desc'), limit(100)));
@@ -246,4 +326,20 @@ export async function useAccessLink(app, t) {
   } catch (e) {
     app.innerHTML = `<div class="empty"><h2>No pudimos entrar</h2><p class="muted">${esc(errMsg(e))}</p><a class="btn primary" href="https://wa.me/5493424856528" target="_blank" rel="noopener">Escribinos por WhatsApp</a></div>`;
   }
+}
+
+// Aviso para el invitado: guardar la compra en una cuenta (Google o email con el que pagó en Mercado Pago).
+export function guestSaveHtml(email = '') {
+  return `<div class="notice warn stack guest-save" style="margin-bottom:16px">
+    <strong>⚠️ Guardá tus fotos en una cuenta</strong>
+    <span>Compraste sin cuenta: si salís de esta página o cambiás de celular, <strong>no vas a poder volver a descargarlas</strong>. Guardalas ahora, es un paso:</span>
+    <div class="row" style="flex-wrap:wrap;gap:8px">
+      <button class="btn primary" data-gs="google">Continuar con Google</button>
+      <button class="btn" data-gs="email" data-email="${esc(email)}">Crear cuenta con mi email</button>
+    </div>
+  </div>`;
+}
+export function bindGuestSave(root) {
+  root.querySelector('[data-gs="google"]')?.addEventListener('click', () => openLogin('Guardá tu compra en tu cuenta de Google.'));
+  root.querySelector('[data-gs="email"]')?.addEventListener('click', e => openLogin('Elegí una contraseña para guardar tu compra.', { mode: 'signup', email: e.currentTarget.dataset.email }));
 }
