@@ -11,7 +11,7 @@ import { openViewer } from './viewer.js';
 import { renderCancel } from './cancel-view.js';
 import { mountGallery } from './gallery.js';
 import { renderCart } from './cart-view.js';
-import { renderAccount } from './account.js';
+import { renderAccount, useAccessLink } from './account.js';
 import { renderOrder } from './order-view.js';
 import { maybeShowIntro } from './intro.js';
 import { initRefresh } from './refresh.js';
@@ -58,6 +58,7 @@ function route() {
   if (parts[0] === 'f' && parts[1]) return run(() => renderProfile(parts[1]));
   if (parts[0] === 'carrito') return run(() => renderCart(app));
   if (parts[0] === 'cuenta') return run(() => renderAccount(app));
+  if (parts[0] === 'acceso' && parts[1]) return run(() => useAccessLink(app, parts[1]));
   if (parts[0] === 'pedido' && parts[1]) return run(() => renderOrder(app, parts[1], parseHash().query));
   if (parts[0] === 'fotografos') return run(renderDirectory);
   if (parts[0] === 'calendario') return run(() => renderCalendar(app));

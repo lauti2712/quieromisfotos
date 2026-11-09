@@ -3,8 +3,9 @@ import {
   db, auth, collection, doc, getDoc, getDocs, setDoc, query, where, orderBy, limit, serverTimestamp, Timestamp,
   onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword,
   createUserWithEmailAndPassword, sendPasswordResetEmail, signOut, updateProfile,
-  RecaptchaVerifier, signInWithPhoneNumber,
+  RecaptchaVerifier, signInWithPhoneNumber, signInWithCustomToken,
 } from './fb.js';
+import { API_BASE } from './api.js';
 import { $, esc, fmtMoney, fmtTs, toast, errMsg, initials, inAppNotice, bindInAppNotice, waNumber } from './util.js';
 
 let current = null;
@@ -81,6 +82,7 @@ export function openLogin(reason = '') {
         <label class="field" id="lp-name-f">Tu nombre (opcional)<input type="text" id="lp-name" autocomplete="name" maxlength="60"></label>
         <label class="field hidden" id="lp-code-f">Código que te llegó por SMS<input type="text" id="lp-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456"></label>
         <button class="btn primary block" type="submit" id="lp-send">Enviarme el código</button>
+        <p class="muted small" style="margin:0">¿No te llega el SMS? <a href="https://wa.me/5493424856528?text=Hola%21%20No%20me%20llega%20el%20SMS%20para%20entrar%20a%20Quiero%20Mis%20Fotos.%20Mi%20celular%20es%3A%20" target="_blank" rel="noopener">Escribinos por WhatsApp</a> y te mandamos un link para entrar.</p>
       </form>
       <div class="divider">o con email</div>
       <form id="l-form" class="stack">
@@ -266,4 +268,19 @@ async function drawMyFace() {
     if (!confirm('¿Borrar la huella de tu cara? Ya no te vamos a avisar cuando aparezcas en fotos nuevas.')) return;
     try { await apiPost('/faces/me/delete'); box.innerHTML = ''; toast('Listo, borramos la huella de tu cara.'); } catch (e) { toast(errMsg(e), 'error'); }
   };
+}
+
+// Link de acceso que manda el superadmin cuando no llega el SMS (#/acceso/{t}): entra a la cuenta de ese celular.
+export async function useAccessLink(app, t) {
+  app.innerHTML = '<div class="empty"><div class="spinner"></div><p class="muted">Entrando a tu cuenta…</p></div>';
+  try {
+    const res = await fetch(`${API_BASE}/auth/link`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ t }) });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.error || 'No se pudo entrar con este link.');
+    await signInWithCustomToken(auth, d.token);
+    toast('¡Listo! Ya ingresaste.');
+    location.replace('#/cuenta');
+  } catch (e) {
+    app.innerHTML = `<div class="empty"><h2>No pudimos entrar</h2><p class="muted">${esc(errMsg(e))}</p><a class="btn primary" href="https://wa.me/5493424856528" target="_blank" rel="noopener">Escribinos por WhatsApp</a></div>`;
+  }
 }

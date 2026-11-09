@@ -57,6 +57,7 @@ import { addFaces, myFaces, matchFaces, myFace } from './faces.js';
 import { commitPhoto, deletePhotos, orderDownloadUntil } from './photos.js';
 import { closeAlbum, forceDeleteAlbum } from './samples.js';
 import { incomeRequest } from './income.js';
+import { createLoginLink, useLoginLink } from './loginlink.js';
 import { statsHit } from './stats.js';
 import { sharePage } from './share.js';
 import { teamInvite, teamJoin, teamRemove, teamEvents, teamRefresh, canUploadForTeam } from './team.js';
@@ -180,6 +181,8 @@ async function route(req, env, ctx) {
   if (m === 'POST' && url.pathname === '/admin/storage/scan') return scanRequest(req, env);
   if (m === 'GET' && url.pathname === '/admin/costs') return costsRequest(req, env, ctx);
   if (m === 'GET' && url.pathname === '/admin/income') return incomeRequest(req, env);
+  if (m === 'POST' && url.pathname === '/admin/login-link') return createLoginLink(req, env);
+  if (m === 'POST' && url.pathname === '/auth/link') return useLoginLink(req, env);
   if (m === 'POST' && url.pathname === '/admin/mail/test') {
     const c = await requireUser(req, env);
     if (c.email !== 'lautarom87@gmail.com' || c.email_verified !== true) throw httpError(403, 'Solo superadmin');
