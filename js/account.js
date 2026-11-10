@@ -198,6 +198,7 @@ export function openLogin(reason = '', opts = {}) {
             if (e2.code === 'auth/email-already-in-use' || e2.code === 'auth/credential-already-in-use') throw new Error('Ya existe una cuenta con ese mail, pero la contraseña no es correcta. Tocá "Olvidé mi contraseña" para crear una nueva.');
             throw e2;
           }
+          await auth.currentUser.getIdToken(true).catch(() => {}); // el token tiene que traer el mail (si era invitado)
           recordCustomer(auth.currentUser, true);
           await afterLogin(guest ? '' : undefined); // pide el WhatsApp al entrar (ensureWhatsapp)
           return done();
@@ -210,6 +211,7 @@ export function openLogin(reason = '', opts = {}) {
         const cred = guest ? await linkWithCredential(guest, EmailAuthProvider.credential(email, pass)) : await createUserWithEmailAndPassword(auth, email, pass);
         const name = $('#l-name', dlg).value.trim();
         if (name) await updateProfile(cred.user, { displayName: name }).catch(() => {});
+        await cred.user.getIdToken(true).catch(() => {}); // si era invitado, el token tiene que traer el mail
         await saveWhatsapp(cred.user, $('#l-wa', dlg).value).catch(() => {});
         recordCustomer(cred.user, true);
         await afterLogin(guest ? '' : undefined);
