@@ -6,6 +6,7 @@ import {
   onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword,
   createUserWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification, signOut, updateProfile,
   RecaptchaVerifier, signInWithPhoneNumber,
+  collectionGroup,
 } from './fb.js';
 import {
   $, $$, esc, inAppNotice, bindInAppNotice, slugify, SLUG_RE, searchTokens, fmtMoney, fmtDate, fmtTs, todayIso, parseHash,
@@ -2213,6 +2214,8 @@ async function drawSelfieStatus(ev) {
 
 // ================================================================ superadmin: fotógrafos
 let photogTab = 'pending';
+let photogPlan = '';          // filtro por plan: '' | free | lite | pro | … | courtesy
+const photogOpen = new Set(); // fichas con "Ver más" abierto
 async function viewAdminPhotographers() {
   const view = $('#view');
   const tabs = [['pending', 'Pendientes'], ['approved', 'Aprobados'], ['suspended', 'Suspendidos']];
@@ -2224,8 +2227,11 @@ async function viewAdminPhotographers() {
       <button class="btn sm" id="ap-toggle">${manual ? 'Desactivar aprobación' : 'Activar aprobación'}</button>
     </div>
     <div class="tabs">${tabs.map(([k, l]) => `<button class="chip ${photogTab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>
+    <div class="tabs" style="margin-top:-4px">${[['', 'Todos los planes'], ['free', 'Gratis'], ...Object.entries(PLANS).filter(([k]) => k !== 'free').map(([k, v]) => [k, v.label]), ['courtesy', '🎁 Cortesía']]
+      .map(([k, l]) => `<button class="chip ${photogPlan === k ? 'on' : ''}" data-pfilter="${k}">${esc(l)}</button>`).join('')}</div>
     <div class="card" id="pl"><div class="spinner"></div></div>`;
   $$('[data-tab]').forEach(b => b.onclick = () => { photogTab = b.dataset.tab; viewAdminPhotographers(); });
+  $$('[data-pfilter]').forEach(b => b.onclick = () => { photogPlan = b.dataset.pfilter; viewAdminPhotographers(); });
   $('#ap-toggle').onclick = async () => {
     const autoApprove = manual;
     if (autoApprove && !confirm('¿Desactivar la aprobación? Los fotógrafos nuevos van a quedar aprobados solos y pueden publicar y vender enseguida. Los que ya están pendientes se aprueban la próxima vez que entren.')) return;
@@ -2238,8 +2244,18 @@ async function viewAdminPhotographers() {
   };
 
   const snap = await getDocs(query(collection(db, 'users'), where('status', '==', photogTab)));
+  const courtesyOf = u => planOf(u) !== 'free' && (u.courtesy || (u.proUntil?.toMillis?.() || 0) > Date.parse('2090-01-01'));
   const users = snap.docs.map(d => ({ uid: d.id, ...d.data() })).filter(u => u.role === 'photographer')
+    .filter(u => !photogPlan || (photogPlan === 'courtesy' ? courtesyOf(u) : planOf(u) === photogPlan && !(photogPlan !== 'free' && courtesyOf(u))))
     .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+  // Fotos vendidas (salesStats) y álbumes / fotos vigentes (sets activos) de cada fotógrafo.
+  const [salesSnap, setsSnap] = await Promise.all([
+    getDocs(collection(db, 'salesStats')).catch(() => null),
+    getDocs(collectionGroup(db, 'sets')).catch(() => null),
+  ]);
+  const soldBy = new Map(), liveBy = new Map();
+  for (const d of salesSnap?.docs || []) { const x = d.data(); soldBy.set(x.photographerUid, (soldBy.get(x.photographerUid) || 0) + (x.soldPhotos || 0)); }
+  for (const d of setsSnap?.docs || []) { const x = d.data(); if (!setActive(x)) continue; const l = liveBy.get(d.id) || { albums: 0, photos: 0 }; l.albums++; l.photos += x.photoCount || 0; liveBy.set(d.id, l); }
   const privs = await Promise.all(users.map(u => getDoc(doc(db, 'userPrivate', u.uid)).then(s => s.data() || {}).catch(() => ({}))));
   const reqs = await Promise.all(users.map(u => getDoc(doc(db, 'planRequests', u.uid)).then(s => s.data() || null).catch(() => null)));
   const zoneOk = await Promise.all(users.map(u => canonicalPlace(u.zone).catch(() => 'x')));
@@ -2251,44 +2267,84 @@ async function viewAdminPhotographers() {
   const bals = new Map((balSnap?.docs || []).map(d => [d.id, d.data()]));
   const reported = (repSnap?.docs || []).map(d => ({ id: d.id, ...d.data() }));
   const owedOf = uid => { const b = bals.get(uid) || {}; return Math.max(0, Math.round(((b.accrued || 0) - (b.paid || 0)) * 100) / 100); };
-  $('#pl').innerHTML = users.length ? users.map((u, i) => `
-    <div class="item-row">
-      ${avatarHtml(u)}
-      <div class="grow">
-        <strong>${esc(u.displayName)}</strong> <span class="muted small">/${esc(u.slug)}</span><br>
-        <span class="muted small">${esc(privs[i].email || privs[i].phone || '')}${u.zone ? ' · 📍 ' + esc(u.zone) : ''} · alta ${esc(fmtTs(u.createdAt))}</span>
-        ${zoneOk[i] ? '' : '<span class="pill warn" title="No es una localidad de la lista">📍 Localidad sin elegir</span>'} <button class="btn sm" data-zone="${u.uid}" title="Cambiar la localidad del fotógrafo">📍 Localidad</button>
-        ${waOf(u, privs[i]) ? `<a class="small" target="_blank" rel="noopener" href="${esc(waLink(waOf(u, privs[i])))}">💬 ${esc(waOf(u, privs[i]))}</a>` : ''}<br>
-        ${privs[i].provider ? `<span class="pill" title="Cómo se registró">${privs[i].provider === 'google' ? 'Ingresa con Google' : privs[i].provider === 'phone' ? 'Ingresa con el celular (SMS)' : 'Ingresa con email y contraseña'}</span>` : ''}
-        ${privs[i].emailVerified ? '' : `<span class="pill warn" title="Todavía no tocó el link del mail de confirmación: no puede publicar ni vincular Mercado Pago">✉️ Correo sin confirmar</span> <button class="btn sm" data-verify="${u.uid}" title="Para quien no puede abrir el mail: lo confirmás vos">✅ Confirmar cuenta</button>`}
-        ${u.mpConnected ? '<span class="pill ok">MP vinculado</span>' : `<span class="pill ${u.status === 'approved' ? 'danger' : ''}">MP sin vincular</span>`}
-        ${albumBonusOf(u) ? `<span class="pill accent" title="Álbumes de prueba">🎁 +${albumBonusOf(u).count} álbum${albumBonusOf(u).count === 1 ? '' : 'es'} hasta ${esc(new Date(albumBonusOf(u).until).toLocaleDateString('es-AR'))}</span>` : ''}
-        ${planOf(u) !== 'free' ? `<span class="pill accent">⭐ ${esc(PLANS[planOf(u)].label)} ${u.courtesy ? '· cortesía, sin vencimiento' : `hasta ${esc(fmtTs(u.proUntil))}`}</span>` : '<span class="pill">Gratis</span>'}
-        ${reqs[i] && reqs[i].plan !== planOf(u) ? `<span class="pill warn">Pidió: ${esc(PLANS[reqs[i].plan]?.label || reqs[i].plan)}</span>` : ''}
-        ${u.site?.requestedDomain && !u.domainActive ? `<span class="pill warn">Dominio pedido: ${esc(u.site.requestedDomain)}</span>` : ''}
-        ${u.domainActive ? `<span class="pill ${u.domainSetup && u.domainSetup.status !== 'active' ? 'warn' : 'ok'}">🌐 ${esc(u.siteDomain)}${u.domainSetup && u.domainSetup.status !== 'active' ? ' · esperando NIC.ar' : ''}</span>` : ''}
+  const planSel = (u, i, attr) => `<select ${attr}="${u.uid}" style="width:auto"><option value="">Elegí el plan…</option>${Object.entries(PLANS).filter(([k]) => k !== 'free').map(([k, p]) => `<option value="${k}" ${(reqs[i]?.plan || (planOf(u) !== 'free' ? planOf(u) : '')) === k ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}</select>`;
+  $('#pl').innerHTML = users.length ? users.map((u, i) => {
+    const wa = waOf(u, privs[i]), live = liveBy.get(u.uid) || { albums: 0, photos: 0 }, sold = soldBy.get(u.uid) || 0;
+    const open = photogOpen.has(u.uid);
+    return `
+    <div class="ph-row">
+      <div class="item-row" style="border:0;padding:0">
+        ${avatarHtml(u)}
+        <div class="grow" style="min-width:0">
+          <strong>${esc(u.displayName || '—')}</strong>
+          <div class="muted small">${u.zone ? `📍 ${esc(u.zone)}` : '📍 Sin ciudad'}${zoneOk[i] ? '' : ' <span class="pill warn" title="Lo escribió a mano y no coincide con una localidad de la lista. Corregilo en Ver más → Cambiar ciudad">revisar</span>'}</div>
+          <div class="row small" style="gap:6px;margin-top:4px">
+            ${wa ? `<a class="btn sm ok" target="_blank" rel="noopener" href="${esc(waLink(wa))}">💬 ${esc(wa)}</a>` : '<span class="muted small">Sin WhatsApp</span>'}
+            ${planOf(u) !== 'free' ? `<span class="pill accent">⭐ ${esc(PLANS[planOf(u)].label)}${courtesyOf(u) ? ' · cortesía' : ` · hasta ${esc(fmtTs(u.proUntil))}`}</span>` : '<span class="pill">Gratis</span>'}
+            ${reqs[i] && reqs[i].plan !== planOf(u) ? `<span class="pill warn">Pidió: ${esc(PLANS[reqs[i].plan]?.label || reqs[i].plan)}</span>` : ''}
+          </div>
+          <div class="set-stats" style="margin-top:6px">
+            <span class="stat-chip ${sold ? 'ok' : ''}" title="Fotos vendidas en total">🛒 ${sold} vendida${sold === 1 ? '' : 's'}</span>
+            <span class="stat-chip" title="Álbumes a la venta hoy">📁 ${live.albums} álbum${live.albums === 1 ? '' : 'es'} vigente${live.albums === 1 ? '' : 's'}</span>
+            <span class="stat-chip" title="Fotos en los álbumes vigentes">📷 ${live.photos.toLocaleString('es-AR')} fotos</span>
+          </div>
+        </div>
+        <div class="row" style="flex:none">
+          ${u.status === 'pending' ? `<button class="btn sm ok" data-st="approved" data-uid="${u.uid}">Aprobar</button>` : ''}
+          <button class="btn sm" data-more="${u.uid}" aria-expanded="${open}">${open ? 'Ver menos ▴' : 'Ver más ▾'}</button>
+        </div>
       </div>
-      <div class="row">
-        <a class="btn sm" target="_blank" href="index.html#/f/${esc(u.slug)}">Perfil</a>
-        <button class="btn sm" data-pwreset="${u.uid}" data-pwname="${esc(u.displayName || '')}" data-pwwa="${esc(waOf(u, privs[i]) || '')}" title="Link para que elija una contraseña nueva">🔑 Clave</button>
-        ${u.status !== 'approved' ? `<button class="btn sm ok" data-st="approved" data-uid="${u.uid}">Aprobar</button>` : ''}
-        ${u.status !== 'suspended' ? `<button class="btn sm danger" data-st="suspended" data-uid="${u.uid}">Suspender</button>` : ''}
-        ${u.status === 'suspended' ? `<button class="btn sm" data-st="pending" data-uid="${u.uid}">Volver a pendiente</button>` : ''}
-        ${u.status === 'approved' ? `<select data-plan-sel="${u.uid}" style="width:auto" title="Plan a dar con +30 días o Cortesía (no es su plan actual)"><option value="">Dar plan…</option>${Object.entries(PLANS).filter(([k]) => k !== 'free').map(([k, p]) => `<option value="${k}" ${(reqs[i]?.plan || (planOf(u) !== 'free' ? planOf(u) : '')) === k ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}</select>
-          <button class="btn sm" data-pro="${u.uid}">+30 días</button>
-          <button class="btn sm" data-courtesy="${u.uid}" title="Plan sin costo y sin vencimiento, hasta que lo quites">🎁 Cortesía</button>` : ''}
-        ${isPro(u) ? `<button class="btn sm ghost" data-unpro="${u.uid}">Quitar plan</button>` : ''}
- ${u.status === 'approved' && planOf(u) === 'free' ? `<button class="btn sm ghost" data-bonus="${u.uid}" title="Más álbumes activos a la vez, por un tiempo, a modo de prueba">🎁 Álbumes de prueba</button>` : ''}
-        ${u.status === 'approved' ? `<button class="btn sm ghost" data-pbonus="${u.uid}" title="Más fotos por álbum, por un tiempo, a modo de prueba">📈 Fotos de prueba</button>` : ''}
-        ${photoBonusOf(u) ? `<span class="pill accent" title="Fotos de prueba">📈 +${photoBonusOf(u).photos} fotos por álbum hasta ${esc(new Date(photoBonusOf(u).until).toLocaleDateString('es-AR'))}</span>` : ''}
-        <button class="btn sm ghost" data-subsync="${u.uid}" title="Revisa en Mercado Pago su suscripción y aplica el plan">🔄 Suscripción</button>
-        ${u.transferOn || bals.has(u.uid) || u.transferBlocked ? `<button class="btn sm ghost" data-fees="${u.uid}">🏦 Transferencia${owedOf(u.uid) ? ` · debe ${fmtMoney(owedOf(u.uid))}` : ''}${reported.some(r => r.uid === u.uid) ? ' · 🔔 avisó un pago' : ''}</button>` : ''}
-        ${PLANS[planOf(u)]?.team ? `<button class="btn sm ghost" data-seats="${u.uid}" title="Lugares extra para su equipo (además de los del plan)">👥 Lugares extra: ${u.teamExtraSeats || 0}</button>` : ''}
-        ${PLANS[planOf(u)]?.domain && u.site?.requestedDomain && !u.domainActive ? `<button class="btn sm ok" data-dom="${u.uid}">Activar dominio</button>` : ''}
-        ${u.domainActive && u.domainSetup && u.domainSetup.status !== 'active' ? `<button class="btn sm" data-domst="${u.uid}">Revisar dominio</button>` : ''}
-        ${planOf(u) !== 'free' && PLANS[planOf(u)].web ? `<a class="btn sm" target="_blank" href="${esc(siteUrlOf(u))}">Web</a>` : ''}
+      <div class="ph-more stack ${open ? '' : 'hidden'}" id="more-${u.uid}">
+        <div><h3>Cuenta</h3>
+          <div class="muted small">${esc(privs[i].email || privs[i].phone || '')} · /${esc(u.slug || '')} · alta ${esc(fmtTs(u.createdAt))}</div>
+          <div class="row" style="gap:6px;margin-top:6px">
+            ${privs[i].provider ? `<span class="pill">${privs[i].provider === 'google' ? 'Ingresa con Google' : privs[i].provider === 'phone' ? 'Ingresa con el celular' : 'Ingresa con email y contraseña'}</span>` : ''}
+            ${u.mpConnected ? '<span class="pill ok">Mercado Pago vinculado</span>' : `<span class="pill ${u.status === 'approved' ? 'danger' : ''}">Mercado Pago sin vincular</span>`}
+            ${privs[i].emailVerified ? '' : `<span class="pill warn" title="Todavía no tocó el link del mail de confirmación: no puede publicar ni vincular Mercado Pago">✉️ Correo sin confirmar</span> <button class="btn sm" data-verify="${u.uid}" title="Para quien no puede abrir el mail: lo confirmás vos">✅ Confirmar cuenta</button>`}
+            ${u.site?.requestedDomain && !u.domainActive ? `<span class="pill warn">Dominio pedido: ${esc(u.site.requestedDomain)}</span>` : ''}
+            ${u.domainActive ? `<span class="pill ${u.domainSetup && u.domainSetup.status !== 'active' ? 'warn' : 'ok'}">🌐 ${esc(u.siteDomain)}${u.domainSetup && u.domainSetup.status !== 'active' ? ' · esperando NIC.ar' : ''}</span>` : ''}
+          </div>
+          <div class="row" style="gap:6px;margin-top:8px">
+            <a class="btn sm" target="_blank" href="index.html#/f/${esc(u.slug)}" title="Su perfil público, con el portfolio">👤 Perfil y portfolio</a>
+            ${planOf(u) !== 'free' && PLANS[planOf(u)].web ? `<a class="btn sm" target="_blank" href="${esc(siteUrlOf(u))}">🌐 Su web</a>` : ''}
+            <button class="btn sm" data-pwreset="${u.uid}" data-pwname="${esc(u.displayName || '')}" data-pwwa="${esc(wa || '')}" title="Link para que elija una contraseña nueva">🔑 Restablecer clave</button>
+            <button class="btn sm" data-zone="${u.uid}" title="Corregir la ciudad (de la lista oficial de localidades)">📍 Cambiar ciudad</button>
+            ${u.status === 'suspended' ? `<button class="btn sm" data-st="pending" data-uid="${u.uid}">Volver a pendiente</button>` : `<button class="btn sm danger" data-st="suspended" data-uid="${u.uid}">🚫 Suspender</button>`}
+            ${u.status === 'suspended' ? `<button class="btn sm ok" data-st="approved" data-uid="${u.uid}">Aprobar</button>` : ''}
+          </div>
+        </div>
+        ${u.status === 'approved' ? `<div><h3>Plan</h3>
+          <div class="row" style="gap:6px">
+            <button class="btn sm ghost" data-subsync="${u.uid}" title="Revisa en Mercado Pago su suscripción y aplica el plan">🔄 Revisar suscripción</button>
+            ${isPro(u) && !courtesyOf(u) ? `<button class="btn sm ghost" data-unpro="${u.uid}">Quitar plan</button>` : ''}
+            ${u.transferOn || bals.has(u.uid) || u.transferBlocked ? `<button class="btn sm ghost" data-fees="${u.uid}">🏦 Comisiones por transferencia${owedOf(u.uid) ? ` · debe ${fmtMoney(owedOf(u.uid))}` : ''}${reported.some(r => r.uid === u.uid) ? ' · 🔔 avisó un pago' : ''}</button>` : ''}
+            ${PLANS[planOf(u)]?.team ? `<button class="btn sm ghost" data-seats="${u.uid}" title="Lugares extra para su equipo (además de los del plan)">👥 Lugares extra: ${u.teamExtraSeats || 0}</button>` : ''}
+            ${PLANS[planOf(u)]?.domain && u.site?.requestedDomain && !u.domainActive ? `<button class="btn sm ok" data-dom="${u.uid}">Activar dominio</button>` : ''}
+            ${u.domainActive && u.domainSetup && u.domainSetup.status !== 'active' ? `<button class="btn sm" data-domst="${u.uid}">Revisar dominio</button>` : ''}
+          </div>
+          <div class="row" style="gap:6px;margin-top:8px">${planSel(u, i, 'data-plan-sel')}<button class="btn sm" data-pro="${u.uid}">Dar 30 días</button></div>
+          <p class="muted small" style="margin:4px 0 0">"Dar 30 días": para cuando te paga por fuera de Mercado Pago (ej. transferencia). Le da el plan elegido por 30 días más.</p>
+        </div>
+        <div><h3>🎁 Cortesías</h3>
+          <div class="row" style="gap:6px">
+            ${courtesyOf(u) ? `<span class="pill accent">⭐ ${esc(PLANS[planOf(u)].label)} de cortesía</span><button class="btn sm ghost" data-unpro="${u.uid}">Quitar cortesía</button>`
+              : `${planSel(u, i, 'data-cplan-sel')}<button class="btn sm" data-courtesy="${u.uid}" title="Plan sin costo y sin vencimiento, hasta que lo quites">🎁 Dar plan de cortesía</button>`}
+          </div>
+          <div class="row" style="gap:6px;margin-top:8px">
+            <button class="btn sm ghost" data-pbonus="${u.uid}" title="Más fotos por álbum, por un tiempo, a modo de prueba">📈 Fotos de prueba</button>
+            ${photoBonusOf(u) ? `<span class="pill accent">📈 +${photoBonusOf(u).photos} fotos por álbum hasta ${esc(new Date(photoBonusOf(u).until).toLocaleDateString('es-AR'))}</span>` : ''}
+            ${planOf(u) === 'free' ? `<button class="btn sm ghost" data-bonus="${u.uid}" title="Más álbumes activos a la vez, por un tiempo, a modo de prueba">🗂️ Álbumes de prueba</button>` : ''}
+            ${albumBonusOf(u) ? `<span class="pill accent">🗂️ +${albumBonusOf(u).count} álbum${albumBonusOf(u).count === 1 ? '' : 'es'} hasta ${esc(new Date(albumBonusOf(u).until).toLocaleDateString('es-AR'))}</span>` : ''}
+          </div>
+        </div>` : ''}
       </div>
-    </div>`).join('') : '<div class="empty">No hay fotógrafos en esta lista.</div>';
+    </div>`; }).join('') : '<div class="empty">No hay fotógrafos en esta lista.</div>';
+  $$('[data-more]').forEach(b => b.onclick = () => {
+    const uid = b.dataset.more, box = $(`#more-${uid}`);
+    const open = box.classList.toggle('hidden') === false;
+    open ? photogOpen.add(uid) : photogOpen.delete(uid);
+    b.textContent = open ? 'Ver menos ▴' : 'Ver más ▾'; b.setAttribute('aria-expanded', open);
+  });
   $$('[data-pro]').forEach(b => b.onclick = async () => {
     const u = users.find(x => x.uid === b.dataset.pro);
     const plan = $(`[data-plan-sel="${u.uid}"]`).value;
@@ -2304,7 +2360,7 @@ async function viewAdminPhotographers() {
   // Cortesía: el plan elegido, sin costo y sin vencimiento (ej. familia, socios, prensa).
   $$('[data-courtesy]').forEach(b => b.onclick = async () => {
     const u = users.find(x => x.uid === b.dataset.courtesy);
-    const plan = $(`[data-plan-sel="${u.uid}"]`).value;
+    const plan = $(`[data-cplan-sel="${u.uid}"]`).value;
     if (!plan) return toast('Elegí qué plan darle en la lista.', 'error');
     if (!confirm(`¿Dar a ${u.displayName} el plan ${PLANS[plan].label} de cortesía, sin costo y sin vencimiento?`)) return;
     try {
@@ -2495,6 +2551,28 @@ async function viewAdminEvents() {
 // Una fila por compra: cliente, álbum, fotógrafo, fotos, forma de pago, estado, descargas. Filtros, totales y CSV.
 const PURCHASE_STATUS = { approved: ['Pagada', 'ok'], pending: ['Pendiente', 'warn'], rejected: ['Rechazada', 'danger'], expired: ['Vencida', 'danger'], refunded: ['Reembolsada', ''] };
 let purF = { range: 30, ph: '', pay: '', st: 'approved', q: '' };
+// Cobros de suscripciones (planes de fotógrafos): se piden una vez por visita a Compras (el Worker consulta Mercado Pago).
+let planPays = null;
+function drawPlanPays(from, q) {
+  const box = $('#pu-subs');
+  if (!box) return;
+  if (purF.pay === 'transfer') { box.innerHTML = ''; return; }
+  if (!planPays) { box.innerHTML = '<div class="card"><h2>⭐ Suscripciones</h2><div class="spinner"></div></div>'; return; }
+  if (planPays.fail) { box.innerHTML = `<div class="card"><h2>⭐ Suscripciones</h2><div class="notice danger">${esc(planPays.fail)}</div></div>`; return; }
+  const list = planPays.items.filter(p => Date.parse(p.at) >= from && (!purF.ph || p.uid === purF.ph) && (!q || normalize(`${p.name} ${PLANS[p.plan]?.label || p.plan}`).includes(q)));
+  const total = list.reduce((a, p) => a + (p.amount || 0), 0);
+  box.innerHTML = `<div class="card stack">
+    <div class="row" style="justify-content:space-between"><h2 style="margin:0">⭐ Suscripciones</h2><strong>${fmtMoney(total)}</strong></div>
+    <p class="muted small" style="margin:0">Cobros de los planes de fotógrafos: el primero (alta) y cada renovación. ${list.filter(p => p.first).length} alta${list.filter(p => p.first).length === 1 ? '' : 's'} · ${list.filter(p => !p.first).length} renovaci${list.filter(p => !p.first).length === 1 ? 'ón' : 'ones'}.</p>
+    ${planPays.error ? `<div class="notice warn small">${esc(planPays.error)}</div>` : ''}
+    ${list.length ? `<div class="table-wrap"><table class="list">
+      <tr><th>Fotógrafo</th><th>Fecha</th><th>Plan</th><th>Cobro</th><th>Monto</th></tr>
+      ${list.map(p => `<tr><td><strong>${esc(p.name || '—')}</strong></td><td class="small">${esc(new Date(p.at).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }))}</td>
+        <td>${esc(PLANS[p.plan]?.label || p.plan || '—')}${p.period === 'year' ? ' <span class="muted small">anual</span>' : ''}</td>
+        <td>${p.first ? '<span class="pill ok">🆕 Primer cobro</span>' : '<span class="pill">🔁 Renovación</span>'}</td><td>${fmtMoney(p.amount)}</td></tr>`).join('')}
+    </table></div>` : '<p class="muted small" style="margin:0">No hay cobros de suscripciones con estos filtros.</p>'}
+  </div>`;
+}
 async function viewAdminPurchases() {
   const [os, ps, cs, us] = await Promise.all([
     getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(3000))),
@@ -2554,7 +2632,11 @@ async function viewAdminPurchases() {
       </table></div>
       ${list.length > 500 ? `<p class="muted small">Se muestran las primeras 500 de ${list.length}. Usá los filtros o exportá el CSV.</p>` : ''}
       <p class="muted small" style="margin:0">* Las descargas se cuentan desde el 09/11/2026.</p>
-    </div>`;
+    </div>
+    <div id="pu-subs"></div>`;
+  if (planPays && Date.now() - (planPays.t || 0) > 5 * 60000) planPays = null; // se refresca cada 5 minutos
+  drawPlanPays(from, q);
+  if (!planPays) apiGet('/admin/plan-payments').then(r => { planPays = { ...r, t: Date.now() }; }, e => { planPays = { items: [], fail: errMsg(e) }; }).then(() => drawPlanPays(from, q));
   const set = (k, v) => { purF[k] = v; viewAdminPurchases(); };
   $('#pu-range').onchange = e => set('range', Number(e.target.value));
   $('#pu-ph').onchange = e => set('ph', e.target.value);

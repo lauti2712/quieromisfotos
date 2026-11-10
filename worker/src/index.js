@@ -58,6 +58,7 @@ import { addFaces, myFaces, matchFaces, myFace } from './faces.js';
 import { commitPhoto, deletePhotos, orderDownloadUntil } from './photos.js';
 import { closeAlbum, forceDeleteAlbum, removeAlbum } from './samples.js';
 import { incomeRequest } from './income.js';
+import { planPaymentsRequest } from './planpay.js';
 import { createLoginLink, useLoginLink, resetPasswordLink } from './loginlink.js';
 import { claimOrders, convertGuests } from './guests.js';
 import { statsHit } from './stats.js';
@@ -195,6 +196,7 @@ async function route(req, env, ctx) {
   if (m === 'POST' && url.pathname === '/admin/storage/scan') return scanRequest(req, env);
   if (m === 'GET' && url.pathname === '/admin/costs') return costsRequest(req, env, ctx);
   if (m === 'GET' && url.pathname === '/admin/income') return incomeRequest(req, env);
+  if (m === 'GET' && url.pathname === '/admin/plan-payments') return planPaymentsRequest(req, env);
   if (m === 'POST' && url.pathname === '/admin/login-link') return createLoginLink(req, env);
   if (m === 'POST' && url.pathname === '/auth/link') return useLoginLink(req, env);
   if (m === 'POST' && url.pathname === '/orders/claim') return claimOrders(req, env);
