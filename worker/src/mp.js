@@ -102,3 +102,16 @@ export async function mpFetch(token, path, init = {}) {
   if (!res.ok) throw Object.assign(httpError(502, d.message || `Mercado Pago ${res.status}`), { mp: d });
   return d;
 }
+
+// Cuenta de Mercado Pago vinculada (nombre y mail), para que el fotógrafo sepa de qué cuenta tiene que ser el alias
+// de transferencias. Mercado Pago no informa el alias: eso lo carga el fotógrafo.
+//   GET /mp/account   Bearer (fotógrafo)  -> { connected, name, email }
+export async function mpAccount(req, env) {
+  const claims = await requireUser(req, env);
+  const token = await sellerToken(env, claims.sub).catch(() => null);
+  if (!token) return json({ connected: false });
+  const me = await mpFetch(token, '/users/me').catch(() => null);
+  if (!me) return json({ connected: true, name: '', email: '' });
+  const name = [me.first_name, me.last_name].filter(Boolean).join(' ').trim() || me.nickname || '';
+  return json({ connected: true, name, email: me.email || '' });
+}

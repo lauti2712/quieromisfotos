@@ -1298,12 +1298,19 @@ async function drawTransferCard() {
   const PST = { reported: ['Por confirmar', 'warn'], confirmed: ['Confirmado', 'ok'], rejected: ['No encontrado', 'danger'] };
   box.innerHTML = `
     <h2 style="margin:0">🏦 Cobrar por transferencia</h2>
-    <p class="muted" style="margin:0">Tus clientes también pueden pagarte por transferencia a tu alias: <strong>no pagás la comisión de Mercado Pago</strong>. Cada pedido tiene un monto con centavos únicos (ej. $8.500,37) y se acredita solo cuando entra a tu Mercado Pago. La comisión de la plataforma (${myFee()}%) se va sumando a un saldo que nos pagás vos por transferencia.</p>
+    <p class="muted" style="margin:0">Tus clientes también pueden pagarte por transferencia a tu alias de Mercado Pago: <strong>no pagás la comisión de Mercado Pago</strong>. Cada pedido tiene un monto con centavos únicos (ej. $8.500,37) y se acredita solo cuando entra a tu Mercado Pago. La comisión de la plataforma (${myFee()}%) se va sumando a un saldo que nos pagás vos por transferencia.</p>
     ${!allowed ? `<div class="notice">Disponible en los planes ${plans.map(id => `<strong>${esc(PLANS[id]?.label || id)}</strong>`).join(', ')}. <a href="#/web">Ver planes</a></div>`
       : p.transferBlocked ? '<div class="notice warn">La plataforma desactivó el cobro por transferencia en tu cuenta. Escribinos por WhatsApp para reactivarlo.</div>'
       : `${p.mpConnected ? '' : '<div class="notice warn small" style="margin:0">Vinculá tu Mercado Pago (arriba): lo usamos para reconocer las transferencias que te llegan.</div>'}
       <label class="check"><input type="checkbox" id="tr-on" ${p.transferOn ? 'checked' : ''}> Ofrecer pago por transferencia en mis fotos</label>
-      <label class="field">Alias de tu Mercado Pago<input type="text" id="tr-alias" maxlength="40" value="${esc(p.transferAlias || '')}" placeholder="Ej: juan.fotos.mp"><span class="hint">Tiene que ser el alias de la <strong>misma cuenta de Mercado Pago</strong> que vinculaste; si no, no podemos ver los pagos.</span></label>
+      <div class="notice warn small stack" style="margin:0;gap:4px">
+        <strong>⚠️ El alias tiene que ser de la MISMA cuenta de Mercado Pago que vinculaste.</strong>
+        <span>Las transferencias se reconocen solas porque las vemos entrar a esa cuenta. Si ponés el alias de otra cuenta (otro Mercado Pago, un banco o una billetera), el pago no se acredita, el comprador no puede descargar y lo tenés que confirmar a mano.</span>
+        <span id="tr-acct" class="muted"></span>
+        <span class="muted">¿Dónde está tu alias? En la app de Mercado Pago, en los datos de tu cuenta (donde figuran tu <strong>CVU y alias</strong>). Tiene que ser esa misma cuenta.</span>
+      </div>
+      <label class="field">Alias de esa cuenta de Mercado Pago<input type="text" id="tr-alias" maxlength="40" value="${esc(p.transferAlias || '')}" placeholder="Ej: juan.fotos.mp"></label>
+      <label class="check"><input type="checkbox" id="tr-same" ${p.transferAlias ? 'checked' : ''}> Confirmo que este alias es de la cuenta de Mercado Pago que vinculé</label>
       <label class="field">Titular (como aparece al transferir)<input type="text" id="tr-holder" maxlength="60" value="${esc(p.transferHolder || '')}" placeholder="Ej: Juan Pérez"></label>
       <div><button class="btn primary" id="tr-save">Guardar</button></div>`}
     ${(bal.accrued || pays.length) ? `<hr>
@@ -1322,6 +1329,7 @@ async function drawTransferCard() {
   $('#tr-save')?.addEventListener('click', async e => {
     const transferAlias = $('#tr-alias').value.trim(), transferHolder = $('#tr-holder').value.trim(), transferOn = $('#tr-on').checked;
     if (transferOn && !/^[A-Za-z0-9.\-]{6,20}$/.test(transferAlias)) return toast('Revisá el alias: entre 6 y 20 letras, números, puntos o guiones.', 'error');
+    if (transferOn && !$('#tr-same').checked) return toast('Confirmá que el alias es de la cuenta de Mercado Pago que vinculaste.', 'error');
     e.target.disabled = true;
     try {
       await updateDoc(doc(db, 'users', S.user.uid), { transferOn, transferAlias, transferHolder });
@@ -1331,6 +1339,12 @@ async function drawTransferCard() {
     e.target.disabled = false;
   });
   $$('[data-copyv]', box).forEach(b => b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copyv); toast('Copiado'); } catch { toast(b.dataset.copyv); } });
+  // Cuenta vinculada (Mercado Pago no informa el alias, pero sí el titular): se muestra y completa el titular si está vacío.
+  if ($('#tr-acct') && p.mpConnected) apiGet('/mp/account').then(a => {
+    if (!a?.name && !a?.email) return;
+    $('#tr-acct').innerHTML = `Cuenta vinculada: <strong>${esc(a.name || '')}</strong>${a.email ? ` (${esc(a.email)})` : ''}. Usá el alias de esta cuenta.`;
+    if (a.name && $('#tr-holder') && !$('#tr-holder').value.trim()) $('#tr-holder').value = a.name;
+  }).catch(() => {});
   $('#fee-report')?.addEventListener('click', async e => {
     const amount = Number($('#fee-amount').value);
     if (!(amount > 0)) return toast('Escribí el monto que transferiste.', 'error');
