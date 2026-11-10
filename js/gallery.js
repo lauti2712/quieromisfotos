@@ -18,9 +18,6 @@ const HOWTO_KEY = 'qmf-howto-hidden';
 function howToHtml(phs, evName = '') {
   try { if (Date.now() - Number(localStorage.getItem(HOWTO_KEY) || 0) < 30 * 86400000) return ''; } catch { /* nada */ }
   const names = phs.map(u => u.displayName).filter(Boolean);
-  const contact = phs.map(u => u.socials?.whatsapp
-    ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(waLink(u.socials.whatsapp, `¡Hola ${u.displayName || ''}! Te escribo por tus fotos en Quiero Mis Fotos.`))}">💬 Escribirle a ${esc(u.displayName || 'el fotógrafo')}</a>`
-    : u.slug ? `<a class="btn sm" href="#/f/${esc(u.slug)}">Contacto de ${esc(u.displayName || 'el fotógrafo')}</a>` : '').join('');
   return `<div class="card stack howto" id="g-howto">
     <div class="row" style="justify-content:space-between;align-items:flex-start"><strong>📸 Cómo comprar tus fotos</strong><button type="button" class="btn ghost sm" id="g-howto-x" aria-label="Cerrar">✕</button></div>
     <ol class="howto-steps">
@@ -28,8 +25,7 @@ function howToHtml(phs, evName = '') {
       <li>Tocá <strong>🛒 Ver carrito</strong>.</li>
       <li>Pagá con <strong>Mercado Pago</strong> y descargalas al instante, en alta calidad y sin marca de agua. No hace falta crear una cuenta.</li>
     </ol>
-    <p class="muted small" style="margin:0">ℹ️ <strong>Quiero Mis Fotos</strong> es la plataforma donde los fotógrafos venden sus fotos: no somos los autores${names.length ? `. Las fotos de este evento son de <strong>${esc(names.join(', '))}</strong>` : ''}. Para consultas sobre las fotos (una que falta, otra toma), escribile al fotógrafo. Si tenés un problema con el pago o la descarga, <a target="_blank" rel="noopener" href="https://wa.me/5493424856528?text=${encodeURIComponent(`Hola! Tengo un problema con mi compra en el evento "${evName}"`)}">escribinos</a>.</p>
-    ${contact ? `<div class="row" style="flex-wrap:wrap;gap:6px">${contact}</div>` : ''}
+    <p class="muted small" style="margin:0">ℹ️ <strong>Quiero Mis Fotos</strong> es la plataforma donde los fotógrafos venden sus fotos: no somos los autores${names.length ? `. Las fotos de este evento son de <strong>${esc(names.join(', '))}</strong>` : ''}. Si tenés un problema con el pago o la descarga, <a target="_blank" rel="noopener" href="https://wa.me/5493424856528?text=${encodeURIComponent(`Hola! Tengo un problema con mi compra en el evento "${evName}"`)}">escribinos</a>.</p>
   </div>`;
 }
 
