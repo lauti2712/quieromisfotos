@@ -11,6 +11,7 @@
 //   PUT    /bibs/{eid}/{pid}           X-Upload-Token  (jpeg sin marca)       lee los dorsales con IA -> { bibs }
 //   POST   /faces/{eid}[/mine|/match]  búsqueda por selfie (faces.js)
 //   POST   /events/{eid}/close         Bearer   cerrar álbum: borra originales, quedan 10 de muestra (samples.js)
+//   POST   /events/{eid}/remove        Bearer   eliminar del historial un álbum cerrado o vacío (samples.js)
 //   GET|POST /faces/me[/delete]        Bearer   cara guardada del comprador para avisarle (faces.js)
 //   GET    /public/{key}                                                      sirve qmf-public (si no hay dominio público)
 //
@@ -55,7 +56,7 @@ import { createTag } from './tags.js';
 import { scanBibsRequest } from './bibs.js';
 import { addFaces, myFaces, matchFaces, myFace } from './faces.js';
 import { commitPhoto, deletePhotos, orderDownloadUntil } from './photos.js';
-import { closeAlbum, forceDeleteAlbum } from './samples.js';
+import { closeAlbum, forceDeleteAlbum, removeAlbum } from './samples.js';
 import { incomeRequest } from './income.js';
 import { createLoginLink, useLoginLink, resetPasswordLink } from './loginlink.js';
 import { claimOrders, convertGuests } from './guests.js';
@@ -103,12 +104,12 @@ export default {
       return json({ error: e.message || 'Error' }, status, cors);
     }
   },
-  // Crons: diario (uso de R2, retención, limpieza), semanal (respaldo) y cada 5 minutos (avisos, suscripciones y, los lunes a las 8, el resumen semanal).
+  // Crons: diario (uso de R2, retención, limpieza), semanal (respaldo) y cada 5 minutos (avisos, suscripciones y, los lunes a las 6, el resumen semanal).
   async scheduled(event, env, ctx) {
     if (event.cron === BACKUP_CRON) { ctx.waitUntil(runBackup(env)); return; }
     // Cada 5 minutos: avisos a seguidores y suscripciones (de a pocas). Una tarea por vez para no pasar el límite de pedidos.
     if (event.cron === PUSH_CRON) {
-      // Lunes 08:00 (Argentina): resumen semanal. Ese tic no manda avisos (quedan para el siguiente) para no pasar el límite de pedidos.
+      // Lunes 06:00 (Argentina): resumen semanal. Ese tic no manda avisos (quedan para el siguiente) para no pasar el límite de pedidos.
       if (isWeeklyTick(event.scheduledTime)) { ctx.waitUntil(weeklyCron(env).catch(e => console.error('resumen semanal', e))); return; }
       ctx.waitUntil(matchPendingTransfers(env).catch(e => console.error('transferencias', e)));
       ctx.waitUntil(convertGuests(env).catch(e => console.error('invitados', e)));
@@ -157,6 +158,7 @@ async function route(req, env, ctx) {
   }
   if (parts[0] === 'faces' && parts[1] === 'me') return myFace(req, env, parts[2]);
   if (m === 'POST' && parts[0] === 'events' && ID_RE.test(parts[1] || '') && parts[2] === 'close') return closeAlbum(req, env, parts[1]);
+  if (m === 'POST' && parts[0] === 'events' && ID_RE.test(parts[1] || '') && parts[2] === 'remove') return removeAlbum(req, env, parts[1]);
   if (m === 'POST' && parts[0] === 'admin' && parts[1] === 'events' && ID_RE.test(parts[2] || '') && parts[3] === 'delete-album') return forceDeleteAlbum(req, env, parts[2]);
   if (parts[0] === 'faces' && ID_RE.test(parts[1] || '')) {
     if (m === 'POST' && parts.length === 2) return addFaces(req, env, await session(req, env), parts[1]);

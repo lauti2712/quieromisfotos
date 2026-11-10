@@ -1382,18 +1382,22 @@ async function viewMyEvents() {
   const snap = await getDocs(query(collection(db, 'events'), where('photographerUids', 'array-contains', S.user.uid), orderBy('date', 'desc'), limit(200)));
   const evs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   // Mi set en cada evento: fotos, vendidas y vencimiento.
-  const [sets, sales] = await Promise.all([
+  const [sets, sales, views] = await Promise.all([
     Promise.all(evs.map(ev => getDoc(doc(db, 'events', ev.id, 'sets', S.user.uid)).then(s => s.data() || null).catch(() => null))),
     getDocs(query(collection(db, 'salesStats'), where('photographerUid', '==', S.user.uid))).catch(() => null),
+    // Visitas al álbum (contadores anónimos de stats/{evento}).
+    Promise.all(evs.map(ev => getDoc(doc(db, 'stats', ev.id)).then(s => s.data()?.views || 0).catch(() => 0))),
   ]);
   const sold = new Map((sales?.docs || []).map(d => [d.data().eventId, d.data().soldPhotos || 0]));
-  evs.forEach((ev, i) => { ev.mySet = sets[i] && { ...sets[i], soldPhotos: sold.get(ev.id) || 0 }; });
+  evs.forEach((ev, i) => { ev.mySet = sets[i] && { ...sets[i], soldPhotos: sold.get(ev.id) || 0, views: views[i] }; });
   $('#view').innerHTML = `
     <div class="row" style="justify-content:space-between;margin-bottom:14px">
       <h1 style="margin:0">Mis álbumes</h1>
       <div class="row"><button class="btn" id="join">Sumarme a un evento</button><button class="btn primary" id="new">＋ Álbum nuevo</button></div>
     </div>
-    ${evs.length ? `<div class="events-grid">${evs.map(ev => panelEventCard(ev)).join('')}</div>`
+    ${evs.length ? (([open, hist]) => `${open.length ? `<div class="events-grid">${open.map(ev => panelEventCard(ev)).join('')}</div>` : '<div class="card"><div class="empty">No tenés álbumes abiertos. Creá uno nuevo para subir fotos.</div></div>'}
+      ${hist.length ? `<h2 style="margin-top:26px">📦 Historial</h2><p class="muted small" style="margin-top:-6px">Álbumes cerrados: se ven en la web con fotos de muestra y no ocupan tu lugar de álbum.</p>
+        <div class="events-grid">${hist.map(ev => panelEventCard(ev)).join('')}</div>` : ''}`)([evs.filter(ev => !ev.mySet?.originalsDeleted), evs.filter(ev => ev.mySet?.originalsDeleted)])
       : `<div class="card"><div class="empty">Todavía no estás en ningún evento.<br>Creá uno nuevo o sumate a un evento general.</div></div>`}`;
   $('#new').onclick = () => eventDialog(null);
   $('#join').onclick = joinDialog;
@@ -1401,6 +1405,7 @@ async function viewMyEvents() {
 }
 
 function statusPill(ev) {
+  if (ev.status === 'removed') return '<span class="pill">Eliminado por el fotógrafo</span>';
   return ev.status === 'published' ? '<span class="pill ok">Publicado</span>' : '<span class="pill warn">Borrador</span>';
 }
 
@@ -1484,7 +1489,7 @@ function extensionDialog(ev, set, kind = 'time') {
 function setStatsHtml(set) {
   const r = retentionState(set);
   const exp = {
-    deleted: '<span class="stat-chip danger" title="Los originales ya se eliminaron">🗑️ Originales eliminados</span>',
+    deleted: '<span class="stat-chip" title="Ya no se vende: queda con fotos de muestra">📦 Cerrado</span>',
     notstarted: `<span class="stat-chip" title="El plazo arranca cuando subís la primera foto">⏳ ${myRules().days} días al subir</span>`,
     active: `<span class="stat-chip ${r.days <= 3 ? 'warn' : ''}" title="Días que le quedan a la venta">⏳ ${r.days} día${r.days === 1 ? '' : 's'}</span>`,
     grace: `<span class="stat-chip danger" title="Ya no se vende. Extendé el plazo antes de que se borren los originales">⛔ Sin venta · se borra en ${r.ddays} día${r.ddays === 1 ? '' : 's'}</span>`,
@@ -1494,6 +1499,7 @@ function setStatsHtml(set) {
       <span class="stat-chip" title="Fotos en el álbum">📷 ${set.photoCount || 0}</span>
       ${(c => c.photos ? (c.max ? `<span class="stat-chip ${c.used >= c.max * 0.9 ? 'warn' : ''}" title="Fotos del álbum y tope del plan">🗂️ ${c.used} / ${c.fmt(c.max)}</span>` : '')
         : `<span class="stat-chip ${c.max && c.used >= c.max * 0.9 ? 'warn' : ''}" title="Espacio que ocupa el álbum (originales + muestras)">💾 ${fmtBytes(c.used)}${c.max ? ` / ${fmtBytes(c.max)}` : ''}</span>`)(capOf(set))}
+      ${set.views != null ? `<span class="stat-chip" title="Visitas al álbum (una por persona cada 6 horas)">👁️ ${Number(set.views).toLocaleString('es-AR')} visita${set.views === 1 ? '' : 's'}</span>` : ''}
       <span class="stat-chip ${set.soldPhotos ? 'ok' : ''}" title="Fotos vendidas">🛒 ${set.soldPhotos || 0} vendida${set.soldPhotos === 1 ? '' : 's'}</span>
       ${exp}
     </div>`;
@@ -1750,7 +1756,7 @@ async function viewEvent(id) {
         <div>
           <div class="row" style="margin-bottom:6px">${statusPill(ev)} ${ev.kind === 'general' ? '<span class="pill accent">Evento general</span>' : ''} ${ev.openToJoin ? '<span class="pill">Abierto a fotógrafos</span>' : ''}</div>
           <h1 style="margin-bottom:4px">${esc(ev.name)}</h1>
-          <div class="muted">${esc(fmtDate(ev.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}${ev.location ? ` · 📍 ${esc(ev.location)}` : ''}</div>
+          <div class="muted">${esc(fmtDate(ev.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}${ev.location ? ` · 📍 ${esc(ev.location)}` : ''}<span id="ev-views"></span></div>
           ${tags.length ? `<div class="pills" style="margin-top:8px">${tags.map(t => `<span class="pill">${esc(t.name)}</span>`).join('')}</div>` : ''}
         </div>
         <div class="row">
@@ -1761,6 +1767,7 @@ async function viewEvent(id) {
         </div>
       </div>
     </div>
+    <div id="ev-state"></div>
     <div id="ev-steps"></div>
     <div id="ev-share-card"></div>
     <div id="ev-sets"></div>
@@ -1768,6 +1775,7 @@ async function viewEvent(id) {
 
   const reload = () => viewEvent(id);
   $('#ev-share').onclick = () => shareEvent(ev);
+  getDoc(doc(db, 'stats', id)).then(x => { const n = x.data()?.views || 0; if ($('#ev-views')) $('#ev-views').textContent = ` · 👁️ ${n.toLocaleString('es-AR')} visita${n === 1 ? '' : 's'}`; }).catch(() => {});
   if (canEdit) {
     $('#ev-edit').onclick = () => eventDialog(ev, reload);
     $('#ev-toggle').onclick = async () => {
@@ -1921,48 +1929,88 @@ async function viewEvent(id) {
     }).catch(e => toast(errMsg(e), 'error'));
   }
 
+  drawAlbumState(ev, sets.get(me) || null, reload);
+}
+
+// Estado del álbum (arriba de todo): abierto → "Cerrar álbum"; cerrado → queda en el historial y se puede eliminar;
+// vacío → eliminar o salir. Cerrar libera el lugar; eliminar es opcional y solo con el álbum ya cerrado.
+function drawAlbumState(ev, set, reload) {
+  const box = $('#ev-state');
+  if (!box) return;
+  const me = S.user.uid, id = ev.id;
   const isCreator = ev.createdBy === me && ev.kind === 'own';
-  const set = sets.get(me);
-  // Cerrar el álbum: el evento queda con 10 fotos de muestra y deja de contar como álbum activo (libera el lugar).
-  const closeBtn = (set?.photoCount || 0) > 0 && !set.originalsDeleted ? '<button class="btn" id="ev-close">📦 Cerrar álbum</button>' : '';
-  const bindClose = () => $('#ev-close')?.addEventListener('click', async e => {
-    if (!confirm(`¿Cerrar el álbum "${ev.name}"?\n\n• Las fotos dejan de venderse y se borran los originales.\n• En el evento quedan 10 fotos de muestra con marca de agua.\n• Quien ya compró puede seguir descargando sus fotos.\n• Se libera el lugar para subir otro álbum.\n\nNo se puede deshacer.`)) return;
-    e.target.disabled = true; e.target.textContent = 'Cerrando…';
-    try { const r = await apiPost(`/events/${id}/close`); toast(`Álbum cerrado. Quedaron ${r.kept ?? 10} fotos de muestra.`); reload(); }
-    catch (err) { e.target.disabled = false; e.target.textContent = '📦 Cerrar álbum'; toast(errMsg(err), 'error'); }
-  });
-  if (isCreator && ev.photographerUids.length === 1) {
-    $('#ev-danger').innerHTML = `${closeBtn}<button class="btn danger" id="ev-del">Eliminar evento</button>`;
-    bindClose();
-    $('#ev-del').onclick = async () => {
-      if ((set?.photoCount || 0) > 0 && !set.originalsDeleted) return toast('Este álbum tiene fotos. Para subir otro evento, tocá "📦 Cerrar álbum": quedan 10 fotos de muestra y se libera el lugar.', 'error');
-      if ((set?.photoCount || 0) > 0) return toast('El álbum ya está cerrado y queda como muestra en el calendario. No hace falta eliminarlo.', 'error');
-      if (!confirm(`¿Eliminar "${ev.name}"?`)) return;
-      try {
-        const b = writeBatch(db);
-        if (set) b.delete(doc(db, 'events', id, 'sets', me));
-        b.delete(doc(db, 'events', id));
-        await b.commit();
-        toast('Evento eliminado');
-        location.hash = '#/eventos';
-      } catch (e) { toast(errMsg(e), 'error'); }
-    };
-  } else if (!isCreator) {
-    $('#ev-danger').innerHTML = `${closeBtn}<button class="btn danger" id="ev-leave">Salir del evento</button>`;
-    bindClose();
-    $('#ev-leave').onclick = async () => {
-      if ((set?.photoCount || 0) > 0) return toast('Primero borrá tus fotos de este evento.', 'error');
-      if (!confirm('¿Salir de este evento?')) return;
-      try {
-        const b = writeBatch(db);
-        if (set) b.delete(doc(db, 'events', id, 'sets', me));
-        b.update(doc(db, 'events', id), { photographerUids: arrayRemove(me) });
-        await b.commit();
-        toast('Saliste del evento');
-        location.hash = '#/eventos';
-      } catch (e) { toast(errMsg(e), 'error'); }
-    };
+  const solo = (ev.photographerUids || []).length === 1;
+  const n = set?.photoCount || 0;
+  const closed = !!set?.originalsDeleted;
+  const closedAt = (set?.closedAt || set?.originalsDeletedAt)?.toMillis?.() || 0;
+  if (closed) {
+    box.innerHTML = `<div class="card album-state closed">
+      <div class="grow"><h2 style="margin:0 0 4px">📦 Álbum cerrado${closedAt ? ` el ${fmtMs(closedAt)}` : ''}</h2>
+        <p class="muted small" style="margin:0">Queda en tu historial y en la web con ${n ? `${n} foto${n === 1 ? '' : 's'}` : 'algunas fotos'} de muestra (con marca de agua) para mostrar tu trabajo. Ya no se vende y no ocupa tu lugar de álbum. Quien compró sigue descargando sus fotos.</p></div>
+      <div class="row"><a class="btn sm" target="_blank" href="index.html#/evento/${id}?f=${esc(me)}">👁️ Ver cómo queda</a><button class="btn sm danger" id="st-remove">🗑️ Eliminar del historial</button></div>
+    </div>`;
+    $('#st-remove').onclick = () => removeAlbumDialog(ev);
+    return;
   }
+  if (n > 0) {
+    const r = retentionState(set);
+    const when = r.k === 'active' ? `Se vende hasta el <strong>${fmtMs(r.until)}</strong>.` : r.k === 'grace' ? `Dejó de venderse el ${fmtMs(r.until)}.` : '';
+    box.innerHTML = `<div class="card album-state open">
+      <div class="grow"><h2 style="margin:0 0 4px">🟢 Álbum abierto</h2>
+        <p class="muted small" style="margin:0">${when} Cuando termines de vender, cerralo: queda en tu historial con 10 fotos de muestra y se libera el lugar para subir otro álbum.</p></div>
+      <div class="row"><button class="btn" id="st-close">📦 Cerrar álbum</button></div>
+    </div>`;
+    $('#st-close').onclick = () => closeAlbumDialog(ev, reload);
+    return;
+  }
+  // Sin fotos: se puede borrar (o salir si el evento es de otro).
+  const own = isCreator && solo;
+  box.innerHTML = `<div class="row end" style="margin-top:4px"><button class="btn sm ghost" id="st-empty">${own ? '🗑️ Eliminar álbum' : '🚪 Salir del evento'}</button></div>`;
+  $('#st-empty').onclick = async () => {
+    if (!confirm(own ? `¿Eliminar "${ev.name}"? Todavía no tiene fotos.` : `¿Salir de "${ev.name}"?`)) return;
+    try {
+      const bt = writeBatch(db);
+      if (set) bt.delete(doc(db, 'events', id, 'sets', me));
+      if (own) bt.delete(doc(db, 'events', id));
+      else bt.update(doc(db, 'events', id), { photographerUids: arrayRemove(me) });
+      await bt.commit();
+      toast(own ? 'Álbum eliminado' : 'Saliste del evento');
+      location.hash = '#/eventos';
+    } catch (e) { toast(errMsg(e), 'error'); }
+  };
+  // Al subir la primera foto cambia a "Álbum abierto".
+  const prev = window.onqmfUploadDone;
+  window.onqmfUploadDone = x => { prev?.(x); if (x?.eventId === id && document.body.contains(box)) drawAlbumState(ev, { ...(set || {}), photoCount: x.count || 1, firstPhotoAt: set?.firstPhotoAt }, reload); };
+}
+
+function closeAlbumDialog(ev, reload) {
+  const dlg = openDialog('Cerrar álbum', `
+    <p style="margin-top:0">Vas a cerrar <strong>${esc(ev.name)}</strong>.</p>
+    <ul class="stack" style="gap:6px;padding:0;margin:0;list-style:none">
+      <li>✅ <strong>Se libera el lugar</strong> para subir otro álbum.</li>
+      <li>📸 Queda en tu historial y en la web con <strong>10 fotos de muestra</strong> (las más vendidas) con marca de agua.</li>
+      <li>🛒 Las fotos <strong>dejan de venderse</strong> y se borran los originales.</li>
+      <li>⬇️ Quien ya compró sigue descargando sus fotos.</li>
+    </ul>
+    <p class="muted small" style="margin-bottom:0">No se puede deshacer. Después, si querés, lo podés eliminar del historial.</p>`,
+    '<button class="btn" data-close>Cancelar</button><button class="btn primary" id="cl-ok">📦 Cerrar álbum</button>');
+  $('#cl-ok', dlg).onclick = async e => {
+    e.target.disabled = true; e.target.textContent = 'Cerrando…';
+    try { const r = await apiPost(`/events/${ev.id}/close`); dlg.close(); toast(`Álbum cerrado. Quedaron ${r.kept ?? 10} fotos de muestra en tu historial.`); reload(); }
+    catch (err) { e.target.disabled = false; e.target.textContent = '📦 Cerrar álbum'; toast(errMsg(err), 'error'); }
+  };
+}
+
+function removeAlbumDialog(ev) {
+  const dlg = openDialog('Eliminar del historial', `
+    <p style="margin-top:0">Se borran las fotos de muestra de <strong>${esc(ev.name)}</strong> y el álbum deja de verse en la web y en tu panel.</p>
+    <p class="muted small" style="margin-bottom:0">Las ventas no se pierden: siguen en Ventas y quien compró sigue descargando sus fotos. No se puede deshacer.</p>`,
+    '<button class="btn" data-close>Cancelar</button><button class="btn danger" id="rm-ok">🗑️ Eliminar</button>');
+  $('#rm-ok', dlg).onclick = async e => {
+    e.target.disabled = true; e.target.textContent = 'Eliminando…';
+    try { await apiPost(`/events/${ev.id}/remove`); dlg.close(); toast('Álbum eliminado del historial'); location.hash = '#/eventos'; }
+    catch (err) { e.target.disabled = false; e.target.textContent = '🗑️ Eliminar'; toast(errMsg(err), 'error'); }
+  };
 }
 
 // Link corto propio para el álbum del fotógrafo: quieromisfotos.com.ar/{alias} (Profesional y Premium).
@@ -2004,6 +2052,7 @@ function renderSetEditor(ev, set, reload) {
     $('#mk-set').onclick = async () => { if (!await requireVerified()) return; try { await setDoc(doc(db, 'events', ev.id, 'sets', S.user.uid), newSetData()); reload(); } catch (e) { toast(errMsg(e), 'error'); } };
     return;
   }
+  if (set.originalsDeleted) { box.innerHTML = ''; return; }
   let subs = (set.subalbums || []).map(s => ({ ...s })).sort((a, b) => a.order - b.order);
   setTimeout(() => drawShortLink(ev), 0);
 
@@ -3148,7 +3197,7 @@ async function viewAdminConfig() {
       <button class="btn" id="a-mailtest" title="Manda un mail a tu casilla para confirmar que Resend anda">✉️ Enviarme un mail de prueba</button>
     </div>
     <div class="card row" style="justify-content:space-between">
-      <div><strong>📊 Resumen semanal</strong><br><span class="muted small">Te llega solo todos los lunes a las 8 con la semana anterior (lunes a domingo): ventas, tu ganancia, compradores, fotógrafos nuevos y a quién hay que darle una mano.</span></div>
+      <div><strong>📊 Resumen semanal</strong><br><span class="muted small">Te llega solo todos los lunes a las 6 con la semana anterior (lunes a domingo): ventas, tu ganancia (comisiones, extensiones y suscripciones), compradores, fotógrafos nuevos y a quién hay que darle una mano.</span></div>
       <button class="btn" id="a-weekly">Enviármelo ahora</button>
     </div>
     <div class="card row" style="justify-content:space-between">

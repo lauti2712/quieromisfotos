@@ -806,3 +806,9 @@ dialog.howto-dlg { padding: 0; max-width: min(440px, calc(100vw - 32px)); }
   .check { align-items: flex-start; }
   .check > input { margin-top: 2px; flex: none; }
 }
+
+/* Estado del álbum (panel): abierto / cerrado, con su acción al costado (abajo en el celular). */
+.album-state { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.album-state.open { border-left: 4px solid var(--ok, #16a34a); }
+.album-state.closed { border-left: 4px solid var(--muted); }
+@media (max-width: 640px) { .album-state > .row { width: 100%; } .album-state > .row > .btn { flex: 1; } }
