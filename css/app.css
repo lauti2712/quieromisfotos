@@ -785,3 +785,6 @@ body:not(.with-tabbar) .up-fab { bottom: calc(16px + env(safe-area-inset-bottom)
 @media (max-width: 760px) {
   #toasts { bottom: auto; top: calc(64px + env(safe-area-inset-top, 0px)); }
 }
+
+/* Ventana "Cómo comprar": el recuadro ocupa el dialog; el clic en el fondo (fuera del recuadro) la cierra. */
+dialog.howto-dlg { padding: 0; max-width: min(440px, calc(100vw - 32px)); }
