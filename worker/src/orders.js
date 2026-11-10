@@ -423,5 +423,7 @@ export async function download(req, env, token) {
     'Cache-Control': 'private, no-store',
   });
   if (obj.size) headers.set('Content-Length', String(obj.size));
+  // Historial de compras: cuántas fotos se bajaron y cuándo fue la última (no corta la descarga si falla).
+  await adminCommit(env, [{ inc: `orders/${t.o}`, fields: { downloads: 1 } }, { update: `orders/${t.o}`, data: { lastDownloadAt: new Date() }, mask: ['lastDownloadAt'] }]).catch(() => {});
   return new Response(obj.body, { headers });
 }

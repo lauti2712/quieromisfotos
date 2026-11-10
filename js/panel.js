@@ -387,6 +387,7 @@ function navItems() {
     { group: 'Administración' },
     { href: '#/admin/metricas', label: '📊 Métricas' },
     { href: '#/admin/fotografos', label: '👥 Fotógrafos' },
+    { href: '#/admin/compras', label: '🧾 Compras' },
     { href: '#/admin/clientes', label: '👤 Clientes' },
     { href: '#/admin/eventos', label: '🏟️ Eventos' },
     { href: '#/admin/etiquetas', label: '🏷️ Etiquetas' },
@@ -533,6 +534,7 @@ function route() {
     if (b === 'costos') return run(viewAdminCosts);
     if (b === 'metricas') return run(viewAdminMetrics);
     if (b === 'clientes') return run(viewAdminCustomers);
+    if (b === 'compras') return run(viewAdminPurchases);
     return run(viewAdminPhotographers);
   }
   // Plan Empresas: invitación, equipo de la empresa y álbumes donde sube un colaborador (también con cuenta pendiente).
@@ -1330,7 +1332,7 @@ async function viewSales() {
     <div class="card"><h2>Últimos pedidos</h2>
       ${orders.length ? `<div class="table-wrap"><table class="list">
         <tr><th>Fecha</th><th>Evento</th><th>Fotos</th><th>Total</th><th>Estado</th></tr>
-        ${orders.map(o => { const [l, c] = STATUS[o.status] || [o.status, '']; return `<tr><td>${esc(fmtTs(o.createdAt))}</td><td>${esc(o.eventName)}</td><td>${o.count}</td><td>${fmtMoney(o.total)}${o.payMethod === 'transfer' ? ' <span class="muted small">🏦</span>' : ''}</td><td><span class="pill ${c}">${l}</span>${o.status === 'approved' ? ` <a class="small" target="_blank" href="index.html#/pedido/${o.id}" title="Ver el pedido y descargar lo mismo que recibió el comprador">Ver</a>` : ''}</td></tr>`; }).join('')}
+        ${orders.filter(o => o.status !== 'pending').map(o => { const [l, c] = STATUS[o.status] || [o.status, '']; return `<tr><td>${esc(fmtTs(o.createdAt))}</td><td>${esc(o.eventName)}</td><td>${o.count}</td><td>${fmtMoney(o.total)}${o.payMethod === 'transfer' ? ' <span class="muted small">🏦</span>' : ''}</td><td><span class="pill ${c}">${l}</span>${o.status === 'approved' ? ` <a class="small" target="_blank" href="index.html#/pedido/${o.id}" title="Ver el pedido y descargar lo mismo que recibió el comprador">Ver</a>` : ''}</td></tr>`; }).join('')}
       </table></div>` : '<div class="empty">Todavía no tenés ventas.</div>'}
     </div>`;
   $$('[data-markpaid]').forEach(b => b.onclick = async () => {
@@ -2418,6 +2420,102 @@ async function viewAdminEvents() {
   $$('[data-edit-ev]').forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation(); eventDialog(evs.find(x => x.id === b.dataset.editEv), () => viewAdminEvents()); });
   $$('[data-f]').forEach(b => b.onclick = () => { adminEvFilter = b.dataset.f; viewAdminEvents(); });
   $$('[data-share]').forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation(); shareEvent(evs.find(x => x.id === b.dataset.share)); });
+}
+
+// ================================================================ superadmin: historial de compras
+// Una fila por compra: cliente, álbum, fotógrafo, fotos, forma de pago, estado, descargas. Filtros, totales y CSV.
+const PURCHASE_STATUS = { approved: ['Pagada', 'ok'], pending: ['Pendiente', 'warn'], rejected: ['Rechazada', 'danger'], expired: ['Vencida', 'danger'], refunded: ['Reembolsada', ''] };
+let purF = { range: 30, ph: '', pay: '', st: 'approved', q: '' };
+async function viewAdminPurchases() {
+  const [os, ps, cs, us] = await Promise.all([
+    getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(3000))),
+    getDocs(query(collection(db, 'orderPrivate'), limit(5000))).catch(() => null),
+    getDocs(query(collection(db, 'customers'), limit(5000))).catch(() => null),
+    getDocs(query(collection(db, 'users'), where('role', '==', 'photographer'))).catch(() => null),
+  ]);
+  const priv = new Map((ps?.docs || []).map(d => [d.id, d.data()]));
+  const cust = new Map((cs?.docs || []).map(d => [d.id, d.data()]));
+  const phs = (us?.docs || []).map(d => ({ uid: d.id, name: d.data().displayName || d.id })).sort((a, b) => a.name.localeCompare(b.name));
+  const ms = t => t?.toMillis?.() || 0;
+  const all = os.docs.map(d => {
+    const o = { id: d.id, ...d.data() }, pv = priv.get(d.id) || {}, c = cust.get(o.buyerUid) || {};
+    return { ...o, at: ms(o.paidAt || o.createdAt), buyerName: c.name || pv.buyerName || '', buyerEmail: c.email || pv.buyerEmail || pv.mpPayerEmail || pv.buyerPhone || '', buyerWa: c.whatsapp || '', pay: o.payMethod === 'transfer' ? 'transfer' : 'mp' };
+  });
+  const from = purF.range ? Date.now() - purF.range * 86400000 : 0;
+  const q = normalize(purF.q);
+  const list = all.filter(o => o.at >= from && (!purF.ph || o.photographerUid === purF.ph) && (!purF.pay || o.pay === purF.pay)
+    && (!purF.st || o.status === purF.st) && (!q || normalize(`${o.buyerName} ${o.buyerEmail} ${o.eventName} ${o.photographerName} ${o.id}`).includes(q)));
+  const paid = list.filter(o => o.status === 'approved');
+  const sum = (l, f) => l.reduce((a, x) => a + (Number(f(x)) || 0), 0);
+  const when = t => (t ? new Date(t).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
+  $('#view').innerHTML = `
+    <div class="row" style="justify-content:space-between;margin-bottom:14px"><h1 style="margin:0">🧾 Compras</h1><button class="btn" id="pu-csv">⬇️ Exportar CSV</button></div>
+    <div class="stats">
+      <div class="stat"><span class="muted small">Compras pagadas</span><strong>${paid.length}</strong><span class="muted small">${sum(paid, o => o.count)} fotos</span></div>
+      <div class="stat"><span class="muted small">Cobrado</span><strong>${fmtMoney(sum(paid, o => o.total))}</strong><span class="muted small">comisiones ${fmtMoney(sum(paid, o => o.platformFee))}</span></div>
+      <div class="stat"><span class="muted small">Forma de pago</span><strong>💳 ${paid.filter(o => o.pay === 'mp').length} · 🏦 ${paid.filter(o => o.pay === 'transfer').length}</strong><span class="muted small">Mercado Pago · transferencia</span></div>
+      <div class="stat"><span class="muted small">Sin descargar</span><strong>${paid.filter(o => !o.downloads).length}</strong><span class="muted small">pagadas que todavía no bajaron fotos*</span></div>
+    </div>
+    <div class="card stack">
+      <div class="row" style="flex-wrap:wrap;gap:8px">
+        <select id="pu-range">${[[1, 'Hoy'], [7, 'Últimos 7 días'], [30, 'Últimos 30 días'], [90, 'Últimos 90 días'], [0, 'Todo']].map(([v, l]) => `<option value="${v}" ${purF.range === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <select id="pu-ph"><option value="">Todos los fotógrafos</option>${phs.map(p => `<option value="${p.uid}" ${purF.ph === p.uid ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
+        <select id="pu-pay"><option value="">Mercado Pago y transferencia</option><option value="mp" ${purF.pay === 'mp' ? 'selected' : ''}>💳 Mercado Pago</option><option value="transfer" ${purF.pay === 'transfer' ? 'selected' : ''}>🏦 Transferencia</option></select>
+        <select id="pu-st"><option value="">Todos los estados</option>${Object.entries(PURCHASE_STATUS).map(([k, [l]]) => `<option value="${k}" ${purF.st === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <input type="search" id="pu-q" placeholder="Buscar cliente, mail, álbum o código" value="${esc(purF.q)}" style="flex:1;min-width:200px">
+      </div>
+      <div class="table-wrap"><table class="list">
+        <tr><th>Fecha</th><th>Cliente</th><th>Álbum</th><th>Fotos</th><th>Total</th><th>Pago</th><th>Estado</th><th>Descargas</th><th></th></tr>
+        ${list.slice(0, 500).map(o => {
+          const [l, c] = PURCHASE_STATUS[o.status] || [o.status, ''];
+          return `<tr>
+            <td class="small">${esc(when(o.at))}</td>
+            <td><strong>${esc(o.buyerName || '—')}</strong>${o.buyerGuest ? ' <span class="pill">Invitado</span>' : ''}<br><span class="muted small">${esc(o.buyerEmail)}</span>${o.buyerWa ? `<br><a class="small" target="_blank" rel="noopener" href="${esc(waLink(o.buyerWa))}">💬 ${esc(o.buyerWa)}</a>` : ''}</td>
+            <td>${esc(o.eventName || '')}<br><span class="muted small">📷 ${esc(o.photographerName || '')}</span></td>
+            <td>${o.count || 0}${(o.lines || []).some(x => x.label && x.label !== 'Foto suelta') ? ' <span class="muted small">pack</span>' : ''}</td>
+            <td>${fmtMoney(o.total)}<br><span class="muted small">com. ${fmtMoney(o.platformFee || 0)}</span></td>
+            <td>${o.pay === 'transfer' ? '🏦 Transferencia' : '💳 Mercado Pago'}</td>
+            <td><span class="pill ${c}">${l}</span></td>
+            <td class="small">${o.status === 'approved' ? (o.downloads ? `${o.downloads}<br><span class="muted">${esc(when(ms(o.lastDownloadAt)))}</span>` : '<span class="muted">—</span>') : ''}</td>
+            <td><div class="row" style="gap:4px;flex-wrap:nowrap">
+              <a class="btn sm" target="_blank" href="index.html#/pedido/${o.id}" title="Ver la compra como el comprador">Ver</a>
+              ${o.status === 'approved' ? `<button class="btn sm" data-pulink="${o.id}" title="Link de descarga para el comprador (sin cuenta)">🔗</button>` : ''}
+            </div><span class="muted small">${esc(o.id.slice(0, 8))}</span></td></tr>`;
+        }).join('') || '<tr><td colspan="9" class="muted">No hay compras con estos filtros.</td></tr>'}
+      </table></div>
+      ${list.length > 500 ? `<p class="muted small">Se muestran las primeras 500 de ${list.length}. Usá los filtros o exportá el CSV.</p>` : ''}
+      <p class="muted small" style="margin:0">* Las descargas se cuentan desde el 09/11/2026.</p>
+    </div>`;
+  const set = (k, v) => { purF[k] = v; viewAdminPurchases(); };
+  $('#pu-range').onchange = e => set('range', Number(e.target.value));
+  $('#pu-ph').onchange = e => set('ph', e.target.value);
+  $('#pu-pay').onchange = e => set('pay', e.target.value);
+  $('#pu-st').onchange = e => set('st', e.target.value);
+  let t;
+  $('#pu-q').oninput = e => { clearTimeout(t); t = setTimeout(() => { purF.q = e.target.value; viewAdminPurchases().then(() => { const i = $('#pu-q'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }); }, 300); };
+  $$('[data-pulink]').forEach(b => b.onclick = async () => {
+    const o = list.find(x => x.id === b.dataset.pulink);
+    b.disabled = true;
+    try {
+      const { url } = await apiPost(`/orders/${o.id}/link`);
+      const msg = `Hola! Te dejo el link para descargar tus fotos de ${o.eventName || 'tu evento'} (funciona en cualquier celular): ${url}`;
+      const dlg = openDialog('🔗 Link de descarga', `<p class="muted small" style="margin:0">Para ${esc(o.buyerName || o.buyerEmail || 'el comprador')}: abre sus fotos sin cuenta, en cualquier celular.</p>
+        <code style="display:block;word-break:break-all;font-size:.8rem;margin:8px 0">${esc(url)}</code>`,
+        `<button class="btn" id="pl-copy">Copiar link</button><a class="btn primary" target="_blank" rel="noopener" href="${esc(o.buyerWa ? waLink(o.buyerWa, msg) : 'https://wa.me/?text=' + encodeURIComponent(msg))}">💬 Mandar por WhatsApp</a>`);
+      $('#pl-copy', dlg).onclick = () => navigator.clipboard.writeText(url).then(() => toast('Link copiado'), () => toast('No se pudo copiar', 'error'));
+    } catch (e) { toast(errMsg(e), 'error'); }
+    b.disabled = false;
+  });
+  $('#pu-csv').onclick = () => {
+    const cell = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const rows = [['Fecha', 'Código', 'Cliente', 'Email', 'WhatsApp', 'Invitado', 'Álbum', 'Fotógrafo', 'Fotos', 'Total', 'Comisión', 'Pago', 'Estado', 'Descargas'],
+      ...list.map(o => [when(o.at), o.id, o.buyerName, o.buyerEmail, o.buyerWa, o.buyerGuest ? 'sí' : '', o.eventName, o.photographerName, o.count, o.total, o.platformFee || 0,
+        o.pay === 'transfer' ? 'Transferencia' : 'Mercado Pago', (PURCHASE_STATUS[o.status] || [o.status])[0], o.downloads || 0])];
+    const blob = new Blob(['\ufeff' + rows.map(r => r.map(cell).join(';')).join('\n')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = `compras-quieromisfotos-${todayIso()}.csv`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  };
 }
 
 // ================================================================ superadmin: clientes
