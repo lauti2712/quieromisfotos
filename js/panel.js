@@ -2276,8 +2276,7 @@ async function viewAdminPhotographers() {
       <div class="item-row" style="border:0;padding:0">
         ${avatarHtml(u)}
         <div class="grow" style="min-width:0">
-          <strong>${esc(u.displayName || '—')}</strong>
-          <div class="muted small">${u.zone ? `📍 ${esc(u.zone)}` : '📍 Sin ciudad'}${zoneOk[i] ? '' : ' <span class="pill warn" title="Lo escribió a mano y no coincide con una localidad de la lista. Corregilo en Ver más → Cambiar ciudad">revisar</span>'}</div>
+          <div><strong>${esc(u.displayName || '—')}</strong> <span class="muted small">· ${u.zone ? `📍 ${esc(u.zone)}` : '📍 Sin ciudad'}</span>${zoneOk[i] ? '' : ' <span class="pill warn" title="Lo escribió a mano y no coincide con una localidad de la lista. Corregilo en Ver más → Cambiar ciudad">revisar</span>'}</div>
           <div class="row small" style="gap:6px;margin-top:4px">
             ${wa ? `<a class="btn sm ok" target="_blank" rel="noopener" href="${esc(waLink(wa))}">💬 ${esc(wa)}</a>` : '<span class="muted small">Sin WhatsApp</span>'}
             ${planOf(u) !== 'free' ? `<span class="pill accent">⭐ ${esc(PLANS[planOf(u)].label)}${courtesyOf(u) ? ' · cortesía' : ` · hasta ${esc(fmtTs(u.proUntil))}`}</span>` : '<span class="pill">Gratis</span>'}
@@ -2285,7 +2284,7 @@ async function viewAdminPhotographers() {
           </div>
           <div class="set-stats" style="margin-top:6px">
             <span class="stat-chip ${sold ? 'ok' : ''}" title="Fotos vendidas en total">🛒 ${sold} vendida${sold === 1 ? '' : 's'}</span>
-            <span class="stat-chip" title="Álbumes a la venta hoy">📁 ${live.albums} álbum${live.albums === 1 ? '' : 'es'} vigente${live.albums === 1 ? '' : 's'}</span>
+            <a class="stat-chip" target="_blank" href="index.html#/f/${esc(u.slug)}" title="Ver su perfil con los álbumes" style="text-decoration:none;color:inherit">📁 ${live.albums} álbum${live.albums === 1 ? '' : 'es'} vigente${live.albums === 1 ? '' : 's'} ↗</a>
             <span class="stat-chip" title="Fotos en los álbumes vigentes">📷 ${live.photos.toLocaleString('es-AR')} fotos</span>
           </div>
         </div>
