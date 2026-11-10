@@ -19,7 +19,8 @@ const HOWTO_KEY = 'qmf-howto-hidden';
 function showHowTo(phs, evName = '') {
   try { if (Date.now() - Number(localStorage.getItem(HOWTO_KEY) || 0) < 30 * 86400000) return; } catch { /* nada */ }
   if (document.querySelector('dialog.howto-dlg')) return;
-  const names = phs.map(u => u.displayName).filter(Boolean);
+  // Cada nombre lleva al perfil del fotógrafo (cierra la ventana al tocarlo).
+  const names = phs.filter(u => u.displayName).map(u => u.slug ? `<a href="#/f/${esc(u.slug)}" data-howto-go>${esc(u.displayName)}</a>` : esc(u.displayName));
   const dlg = document.createElement('dialog');
   dlg.className = 'howto-dlg';
   dlg.innerHTML = `<div class="dlg-body stack howto">
@@ -29,13 +30,14 @@ function showHowTo(phs, evName = '') {
         <li>Tocá <strong>🛒 Ver carrito</strong>.</li>
         <li>Pagá con <strong>Mercado Pago</strong> y descargalas al instante, en alta calidad y sin marca de agua. No hace falta crear una cuenta.</li>
       </ol>
-      <p class="muted small" style="margin:0">ℹ️ <strong>Quiero Mis Fotos</strong> es la plataforma donde los fotógrafos venden sus fotos: no somos los autores${names.length ? `. Las fotos de este evento son de <strong>${esc(names.join(', '))}</strong>` : ''}. Si tenés un problema con el pago o la descarga, <a target="_blank" rel="noopener" href="https://wa.me/5493424856528?text=${encodeURIComponent(`Hola! Tengo un problema con mi compra en el evento "${evName}"`)}">escribinos</a>.</p>
+      <p class="muted small" style="margin:0">ℹ️ <strong>Quiero Mis Fotos</strong> es la plataforma donde los fotógrafos venden sus fotos: no somos los autores${names.length ? `. Las fotos de este evento son de <strong>${names.join(', ')}</strong>` : ''}. Si tenés un problema con el pago o la descarga, <a target="_blank" rel="noopener" href="https://wa.me/5493424856528?text=${encodeURIComponent(`Hola! Tengo un problema con mi compra en el evento "${evName}"`)}">escribinos</a>.</p>
     </div>
     <div class="dlg-foot"><button class="btn primary block" id="howto-ok">Continuar</button></div>`;
   document.body.appendChild(dlg);
   const close = () => { try { localStorage.setItem(HOWTO_KEY, String(Date.now())); } catch { /* nada */ } if (dlg.open) dlg.close(); dlg.remove(); };
   dlg.addEventListener('close', () => { try { localStorage.setItem(HOWTO_KEY, String(Date.now())); } catch { /* nada */ } dlg.remove(); });
   dlg.querySelector('#howto-ok').onclick = close;
+  dlg.querySelectorAll('[data-howto-go]').forEach(a => a.addEventListener('click', close));
   // Tocar afuera del recuadro (el fondo es el propio <dialog>) también cierra.
   dlg.addEventListener('click', e => { if (e.target === dlg) close(); });
   dlg.showModal();
