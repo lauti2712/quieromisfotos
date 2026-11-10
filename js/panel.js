@@ -2216,6 +2216,13 @@ async function drawSelfieStatus(ev) {
 let photogTab = 'pending';
 let photogPlan = '';          // filtro por plan: '' | free | lite | pro | … | courtesy
 const photogOpen = new Set(); // fichas con "Ver más" abierto
+let photogQ = '';             // buscador por nombre o ciudad
+let photogSeen = { at: 0, map: {} }; // último ingreso (Firebase Auth, vía Worker), se refresca cada 5 minutos
+const agoText = ms => {
+  if (!ms) return 'nunca ingresó';
+  const d = Math.floor((Date.now() - ms) / 86400000);
+  return d <= 0 ? 'ingresó hoy' : d === 1 ? 'ingresó ayer' : d < 60 ? `ingresó hace ${d} días` : `ingresó el ${new Date(ms).toLocaleDateString('es-AR')}`;
+};
 async function viewAdminPhotographers() {
   const view = $('#view');
   const tabs = [['pending', 'Pendientes'], ['approved', 'Aprobados'], ['suspended', 'Suspendidos']];
@@ -2229,7 +2236,17 @@ async function viewAdminPhotographers() {
     <div class="tabs">${tabs.map(([k, l]) => `<button class="chip ${photogTab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>
     <div class="tabs" style="margin-top:-4px">${[['', 'Todos los planes'], ['free', 'Gratis'], ...Object.entries(PLANS).filter(([k]) => k !== 'free').map(([k, v]) => [k, v.label]), ['courtesy', '🎁 Cortesía']]
       .map(([k, l]) => `<button class="chip ${photogPlan === k ? 'on' : ''}" data-pfilter="${k}">${esc(l)}</button>`).join('')}</div>
+    <input type="search" id="ph-q" placeholder="🔎 Buscar por nombre o ciudad" value="${esc(photogQ)}" style="margin:4px 0 12px">
     <div class="card" id="pl"><div class="spinner"></div></div>`;
+  // Buscador: filtra las fichas ya cargadas (sin volver a pedir datos).
+  const applyQ = () => {
+    const q = normalize(photogQ);
+    let shown = 0;
+    $$('#pl .ph-row').forEach(r => { const ok = !q || r.dataset.q.includes(q); r.classList.toggle('hidden', !ok); shown += ok; });
+    const none = $('#pl .ph-none');
+    if (none) none.classList.toggle('hidden', shown > 0);
+  };
+  $('#ph-q').oninput = e => { photogQ = e.target.value; applyQ(); };
   $$('[data-tab]').forEach(b => b.onclick = () => { photogTab = b.dataset.tab; viewAdminPhotographers(); });
   $$('[data-pfilter]').forEach(b => b.onclick = () => { photogPlan = b.dataset.pfilter; viewAdminPhotographers(); });
   $('#ap-toggle').onclick = async () => {
@@ -2272,11 +2289,11 @@ async function viewAdminPhotographers() {
     const wa = waOf(u, privs[i]), live = liveBy.get(u.uid) || { albums: 0, photos: 0 }, sold = soldBy.get(u.uid) || 0;
     const open = photogOpen.has(u.uid);
     return `
-    <div class="ph-row">
+    <div class="ph-row" data-q="${esc(normalize(`${u.displayName || ''} ${u.zone || ''} ${u.slug || ''}`))}">
       <div class="item-row" style="border:0;padding:0">
         ${avatarHtml(u)}
         <div class="grow" style="min-width:0">
-          <div><strong>${esc(u.displayName || '—')}</strong> <span class="muted small">· ${u.zone ? `📍 ${esc(u.zone)}` : '📍 Sin ciudad'}</span>${zoneOk[i] ? '' : ' <span class="pill warn" title="Lo escribió a mano y no coincide con una localidad de la lista. Corregilo en Ver más → Cambiar ciudad">revisar</span>'}</div>
+          <div><strong>${esc(u.displayName || '—')}</strong> <span class="muted small">· ${u.zone ? `📍 ${esc(u.zone)}` : '📍 Sin ciudad'} · 🕒 <span data-seen="${u.uid}">…</span></span>${zoneOk[i] ? '' : ' <span class="pill warn" title="Lo escribió a mano y no coincide con una localidad de la lista. Corregilo en Ver más → Cambiar ciudad">revisar</span>'}</div>
           <div class="row small" style="gap:6px;margin-top:4px">
             ${wa ? `<a class="btn sm ok" target="_blank" rel="noopener" href="${esc(waLink(wa))}">💬 ${esc(wa)}</a>` : '<span class="muted small">Sin WhatsApp</span>'}
             ${planOf(u) !== 'free' ? `<span class="pill accent">⭐ ${esc(PLANS[planOf(u)].label)}${courtesyOf(u) ? ' · cortesía' : ` · hasta ${esc(fmtTs(u.proUntil))}`}</span>` : '<span class="pill">Gratis</span>'}
@@ -2337,7 +2354,16 @@ async function viewAdminPhotographers() {
           </div>
         </div>` : ''}
       </div>
-    </div>`; }).join('') : '<div class="empty">No hay fotógrafos en esta lista.</div>';
+    </div>`; }).join('') + '<div class="empty ph-none hidden">Ningún fotógrafo coincide con la búsqueda.</div>' : '<div class="empty">No hay fotógrafos en esta lista.</div>';
+  applyQ();
+  // Último ingreso de cada uno (se completa después de mostrar la lista).
+  const fillSeen = () => $$('[data-seen]').forEach(x => { const ms = photogSeen.map[x.dataset.seen]; x.textContent = ms === undefined ? '—' : agoText(ms); });
+  const missing = users.some(u => photogSeen.map[u.uid] === undefined);
+  if (users.length && (missing || Date.now() - photogSeen.at > 5 * 60000)) {
+    apiPost('/admin/users/activity', { uids: users.map(u => u.uid) })
+      .then(r => { photogSeen = { at: Date.now(), map: { ...photogSeen.map, ...Object.fromEntries(users.map(u => [u.uid, r.activity?.[u.uid] || 0])) } }; fillSeen(); })
+      .catch(() => fillSeen());
+  } else fillSeen();
   $$('[data-more]').forEach(b => b.onclick = () => {
     const uid = b.dataset.more, box = $(`#more-${uid}`);
     const open = box.classList.toggle('hidden') === false;

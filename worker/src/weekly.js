@@ -87,7 +87,7 @@ async function storageInfo(env) {
 
 // Última actividad de cada cuenta en Firebase Auth: el último ingreso o la última renovación de sesión
 // (quien deja el panel abierto no vuelve a "iniciar sesión", pero renueva el token cada hora que lo usa).
-async function authActivity(env, uids) {
+export async function authActivity(env, uids) {
   if (!uids.length || env.FIREBASE_EMULATOR) return {};
   const token = await serviceToken(env, 'https://www.googleapis.com/auth/cloud-platform');
   const out = {};
@@ -370,4 +370,14 @@ export async function weeklyRequest(req, env) {
   const r = await buildReport(env, url.searchParams.get('week') || undefined);
   if (url.searchParams.get('format') === 'html') return new Response(reportHtml(env, r), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
   return json(r);
+}
+
+// Último ingreso de varias cuentas (superadmin, lista de Fotógrafos).
+//   POST /admin/users/activity {uids: [...]}  -> { activity: {uid: ms} }
+export async function activityRequest(req, env) {
+  const c = await requireUser(req, env);
+  if (!isSuper(c)) throw httpError(403, 'Solo superadmin');
+  const { uids } = await req.json().catch(() => ({}));
+  const list = [...new Set((Array.isArray(uids) ? uids : []).map(String).filter(u => /^[A-Za-z0-9]{10,40}$/.test(u)))].slice(0, 500);
+  return json({ activity: await authActivity(env, list) });
 }

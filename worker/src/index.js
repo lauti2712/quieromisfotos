@@ -70,7 +70,7 @@ import { scanRequest, scanStorage } from './storage.js';
 import { runBackup, backupRequest } from './backup.js';
 import { costsRequest, checkCosts } from './costs.js';
 import { mailTest, mailNews } from './mail.js';
-import { weeklyRequest, weeklyCron, isWeeklyTick } from './weekly.js';
+import { weeklyRequest, weeklyCron, isWeeklyTick, activityRequest } from './weekly.js';
 import { markPaid, reportFeePayment, confirmFeePayment, matchPendingTransfers } from './transfers.js';
 import { notifyFollowersOnce, drainPushQueue } from './push.js';
 import { extensionCheckout, extensionSync } from './extensions.js';
@@ -197,6 +197,7 @@ async function route(req, env, ctx) {
   if (m === 'GET' && url.pathname === '/admin/costs') return costsRequest(req, env, ctx);
   if (m === 'GET' && url.pathname === '/admin/income') return incomeRequest(req, env);
   if (m === 'GET' && url.pathname === '/admin/plan-payments') return planPaymentsRequest(req, env);
+  if (m === 'POST' && url.pathname === '/admin/users/activity') return activityRequest(req, env);
   if (m === 'POST' && url.pathname === '/admin/login-link') return createLoginLink(req, env);
   if (m === 'POST' && url.pathname === '/auth/link') return useLoginLink(req, env);
   if (m === 'POST' && url.pathname === '/orders/claim') return claimOrders(req, env);
