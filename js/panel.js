@@ -381,6 +381,24 @@ async function seedPlatform() {
   }
 }
 
+// Tablas en el celular: cada celda lleva la etiqueta de su columna (el CSS las muestra como fichas).
+function labelTables() {
+  document.querySelectorAll('table.list:not(.plan-cfg)').forEach(t => {
+    const head = [...t.rows].find(r => r.querySelector('th'));
+    if (!head) return;
+    const labels = [...head.cells].map(c => c.textContent.trim());
+    [...t.rows].forEach(r => { if (r !== head) [...r.cells].forEach((c, i) => {
+      if (c.tagName !== 'TD' || c.dataset.label || !labels[i]) return;
+      c.dataset.label = labels[i];
+      // Varias cosas en la celda (estado + "Ver", monto + 🏦): juntas, para que la ficha no las separe.
+      if (i > 0 && c.childNodes.length > 1) { const w = document.createElement('span'); w.className = 'td-v'; w.append(...c.childNodes); c.append(w); }
+    }); });
+  });
+}
+let labelQueued = false;
+new MutationObserver(() => { if (labelQueued) return; labelQueued = true; requestAnimationFrame(() => { labelQueued = false; labelTables(); }); })
+  .observe(document.body, { childList: true, subtree: true });
+
 // ================================================================ shell + router
 function navItems() {
   if (S.isSuper) return [
@@ -437,6 +455,8 @@ function setupBubble(on) {
   b.querySelector('a').href = fab.href;
   b.querySelector('button').onclick = () => { try { sessionStorage.setItem(WA_BUBBLE_OFF, '1'); } catch { /* nada */ } b.remove(); };
   fab.after(b);
+  // En el celular tapa contenido: se va solo a los 10 segundos y no vuelve en esta sesión (el botón verde sigue).
+  if (matchMedia('(max-width: 760px)').matches) setTimeout(() => { try { sessionStorage.setItem(WA_BUBBLE_OFF, '1'); } catch { /* nada */ } b.remove(); }, 10000);
 }
 // Antes de tener perfil (registro): mensaje genérico de alta.
 function signupSupport() {
@@ -1059,8 +1079,8 @@ function breakdownHtml(amount, feeMode) {
 function feeModeHtml(name, value) {
   const pct = myFee();
   return `
-    <label class="check"><input type="radio" name="${name}" value="absorb" ${value !== 'buyer' ? 'checked' : ''}> Absorbo la comisión <span class="muted small">(el comprador paga el precio; se te descuenta ${pct}%)</span></label>
-    <label class="check"><input type="radio" name="${name}" value="buyer" ${value === 'buyer' ? 'checked' : ''}> La paga el comprador <span class="muted small">(se suma ${pct}% como "costo de servicio")</span></label>`;
+    <label class="check"><input type="radio" name="${name}" value="absorb" ${value !== 'buyer' ? 'checked' : ''}> <span>Absorbo la comisión <span class="muted small">(el comprador paga el precio; se te descuenta ${pct}%)</span></span></label>
+    <label class="check"><input type="radio" name="${name}" value="buyer" ${value === 'buyer' ? 'checked' : ''}> <span>La paga el comprador <span class="muted small">(se suma ${pct}% como "costo de servicio")</span></span></label>`;
 }
 
 function viewConfig() {

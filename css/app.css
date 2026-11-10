@@ -78,7 +78,7 @@ footer.site { text-align: center; color: var(--muted); font-size: .85rem; paddin
 
 label.field { display: grid; gap: 4px; font-weight: 600; font-size: .9rem; }
 label.field .hint { font-weight: 400; color: var(--muted); font-size: .82rem; }
-input[type=text], input[type=search], input[type=email], input[type=password], input[type=number], input[type=date], input[type=url], select, textarea {
+input[type=text], input[type=search], input[type=email], input[type=password], input[type=number], input[type=date], input[type=url], input[type=tel], select, textarea {
   width: 100%; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 9px 11px; }
 textarea { min-height: 80px; resize: vertical; }
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
@@ -788,3 +788,21 @@ body:not(.with-tabbar) .up-fab { bottom: calc(16px + env(safe-area-inset-bottom)
 
 /* Ventana "Cómo comprar": el recuadro ocupa el dialog; el clic en el fondo (fuera del recuadro) la cierra. */
 dialog.howto-dlg { padding: 0; max-width: min(440px, calc(100vw - 32px)); }
+
+/* Panel en el celular: las tablas pasan a fichas (cada fila es una tarjeta con "etiqueta: valor").
+   Las etiquetas (data-label) las pone panel.js a partir de los encabezados. */
+@media (max-width: 640px) {
+  .table-wrap:has(> table.list:not(.plan-cfg)) { overflow: visible; }
+  table.list:not(.plan-cfg), table.list:not(.plan-cfg) > tbody, table.list:not(.plan-cfg) tr, table.list:not(.plan-cfg) td { display: block; width: 100%; }
+  table.list:not(.plan-cfg) tr:has(> th) { display: none; }
+  table.list:not(.plan-cfg) tr { border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px; margin-bottom: 8px; }
+  table.list:not(.plan-cfg) td { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 4px 0; border: 0; text-align: right; }
+  table.list:not(.plan-cfg) td[data-label]::before { content: attr(data-label); color: var(--muted); font-size: .82rem; text-align: left; flex: none; }
+  table.list:not(.plan-cfg) td:first-child { display: block; text-align: left; font-weight: 600; padding-bottom: 6px; }
+  table.list:not(.plan-cfg) td:first-child::before { content: none; }
+  table.list:not(.plan-cfg) td:empty { display: none; }
+  table.list:not(.plan-cfg) .td-v { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; }
+  /* Opciones con explicación: el texto fluye debajo, sin columnas apretadas */
+  .check { align-items: flex-start; }
+  .check > input { margin-top: 2px; flex: none; }
+}
