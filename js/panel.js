@@ -140,6 +140,28 @@ function planCardHtml(p) {
     <span>⭐ Tu plan: <strong>${esc(l.text)}</strong>${bonus && l.id === 'free' ? `<br>🎁 Tenés <strong>${bonus.count} álbum${bonus.count === 1 ? '' : 'es'} extra</strong> de prueba hasta el ${esc(new Date(bonus.until).toLocaleDateString('es-AR'))}` : ''}</span><a class="btn sm" href="#/web">${l.id === 'free' ? 'Ver planes' : 'Ver o cambiar'}</a></div>`;
 }
 
+// Plan / estado al día: el perfil se lee al abrir el panel; si cambia después (se acreditó una suscripción, el superadmin
+// le dio un plan, lo aprobaron) se vuelve a leer al volver a la app (cada 1 minuto como mucho) o cuando lo pide una vista.
+let profileCheckedAt = Date.now();
+async function refreshProfile(force = false) {
+  if (!S.user || S.isSuper || !S.profile || (!force && Date.now() - profileCheckedAt < 60000)) return;
+  profileCheckedAt = Date.now();
+  try {
+    const fresh = (await getDoc(doc(db, 'users', S.user.uid))).data();
+    if (!fresh) return;
+    const key = p => `${p.status}|${planOf(p)}|${p.proUntil?.toMillis?.() || 0}|${p.courtesy ? 1 : 0}`;
+    const changed = key(fresh) !== key(S.profile);
+    Object.assign(S.profile, fresh);
+    if (!changed) return;
+    updateRolePill();
+    if (planOf(S.profile) !== 'free') toast(`⭐ Tu plan ${PLANS[planOf(S.profile)]?.label || ''} ya está activo`);
+    // Solo se redibuja Inicio o Planes (nunca a mitad de una subida o de un formulario).
+    if (['', '#', '#/', '#/inicio', '#/web'].includes(location.hash.split('?')[0])) route();
+  } catch { /* sin conexión: se reintenta la próxima vez */ }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshProfile(); });
+window.addEventListener('qmf-profile-refresh', () => refreshProfile(true));
+
 function updateRolePill() {
   updatePublicProfileBtn();
   const p = $('#role-pill');
