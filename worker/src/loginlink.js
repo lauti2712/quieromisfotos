@@ -7,6 +7,7 @@ import { requireUser } from './firebase.js';
 import { serviceToken, adminSet } from './admin.js';
 import { b64url, signToken, verifyToken } from './tokens.js';
 import { json, httpError } from './http.js';
+import { sendMail, mailLayout } from './mail.js';
 
 const IDT = env => `https://identitytoolkit.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}`;
 
@@ -56,4 +57,32 @@ export async function useLoginLink(req, env) {
   const key = await crypto.subtle.importKey('pkcs8', der, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
   const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, enc.encode(`${header}.${claims}`));
   return json({ token: `${header}.${claims}.${b64url(sig)}` });
+}
+
+// Superadmin: link para que un cliente o fotógrafo elija una contraseña nueva (y, si se pide, se le manda por mail).
+//   POST /admin/users/reset   Bearer (superadmin)  {uid, send?}  -> { email, link, google, sent }
+export async function resetPasswordLink(req, env) {
+  const c = await requireUser(req, env);
+  if (c.email !== 'lautarom87@gmail.com' || c.email_verified !== true) throw httpError(403, 'Solo superadmin');
+  const { uid, send } = await req.json().catch(() => ({}));
+  if (!/^[A-Za-z0-9_-]{6,128}$/.test(uid || '')) throw httpError(400, 'Pedido inválido');
+  const u = (await idt(env, '/accounts:lookup', { localId: [uid] })).users?.[0];
+  if (!u) throw httpError(404, 'No existe esa cuenta');
+  if (!u.email) throw httpError(409, 'Esta cuenta no tiene mail (compró como invitado o entra con el celular): no tiene contraseña para restablecer.');
+  const google = (u.providerUserInfo || []).some(p => p.providerId === 'google.com');
+  const link = (await idt(env, '/accounts:sendOobCode', { requestType: 'PASSWORD_RESET', email: u.email, returnOobLink: true })).oobLink;
+  let sent = false;
+  if (send) {
+    sent = !!await sendMail(env, {
+      to: u.email,
+      subject: '🔑 Elegí tu nueva contraseña de Quiero Mis Fotos',
+      html: mailLayout({
+        title: 'Elegí tu nueva contraseña',
+        intro: 'Te mandamos este link para que elijas una contraseña nueva para tu cuenta de Quiero Mis Fotos.',
+        cta: { label: '🔑 Elegir mi contraseña', url: link },
+        foot: google ? 'Tu cuenta también puede entrar con <strong>Continuar con Google</strong>.' : 'Si no lo pediste, podés ignorar este mail.',
+      }),
+    });
+  }
+  return json({ email: u.email, link, google, sent });
 }

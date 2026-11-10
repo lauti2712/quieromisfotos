@@ -1528,6 +1528,30 @@ async function hasPrice(ev) {
   return false;
 }
 
+// Superadmin: link para restablecer la contraseña de un cliente o fotógrafo (copiar, WhatsApp o mail).
+function resetPasswordDialog(uid, name = '', wa = '') {
+  const dlg = openDialog(`🔑 Restablecer clave${name ? ' · ' + name : ''}`, '<div id="pw-out"><div class="spinner"></div></div>',
+    '<button class="btn" data-close>Cerrar</button><button class="btn primary" id="pw-mail" disabled>✉️ Enviárselo por mail</button>');
+  const out = $('#pw-out', dlg);
+  apiPost('/admin/users/reset', { uid }).then(r => {
+    const msg = `Hola! Te dejo el link para elegir una nueva contraseña de Quiero Mis Fotos (cuenta ${r.email}): ${r.link}`;
+    out.innerHTML = `<div class="stack">
+      <span>Cuenta: <strong>${esc(r.email)}</strong>${r.google ? ' <span class="pill">También entra con Google</span>' : ''}</span>
+      <span class="muted small">Con este link elige una contraseña nueva y después entra con su mail y esa contraseña. Vence en unas horas y sirve una sola vez.</span>
+      <code style="display:block;word-break:break-all;font-size:.75rem">${esc(r.link)}</code>
+      <div class="row"><button class="btn sm" id="pw-copy">Copiar link</button><a class="btn sm" target="_blank" rel="noopener" href="${esc(wa ? waLink(wa, msg) : 'https://wa.me/?text=' + encodeURIComponent(msg))}">💬 Mandar por WhatsApp</a></div></div>`;
+    $('#pw-copy', dlg).onclick = () => navigator.clipboard.writeText(r.link).then(() => toast('Link copiado'), () => toast('No se pudo copiar', 'error'));
+    const mb = $('#pw-mail', dlg);
+    mb.disabled = false;
+    mb.onclick = async () => {
+      mb.disabled = true;
+      try { const s = await apiPost('/admin/users/reset', { uid, send: true }); toast(s.sent ? `Mail enviado a ${s.email}` : 'No se pudo enviar el mail', s.sent ? '' : 'error'); }
+      catch (e) { toast(errMsg(e), 'error'); }
+      mb.disabled = false;
+    };
+  }).catch(e => { out.innerHTML = `<div class="notice danger">${esc(errMsg(e))}</div>`; });
+}
+
 function newSetData() {
   const d = S.profile.defaults || {};
   return {
@@ -2175,6 +2199,7 @@ async function viewAdminPhotographers() {
       </div>
       <div class="row">
         <a class="btn sm" target="_blank" href="index.html#/f/${esc(u.slug)}">Perfil</a>
+        <button class="btn sm" data-pwreset="${u.uid}" data-pwname="${esc(u.displayName || '')}" data-pwwa="${esc(waOf(u, privs[i]) || '')}" title="Link para que elija una contraseña nueva">🔑 Clave</button>
         ${u.status !== 'approved' ? `<button class="btn sm ok" data-st="approved" data-uid="${u.uid}">Aprobar</button>` : ''}
         ${u.status !== 'suspended' ? `<button class="btn sm danger" data-st="suspended" data-uid="${u.uid}">Suspender</button>` : ''}
         ${u.status === 'suspended' ? `<button class="btn sm" data-st="pending" data-uid="${u.uid}">Volver a pendiente</button>` : ''}
@@ -2275,6 +2300,7 @@ async function viewAdminPhotographers() {
     };
   });
   // Confirmación manual de la cuenta (no puede abrir el mail de confirmación).
+  $$('[data-pwreset]').forEach(b => b.onclick = () => resetPasswordDialog(b.dataset.pwreset, b.dataset.pwname, b.dataset.pwwa));
   $$('[data-verify]').forEach(b => b.onclick = async () => {
     const u = users.find(x => x.uid === b.dataset.verify);
     if (!confirm(`¿Confirmar la cuenta de ${u.displayName}? Va a poder publicar y vincular Mercado Pago sin abrir el mail.`)) return;
@@ -2454,7 +2480,7 @@ async function viewAdminCustomers() {
     <div class="card">${list.length ? `<div class="table-wrap"><table class="list">
       <tr><th>Cliente</th><th>Alta</th><th>Último ingreso</th><th>Compras</th><th>Fotos</th><th>Gastó</th><th>Última compra</th><th>Eventos</th></tr>
       ${list.slice(0, 500).map(c => `<tr>
-        <td><strong>${esc(c.name || '—')}</strong>${c.photographer ? ' <span class="pill">Fotógrafo</span>' : ''}${c.guest ? ' <span class="pill">Invitado</span>' : ''}<br><span class="muted small">${esc(c.email)}</span>${c.whatsapp ? ` · <a class="small" target="_blank" rel="noopener" href="${esc(waLink(c.whatsapp))}">💬 ${esc(c.whatsapp)}</a>` : ''}</td>
+        <td><strong>${esc(c.name || '—')}</strong>${c.photographer ? ' <span class="pill">Fotógrafo</span>' : ''}${c.guest ? ' <span class="pill">Invitado</span>' : ''}<br><span class="muted small">${esc(c.email)}</span>${c.whatsapp ? ` · <a class="small" target="_blank" rel="noopener" href="${esc(waLink(c.whatsapp))}">💬 ${esc(c.whatsapp)}</a>` : ''}${c.guest && !c.name ? '' : ` <button class="btn sm ghost" data-pwreset="${esc(c.uid)}" data-pwname="${esc(c.name || c.email || '')}" data-pwwa="${esc(c.whatsapp || '')}" title="Link para que elija una contraseña nueva">🔑</button>`}</td>
         <td>${d(c.createdAt)}</td><td>${d(c.lastLoginAt)}</td><td>${c.orders}</td><td>${c.photos}</td><td>${c.spent ? fmtMoney(c.spent) : '—'}</td>
         <td>${d(c.lastBuy)}</td><td class="small">${esc([...c.events].slice(0, 3).join(', '))}${c.events.size > 3 ? ` +${c.events.size - 3}` : ''}${(c.orderIds || []).slice(0, 5).map(id => `<br><a target="_blank" href="index.html#/pedido/${id}" title="Ver la compra y el link de descarga para el comprador">🧾 ${esc(id.slice(0, 8))}</a>`).join('')}</td></tr>`).join('')}
     </table></div>${list.length > 500 ? '<p class="muted small">Se muestran los primeros 500: usá la búsqueda o exportá el CSV.</p>' : ''}`
@@ -2472,6 +2498,7 @@ async function viewAdminCustomers() {
     window.open(`index.html#/pedido/${o.id}`, '_blank');
   };
   $$('[data-cf]').forEach(b => b.onclick = () => { custFilter = b.dataset.cf; viewAdminCustomers(); });
+  $$('[data-pwreset]').forEach(b => b.onclick = () => resetPasswordDialog(b.dataset.pwreset, b.dataset.pwname, b.dataset.pwwa));
   $('#cu-csv').onclick = () => {
     const cell = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const rows = [['Nombre', 'Email', 'WhatsApp', 'Fotógrafo', 'Alta', 'Último ingreso', 'Compras', 'Fotos', 'Gastó', 'Última compra', 'Eventos'],

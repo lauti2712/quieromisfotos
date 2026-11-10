@@ -57,7 +57,7 @@ import { addFaces, myFaces, matchFaces, myFace } from './faces.js';
 import { commitPhoto, deletePhotos, orderDownloadUntil } from './photos.js';
 import { closeAlbum, forceDeleteAlbum } from './samples.js';
 import { incomeRequest } from './income.js';
-import { createLoginLink, useLoginLink } from './loginlink.js';
+import { createLoginLink, useLoginLink, resetPasswordLink } from './loginlink.js';
 import { claimOrders, convertGuests } from './guests.js';
 import { statsHit } from './stats.js';
 import { sharePage } from './share.js';
@@ -177,6 +177,7 @@ async function route(req, env, ctx) {
   if (m === 'POST' && url.pathname === '/team/invite') return teamInvite(req, env);
   if (m === 'POST' && url.pathname === '/photographers/activate') return activatePhotographer(req, env);
   if (m === 'POST' && url.pathname === '/admin/users/verify') return verifyAccount(req, env);
+  if (m === 'POST' && url.pathname === '/admin/users/reset') return resetPasswordLink(req, env);
   if (m === 'POST' && url.pathname === '/team/join') return teamJoin(req, env);
   if (m === 'POST' && url.pathname === '/team/remove') return teamRemove(req, env);
   if (m === 'POST' && url.pathname === '/team/events') return teamEvents(req, env);
