@@ -101,3 +101,54 @@ export async function forceDeleteAlbum(req, env, eid) {
   }
   return json({ ok: true, photos: photos.length, files, eventDeleted: dropEvent });
 }
+
+// "Eliminar del historial" (el fotógrafo, solo con el álbum ya cerrado o vacío): se borran las fotos de muestra y el álbum
+// deja de verse en la web y en su panel. Si hubo ventas, lo vendido queda (oculto) para que los compradores sigan
+// descargando hasta su fecha: el set se marca removed en vez de borrarse (así la limpieza no toca esos originales).
+//   POST /events/{eid}/remove   Bearer (fotógrafo del set o superadmin)  {uid?}
+export async function removeAlbum(req, env, eid) {
+  const c = await requireUser(req, env);
+  const isSuper = c.email === 'lautarom87@gmail.com' && c.email_verified === true;
+  const body = await req.json().catch(() => ({}));
+  const uid = isSuper && body.uid ? String(body.uid) : c.uid;
+  const [ev, set] = await Promise.all([adminGet(env, `events/${eid}`), adminGet(env, `events/${eid}/sets/${uid}`)]);
+  if (!ev || !(ev.photographerUids || []).includes(uid)) throw httpError(404, 'No tenés un álbum en este evento');
+  if (set && (set.photoCount || 0) > 0 && !set.originalsDeleted) throw httpError(409, 'Primero cerrá el álbum (📦 Cerrar álbum). Después lo podés eliminar del historial.');
+  const [photos, orders, aliases] = await Promise.all([
+    adminQuery(env, 'photos', { filters: [['eventId', '==', eid], ['photographerUid', '==', uid]], limit: 10000 }),
+    adminQuery(env, 'orders', { filters: [['eventId', '==', eid], ['photographerUid', '==', uid], ['status', '==', 'approved']], limit: 5000 }),
+    adminQuery(env, 'aliases', { filters: [['uid', '==', uid], ['eventId', '==', eid]], limit: 20 }),
+  ]);
+  const sold = new Set(orders.flatMap(o => (o.items || []).map(it => it.photoId)));
+  const ops = [], pubKeys = [];
+  for (const p of photos) {
+    const base = `e/${eid}/${uid}/${p.id}`;
+    pubKeys.push(`${base}_p.jpg`);
+    // Lo vendido queda oculto con su miniatura (se ve en "Mis compras"); lo demás se borra.
+    if (sold.has(p.id)) ops.push({ update: `photos/${p.id}`, data: { hidden: true, soldHidden: true, sample: false }, mask: ['hidden', 'soldHidden', 'sample'] });
+    else { ops.push({ del: `photos/${p.id}` }); pubKeys.push(`${base}_t.jpg`); }
+  }
+  for (const a of aliases) ops.push({ del: `aliases/${a.id}` });
+  const now = new Date();
+  if (!set) { /* nada */ } else if (sold.size) ops.push({ update: `events/${eid}/sets/${uid}`, data: { removed: true, removedAt: now, photoCount: 0, hourCounts: {} }, mask: ['removed', 'removedAt', 'photoCount', 'hourCounts'] });
+  else ops.push({ del: `events/${eid}/sets/${uid}` });
+  const others = (ev.photographerUids || []).filter(u => u !== uid);
+  const dropEvent = ev.kind === 'own' && !others.length;
+  if (dropEvent && !sold.size) ops.push({ del: `events/${eid}` });
+  // Con ventas el evento queda (los pedidos lo nombran) pero fuera de la web y del panel.
+  else if (dropEvent) ops.push({ update: `events/${eid}`, data: { status: 'removed', photographerUids: [], photoCount: 0, removedAt: now }, mask: ['status', 'photographerUids', 'photoCount', 'removedAt'] });
+  else ops.push({ update: `events/${eid}`, data: { photographerUids: others }, mask: ['photographerUids'] });
+  for (let i = 0; i < ops.length; i += 400) await adminCommit(env, ops.slice(i, i + 400));
+  // Archivos: muestras públicas, huellas de caras y originales no vendidos (los vendidos se borran al vencer, como siempre).
+  for (let i = 0; i < pubKeys.length; i += 1000) await env.PUBLIC.delete(pubKeys.slice(i, i + 1000));
+  for (const prefix of [`e/${eid}/${uid}/`, `faces/${eid}/${uid}/`]) {
+    let cursor;
+    do {
+      const r = await env.PRIVATE.list({ prefix, cursor, limit: 1000 });
+      const keys = r.objects.map(o => o.key).filter(k => !(k.startsWith('e/') && sold.has(k.split('/')[3])));
+      if (keys.length) await env.PRIVATE.delete(keys);
+      cursor = r.truncated ? r.cursor : undefined;
+    } while (cursor);
+  }
+  return json({ ok: true, removed: photos.length - sold.size, eventDeleted: dropEvent && !sold.size });
+}
