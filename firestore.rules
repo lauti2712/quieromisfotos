@@ -277,6 +277,15 @@ service cloud.firestore {
     match /withdrawals/{id} {
       allow read, write: if isSuper();
     }
+    // Superadmin: todos los sets juntos (álbumes y fotos vigentes por fotógrafo).
+    match /{path=**}/sets/{pid} {
+      allow read: if isSuper();
+    }
+    // Cobros de suscripciones (los guarda el Worker al consultar Mercado Pago).
+    match /planPayments/{id} {
+      allow read: if isSuper();
+      allow write: if false;
+    }
     match /platformPrivate/{id} {
       allow read: if isSuper() || isActivePhotographer();
       allow write: if isSuper();
