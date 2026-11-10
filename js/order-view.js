@@ -73,7 +73,17 @@ export async function renderOrder(app, orderId, query) {
     if (first && o.status === 'pending' && !synced) { synced = true; sync(); }
     first = false;
     draw(app, o);
-  }, err => { app.innerHTML = `<div class="notice danger">${esc(errMsg(err))}</div>`; });
+  }, err => {
+    // Sin permiso: el link es de otra cuenta (o se pasó la dirección sin la llave del pedido).
+    if (/permission|permiso/i.test(String(err?.code || err?.message || ''))) {
+      app.innerHTML = `<div class="empty"><h2>No podemos mostrarte esta compra</h2>
+        <p class="muted" style="max-width:46ch;margin:0 auto 12px">Este link es para ver la compra con la cuenta con la que se hizo. Si compraste sin cuenta, usá el botón <strong>Descargar mis fotos</strong> del mail de la compra, o pedile al fotógrafo el <strong>link de descarga</strong>.</p>
+        ${currentUser() ? '' : '<button class="btn primary" id="go">Ingresar con mi cuenta</button>'}</div>`;
+      $('#go')?.addEventListener('click', () => requireLogin().then(() => renderOrder(app, orderId, query)));
+      return;
+    }
+    app.innerHTML = `<div class="notice danger">${esc(errMsg(err))}</div>`;
+  });
 }
 
 // Datos para transferir: alias del fotógrafo y monto exacto (los centavos identifican el pedido).
