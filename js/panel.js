@@ -3128,6 +3128,10 @@ async function viewAdminConfig() {
       <button class="btn" id="a-mailtest" title="Manda un mail a tu casilla para confirmar que Resend anda">✉️ Enviarme un mail de prueba</button>
     </div>
     <div class="card row" style="justify-content:space-between">
+      <div><strong>📊 Resumen semanal</strong><br><span class="muted small">Te llega solo todos los lunes a las 8 con la semana anterior (lunes a domingo): ventas, tu ganancia, compradores, fotógrafos nuevos y a quién hay que darle una mano.</span></div>
+      <button class="btn" id="a-weekly">Enviármelo ahora</button>
+    </div>
+    <div class="card row" style="justify-content:space-between">
       <div><strong>📣 Novedades a los fotógrafos</strong><br><span class="muted small">Video para historias, portada, búsqueda por selfie y precio especial. Primero mandátelo de prueba; el envío a todos se hace una sola vez.</span></div>
       <button class="btn" id="a-news-test">Enviarme la prueba</button>
       <button class="btn primary" id="a-news">Enviar a todos</button>
@@ -3219,6 +3223,12 @@ async function viewAdminConfig() {
   $('#a-mailtest').onclick = async e => {
     e.target.disabled = true;
     try { const r = await apiPost('/admin/mail/test'); toast(`Mail enviado a ${r.to}. Revisá la bandeja (y Spam).`); }
+    catch (err) { toast(errMsg(err), 'error'); }
+    e.target.disabled = false;
+  };
+  $('#a-weekly').onclick = async e => {
+    e.target.disabled = true;
+    try { const r = await apiPost('/admin/weekly/send'); toast(`Resumen de la semana del ${r.week} enviado a ${r.to}.`); }
     catch (err) { toast(errMsg(err), 'error'); }
     e.target.disabled = false;
   };

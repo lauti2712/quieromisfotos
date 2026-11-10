@@ -13,6 +13,26 @@ import { currentUser, requireLogin } from './account.js';
 
 const PAGE = 60;
 
+// Cómo comprar + quién es quién (la plataforma no es la dueña de las fotos). Se puede cerrar; vuelve a los 30 días.
+const HOWTO_KEY = 'qmf-howto-hidden';
+function howToHtml(phs, evName = '') {
+  try { if (Date.now() - Number(localStorage.getItem(HOWTO_KEY) || 0) < 30 * 86400000) return ''; } catch { /* nada */ }
+  const names = phs.map(u => u.displayName).filter(Boolean);
+  const contact = phs.map(u => u.socials?.whatsapp
+    ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(waLink(u.socials.whatsapp, `¡Hola ${u.displayName || ''}! Te escribo por tus fotos en Quiero Mis Fotos.`))}">💬 Escribirle a ${esc(u.displayName || 'el fotógrafo')}</a>`
+    : u.slug ? `<a class="btn sm" href="#/f/${esc(u.slug)}">Contacto de ${esc(u.displayName || 'el fotógrafo')}</a>` : '').join('');
+  return `<div class="card stack howto" id="g-howto">
+    <div class="row" style="justify-content:space-between;align-items:flex-start"><strong>📸 Cómo comprar tus fotos</strong><button type="button" class="btn ghost sm" id="g-howto-x" aria-label="Cerrar">✕</button></div>
+    <ol class="howto-steps">
+      <li>Tocá <strong>＋</strong> en las fotos que quieras (o <strong>Elegir varias</strong>).</li>
+      <li>Tocá <strong>🛒 Ver carrito</strong>.</li>
+      <li>Pagá con <strong>Mercado Pago</strong> y descargalas al instante, en alta calidad y sin marca de agua. No hace falta crear una cuenta.</li>
+    </ol>
+    <p class="muted small" style="margin:0">ℹ️ <strong>Quiero Mis Fotos</strong> es la plataforma donde los fotógrafos venden sus fotos: no somos los autores${names.length ? `. Las fotos de este evento son de <strong>${esc(names.join(', '))}</strong>` : ''}. Para consultas sobre las fotos (una que falta, otra toma), escribile al fotógrafo. Si tenés un problema con el pago o la descarga, <a target="_blank" rel="noopener" href="https://wa.me/5493424856528?text=${encodeURIComponent(`Hola! Tengo un problema con mi compra en el evento "${evName}"`)}">escribinos</a>.</p>
+    ${contact ? `<div class="row" style="flex-wrap:wrap;gap:6px">${contact}</div>` : ''}
+  </div>`;
+}
+
 export function mountGallery(box, { ev, photographers, sets, initialUid = '', initialPhoto = '', initialBib = '', onFirstPhoto }) {
   const byUid = new Map(photographers.map(p => [p.uid, p]));
   const withPhotos = photographers.filter(p => (sets.get(p.uid)?.photoCount || 0) > 0);
@@ -68,6 +88,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
     ${uploading.length ? `<div class="notice ok small">📤 <strong>${uploading.map(p => esc(p.displayName)).join(', ')} está${uploading.length > 1 ? 'n' : ''} subiendo fotos ahora</strong> (van ${uploading.reduce((a, p) => a + (sets.get(p.uid)?.photoCount || 0), 0)}). Volvé en un rato o tocá <strong>🔔 Avisarme</strong> arriba.</div>` : ''}
     ${noPrice.length ? `<div class="notice">⏳ ${noPrice.length === withPhotos.length ? 'Las fotos de este evento todavía no están a la venta' : `Las fotos de ${noPrice.map(p => esc(p.displayName)).join(', ')} todavía no están a la venta`}: el fotógrafo está terminando de cargar los precios. Tocá <strong>🔔 Avisarme</strong> arriba y te avisamos.</div>` : ''}
     ${noPay.length ? `<div class="notice">⏳ ${noPay.length === withPhotos.length ? 'Las fotos de este evento todavía no están a la venta' : `Las fotos de ${noPay.map(p => esc(p.displayName)).join(', ')} todavía no están a la venta`}: el fotógrafo está terminando de configurar los pagos. Tocá <strong>🔔 Avisarme</strong> arriba y te avisamos.</div>` : ''}
+    ${!ev.demo && withPhotos.some(p => forSale(p.uid)) ? howToHtml(withPhotos.filter(p => forSale(p.uid)).map(p => byUid.get(p.uid) || { displayName: p.displayName }), ev.name) : ''}
     ${selfieOn ? `<div class="g-selfie" id="g-selfie"><button class="btn primary" id="g-selfie-go">🤳 Buscarme con una selfie</button><span class="muted small">Te mostramos las fotos donde aparecés.</span>
       <input type="file" id="g-selfie-in" accept="image/*" capture="user" hidden></div>` : ''}
     <div class="g-price" id="g-price"></div>
@@ -526,6 +547,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
     dlg.showModal();
   }
 
+  $('#g-howto-x', box)?.addEventListener('click', () => { try { localStorage.setItem(HOWTO_KEY, String(Date.now())); } catch { /* nada */ } $('#g-howto', box)?.remove(); });
   const bibForm = $('#g-bib', box);
   if (bibForm) {
     bibForm.onsubmit = e => {

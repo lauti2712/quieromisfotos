@@ -68,6 +68,7 @@ import { scanRequest, scanStorage } from './storage.js';
 import { runBackup, backupRequest } from './backup.js';
 import { costsRequest, checkCosts } from './costs.js';
 import { mailTest, mailNews } from './mail.js';
+import { weeklyRequest, weeklyCron, isWeeklyTick } from './weekly.js';
 import { markPaid, reportFeePayment, confirmFeePayment, matchPendingTransfers } from './transfers.js';
 import { notifyFollowersOnce, drainPushQueue } from './push.js';
 import { extensionCheckout, extensionSync } from './extensions.js';
@@ -102,11 +103,13 @@ export default {
       return json({ error: e.message || 'Error' }, status, cors);
     }
   },
-  // Crons: diario (uso de R2, retención, limpieza), semanal (respaldo) y cada 5 minutos (avisos y suscripciones).
+  // Crons: diario (uso de R2, retención, limpieza), semanal (respaldo) y cada 5 minutos (avisos, suscripciones y, los lunes a las 8, el resumen semanal).
   async scheduled(event, env, ctx) {
     if (event.cron === BACKUP_CRON) { ctx.waitUntil(runBackup(env)); return; }
     // Cada 5 minutos: avisos a seguidores y suscripciones (de a pocas). Una tarea por vez para no pasar el límite de pedidos.
     if (event.cron === PUSH_CRON) {
+      // Lunes 08:00 (Argentina): resumen semanal. Ese tic no manda avisos (quedan para el siguiente) para no pasar el límite de pedidos.
+      if (isWeeklyTick(event.scheduledTime)) { ctx.waitUntil(weeklyCron(env).catch(e => console.error('resumen semanal', e))); return; }
       ctx.waitUntil(matchPendingTransfers(env).catch(e => console.error('transferencias', e)));
       ctx.waitUntil(convertGuests(env).catch(e => console.error('invitados', e)));
       ctx.waitUntil(drainPushQueue(env).catch(e => { console.error('push', e); return 99; })
@@ -193,6 +196,7 @@ async function route(req, env, ctx) {
   if (m === 'POST' && url.pathname === '/admin/login-link') return createLoginLink(req, env);
   if (m === 'POST' && url.pathname === '/auth/link') return useLoginLink(req, env);
   if (m === 'POST' && url.pathname === '/orders/claim') return claimOrders(req, env);
+  if ((m === 'GET' && url.pathname === '/admin/weekly') || (m === 'POST' && url.pathname === '/admin/weekly/send')) return weeklyRequest(req, env);
   if (m === 'POST' && url.pathname === '/admin/mail/test') {
     const c = await requireUser(req, env);
     if (c.email !== 'lautarom87@gmail.com' || c.email_verified !== true) throw httpError(403, 'Solo superadmin');
