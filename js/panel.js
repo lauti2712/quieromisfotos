@@ -1382,12 +1382,14 @@ async function viewMyEvents() {
   const snap = await getDocs(query(collection(db, 'events'), where('photographerUids', 'array-contains', S.user.uid), orderBy('date', 'desc'), limit(200)));
   const evs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   // Mi set en cada evento: fotos, vendidas y vencimiento.
-  const [sets, sales] = await Promise.all([
+  const [sets, sales, views] = await Promise.all([
     Promise.all(evs.map(ev => getDoc(doc(db, 'events', ev.id, 'sets', S.user.uid)).then(s => s.data() || null).catch(() => null))),
     getDocs(query(collection(db, 'salesStats'), where('photographerUid', '==', S.user.uid))).catch(() => null),
+    // Visitas al álbum (contadores anónimos de stats/{evento}).
+    Promise.all(evs.map(ev => getDoc(doc(db, 'stats', ev.id)).then(s => s.data()?.views || 0).catch(() => 0))),
   ]);
   const sold = new Map((sales?.docs || []).map(d => [d.data().eventId, d.data().soldPhotos || 0]));
-  evs.forEach((ev, i) => { ev.mySet = sets[i] && { ...sets[i], soldPhotos: sold.get(ev.id) || 0 }; });
+  evs.forEach((ev, i) => { ev.mySet = sets[i] && { ...sets[i], soldPhotos: sold.get(ev.id) || 0, views: views[i] }; });
   $('#view').innerHTML = `
     <div class="row" style="justify-content:space-between;margin-bottom:14px">
       <h1 style="margin:0">Mis álbumes</h1>
@@ -1497,6 +1499,7 @@ function setStatsHtml(set) {
       <span class="stat-chip" title="Fotos en el álbum">📷 ${set.photoCount || 0}</span>
       ${(c => c.photos ? (c.max ? `<span class="stat-chip ${c.used >= c.max * 0.9 ? 'warn' : ''}" title="Fotos del álbum y tope del plan">🗂️ ${c.used} / ${c.fmt(c.max)}</span>` : '')
         : `<span class="stat-chip ${c.max && c.used >= c.max * 0.9 ? 'warn' : ''}" title="Espacio que ocupa el álbum (originales + muestras)">💾 ${fmtBytes(c.used)}${c.max ? ` / ${fmtBytes(c.max)}` : ''}</span>`)(capOf(set))}
+      ${set.views != null ? `<span class="stat-chip" title="Visitas al álbum (una por persona cada 6 horas)">👁️ ${Number(set.views).toLocaleString('es-AR')} visita${set.views === 1 ? '' : 's'}</span>` : ''}
       <span class="stat-chip ${set.soldPhotos ? 'ok' : ''}" title="Fotos vendidas">🛒 ${set.soldPhotos || 0} vendida${set.soldPhotos === 1 ? '' : 's'}</span>
       ${exp}
     </div>`;
@@ -1753,7 +1756,7 @@ async function viewEvent(id) {
         <div>
           <div class="row" style="margin-bottom:6px">${statusPill(ev)} ${ev.kind === 'general' ? '<span class="pill accent">Evento general</span>' : ''} ${ev.openToJoin ? '<span class="pill">Abierto a fotógrafos</span>' : ''}</div>
           <h1 style="margin-bottom:4px">${esc(ev.name)}</h1>
-          <div class="muted">${esc(fmtDate(ev.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}${ev.location ? ` · 📍 ${esc(ev.location)}` : ''}</div>
+          <div class="muted">${esc(fmtDate(ev.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}${ev.location ? ` · 📍 ${esc(ev.location)}` : ''}<span id="ev-views"></span></div>
           ${tags.length ? `<div class="pills" style="margin-top:8px">${tags.map(t => `<span class="pill">${esc(t.name)}</span>`).join('')}</div>` : ''}
         </div>
         <div class="row">
@@ -1772,6 +1775,7 @@ async function viewEvent(id) {
 
   const reload = () => viewEvent(id);
   $('#ev-share').onclick = () => shareEvent(ev);
+  getDoc(doc(db, 'stats', id)).then(x => { const n = x.data()?.views || 0; if ($('#ev-views')) $('#ev-views').textContent = ` · 👁️ ${n.toLocaleString('es-AR')} visita${n === 1 ? '' : 's'}`; }).catch(() => {});
   if (canEdit) {
     $('#ev-edit').onclick = () => eventDialog(ev, reload);
     $('#ev-toggle').onclick = async () => {

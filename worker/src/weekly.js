@@ -1,12 +1,14 @@
 // Resumen semanal para el superadmin: un mail los lunes con la semana anterior (lunes a domingo, hora de Argentina).
 //   GET  /admin/weekly[?week=YYYY-MM-DD][&format=html]  (superadmin)  -> métricas de esa semana (JSON o el mail en HTML)
 //   POST /admin/weekly/send {week?}                      (superadmin)  -> te manda el resumen ahora (para probar o reenviar)
-// Cron: lo dispara el de cada 5 minutos los lunes a las 08:00 (Argentina), con reintentos a las 09 y 10 si falló.
+// Cron: lo dispara el de cada 5 minutos los lunes a las 06:00 (Argentina), con reintentos a las 07 y 08 si falló.
+// Tu ganancia = comisiones + extensiones de plazo + suscripciones (cobros de planes, consultados a Mercado Pago).
 // Cada envío queda en adminStats/weekly-{lunes}: no se manda dos veces y sirve de historial.
 // Lee solo los campos que usa (select) para no gastar CPU del plan gratis.
 import { accessToken, serviceToken, adminGet, adminSet } from './admin.js';
 import { decodeFields, requireUser } from './firebase.js';
 import { sendMail } from './mail.js';
+import { mpFetch } from './mp.js';
 import { json, httpError } from './http.js';
 
 const DAY = 86400000;
@@ -14,6 +16,7 @@ const AR = 3 * 3600000; // Argentina: UTC-3, sin horario de verano
 const INACTIVE_DAYS = 10;
 const STUCK_DAYS = 7;   // fotógrafos aprobados hace más de esto y sin ningún álbum
 const MAX_LIST = 15;    // nombres por lista en el mail
+const MAX_MP = 20;      // consultas a Mercado Pago por resumen (límite de pedidos por ejecución del plan gratis)
 const DEAD = ['suspended', 'rejected', 'deleted'];
 const isSuper = c => c.email === 'lautarom87@gmail.com' && c.email_verified === true;
 const reportTo = env => env.REPORT_EMAIL || 'lautarom87@gmail.com';
@@ -36,8 +39,8 @@ export function weekBounds(week, now = Date.now()) {
   const day = t => new Date(t - AR).toISOString().slice(0, 10);
   return { start, end: start + 7 * DAY, label: day(start), lastDay: day(start + 6 * DAY) };
 }
-// El cron de cada 5 minutos dispara el resumen los lunes a las 08, 09 y 10 (Argentina), en el primer tic de la hora.
-export const isWeeklyTick = t => { const d = new Date(t); return d.getUTCDay() === 1 && [11, 12, 13].includes(d.getUTCHours()) && d.getUTCMinutes() < 5; };
+// El cron de cada 5 minutos dispara el resumen los lunes a las 06, 07 y 08 (Argentina), en el primer tic de la hora.
+export const isWeeklyTick = t => { const d = new Date(t); return d.getUTCDay() === 1 && [9, 10, 11].includes(d.getUTCHours()) && d.getUTCMinutes() < 5; };
 
 // ------------------------------------------------------------------ Firestore
 const root = env => `${env.FIREBASE_EMULATOR ? 'http://127.0.0.1:8085' : 'https://firestore.googleapis.com'}/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents`;
@@ -99,6 +102,27 @@ async function authActivity(env, uids) {
   return out;
 }
 
+// Cobros de suscripciones entre `from` y `to`: Firestore solo guarda el último cobro de cada una, así que se le pregunta
+// a Mercado Pago por las activas y por las que cobraron hace poco (una consulta por suscripción, con tope).
+async function subscriptionCharges(env, subs, from, to) {
+  if (!env.MP_ACCESS_TOKEN) return { charges: [], partial: true };
+  const cands = subs.filter(x => x.preapprovalId && (x.status === 'authorized' || (x.lastPaidAt?.getTime?.() || 0) >= from))
+    .sort((a, b) => (b.lastPaidAt?.getTime?.() || 0) - (a.lastPaidAt?.getTime?.() || 0));
+  const charges = [];
+  let partial = cands.length > MAX_MP;
+  await Promise.all(cands.slice(0, MAX_MP).map(async x => {
+    try {
+      const r = await mpFetch(env.MP_ACCESS_TOKEN, `/authorized_payments/search?preapproval_id=${encodeURIComponent(x.preapprovalId)}`);
+      for (const a of r.results || []) {
+        if ((a.payment?.status || a.status) !== 'approved') continue;
+        const at = Date.parse(a.debit_date || a.date_created || '') || 0;
+        if (at >= from && at < to) charges.push({ uid: x.id, plan: x.plan || '', at, amount: Number(a.transaction_amount) || 0 });
+      }
+    } catch (e) { partial = true; console.error('semanal suscripción', x.id, e.message || e); }
+  }));
+  return { charges, partial };
+}
+
 // ------------------------------------------------------------------ cálculo
 const ms = d => d?.getTime?.() || 0;
 const sum = (l, f) => l.reduce((a, x) => a + (Number(f(x)) || 0), 0);
@@ -109,13 +133,14 @@ export async function buildReport(env, week, now = Date.now()) {
   const inW = t => t >= start && t < end;
   const inP = t => t >= pStart && t < start;
 
-  const [usersAll, setsAll, orders, customers, exts, fees, photosW, photosP, storage] = await Promise.all([
+  const [usersAll, setsAll, orders, customers, exts, fees, subsAll, photosW, photosP, storage] = await Promise.all([
     fetchAll(env, 'users', ['displayName', 'slug', 'status', 'mpConnected', 'createdAt', 'demo'], { where: filter('role', 'EQUAL', str('photographer')) }),
     fetchAll(env, 'sets', ['createdAt', 'photoCount'], { allDescendants: true }),
     fetchAll(env, 'orders', ['status', 'createdAt', 'paidAt', 'buyerUid', 'photographerUid', 'photographerName', 'eventId', 'eventName', 'count', 'total', 'platformFee', 'payMethod']),
     fetchAll(env, 'customers', ['createdAt']),
     fetchAll(env, 'extensions', ['price', 'paidAt'], { where: filter('status', 'EQUAL', str('approved')) }),
     fetchAll(env, 'feeBalance', ['accrued', 'paid']),
+    fetchAll(env, 'subscriptions', ['preapprovalId', 'status', 'lastPaidAt', 'plan']),
     countPhotos(env, start, end).catch(e => { console.error('semanal fotos', e); return null; }),
     countPhotos(env, pStart, start).catch(() => null),
     storageInfo(env).catch(() => null),
@@ -154,6 +179,9 @@ export async function buildReport(env, week, now = Date.now()) {
   const mW = money(salesW), mP = money(salesP);
   const extW = sum(exts.filter(x => inW(ms(x.paidAt))), x => x.price), extP = sum(exts.filter(x => inP(ms(x.paidAt))), x => x.price);
   const bW = buyerStats(salesW, start), bP = buyerStats(salesP, pStart);
+  const subRes = await subscriptionCharges(env, subsAll, pStart, end);
+  const subsW = subRes.charges.filter(c => inW(c.at)), subsP = subRes.charges.filter(c => inP(c.at));
+  const subW = sum(subsW, c => c.amount), subP = sum(subsP, c => c.amount);
 
   // Fotógrafos nuevos de la semana y hasta dónde llegaron.
   const newPh = users.filter(u => inW(ms(u.createdAt))).map(u => {
@@ -218,12 +246,14 @@ export async function buildReport(env, week, now = Date.now()) {
     buyers: bW.buyers, firstTimeBuyers: bW.firstTime, firstTimeBuyersPrev: bP.firstTime, repeatBuyers: bW.repeat, repeatBuyersPrev: bP.repeat,
     orders: mW.orders, ordersPrev: mP.orders, photosSold: mW.photos, photosSoldPrev: mP.photos,
     gmv: mW.gmv, gmvPrev: mP.gmv, fee: mW.fee, feePrev: mP.fee, extensions: extW, extensionsPrev: extP,
-    income: mW.fee + extW, incomePrev: mP.fee + extP,
+    subscriptions: subW, subscriptionsPrev: subP, subscriptionCharges: subsW.length, subscriptionsPartial: subRes.partial,
+    income: mW.fee + extW + subW, incomePrev: mP.fee + extP + subP,
     avgTicket: mW.orders ? mW.gmv / mW.orders : 0, avgTicketPrev: mP.orders ? mP.gmv / mP.orders : 0,
     ...unpaid, feeOwed: sum(owed, f => f.amount),
     pendingApproval: pendingApproval.length, noMp: noMp.length, stuck: stuck.length, inactive: inactive ? inactive.length : null,
   };
-  return { label, lastDay, generatedAt: new Date(now).toISOString(), summary, newPh, pendingApproval, noMp, stuck, inactive,
+  const subscribers = subsW.map(c => ({ name: name(c.uid), plan: c.plan, amount: c.amount }));
+  return { label, lastDay, generatedAt: new Date(now).toISOString(), summary, newPh, subscribers, pendingApproval, noMp, stuck, inactive,
     topPhotographers: top('photographerUid', 'photographerName'), topEvents: top('eventId', 'eventName'), owed, storageGB };
 }
 
@@ -258,6 +288,8 @@ export function reportHtml(env, r) {
     row('<strong>Tu ganancia</strong>', $$(s.income), delta(s.income, s.incomePrev)),
     row('Comisiones', $$(s.fee), '', true),
     ...(s.extensions || s.extensionsPrev ? [row('Extensiones de plazo', $$(s.extensions), '', true)] : []),
+    row(`Suscripciones${s.subscriptionCharges ? ` <span style="color:#9aa3b2">(${s.subscriptionCharges} cobro${s.subscriptionCharges === 1 ? '' : 's'})</span>` : ''}`, $$(s.subscriptions), delta(s.subscriptions, s.subscriptionsPrev), true),
+    ...(s.subscriptionsPartial ? [`<tr><td colspan="3" style="padding:0 0 4px 14px;font-size:12px;color:#b45309">⚠️ No se pudieron consultar todas las suscripciones en Mercado Pago: el monto puede ser mayor.</td></tr>`] : []),
     row('Pedidos pagados', int(s.orders), delta(s.orders, s.ordersPrev)),
     row('Fotos vendidas', int(s.photosSold), delta(s.photosSold, s.photosSoldPrev)),
     row('Ticket promedio', s.orders ? $$(s.avgTicket) : '—', s.orders ? delta(Math.round(s.avgTicket), Math.round(s.avgTicketPrev)) : ''),
@@ -308,7 +340,7 @@ export function reportHtml(env, r) {
       ${parts.join('')}
       <p style="margin:24px 0 0"><a href="${esc(panel(env))}#/admin/metricas" style="display:inline-block;background:#ff5a1f;color:#fff;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:12px;font-size:15px">Abrir Métricas</a></p>
     </td></tr>
-    <tr><td style="padding:14px 24px;border-top:1px solid #eef0f4;font-size:12px;color:#9aa3b2">Se manda solo todos los lunes a las 8. Para reenviarlo: Panel → ⚙️ Plataforma.</td></tr>
+    <tr><td style="padding:14px 24px;border-top:1px solid #eef0f4;font-size:12px;color:#9aa3b2">Se manda solo todos los lunes a las 6. Para reenviarlo: Panel → ⚙️ Plataforma.</td></tr>
   </table></td></tr></table></body></html>`;
 }
 const subject = r => `📊 Semana ${shortDate(r.label)}–${shortDate(r.lastDay)}: ${$$(r.summary.income)} de ganancia · ${r.summary.photosSold} fotos vendidas`;
