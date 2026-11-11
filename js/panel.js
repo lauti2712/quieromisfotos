@@ -1648,7 +1648,7 @@ function eventDialog(ev, onSaved) {
       <label class="field">Localidad<input type="text" id="ev-city" maxlength="80" required value="${esc(ev.city || '')}" placeholder="Empezá a escribir y elegí de la lista"></label>
     </div>
     <label class="field">Lugar (opcional)<input type="text" id="ev-loc" maxlength="100" value="${esc(ev.city ? ev.venue || '' : ev.location || '')}" placeholder="Ej: Cancha de Querandí, Hipódromo, Parque Independencia"></label>
-    ${tax.types.map(t => {
+    ${tax.types.filter(t => t.id !== 'lugar').map(t => { // "Lugar" ya se pide arriba (campo Lugar); las etiquetas viejas se conservan
       const tags = tax.tags.filter(g => g.typeId === t.id);
       const canAdd = USER_TAG_TYPES.includes(t.id);
       return `<div class="field"><span>${esc(t.name)}</span>
