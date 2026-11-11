@@ -899,3 +899,11 @@ dialog.protect-dlg { padding: 0; max-width: min(420px, calc(100vw - 32px)); }
   .gallery.cols3 .g-tag { left: 3px; top: 3px; padding: 1px 5px; font-size: 9.5px; }
   .gallery.cols3 .g-add { width: 22px; height: 22px; font-size: 13px; right: 3px; bottom: 3px; }
 }
+
+/* Ejemplos de nivel de protección (configuración del álbum) */
+.lv-card { display: grid; gap: 6px; width: 100%; text-align: left; padding: 10px; border: 2px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); cursor: pointer; font: inherit; }
+.lv-card.on { border-color: var(--accent); background: var(--accent-soft); }
+.lv-card .lv-imgs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.lv-card figure { margin: 0; display: grid; gap: 2px; }
+.lv-card img { width: 100%; aspect-ratio: 3/2; object-fit: cover; border-radius: 8px; -webkit-user-drag: none; }
+.lv-card figcaption { font-size: .75rem; color: var(--muted, #888); }

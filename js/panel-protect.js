@@ -5,7 +5,7 @@
 import { db, auth, doc, setDoc, getDoc, getDocs, collection, query, where, limit, serverTimestamp } from './fb.js';
 import { $, $$, esc, toast, errMsg, fmtBytes, normalize } from './util.js';
 import { API_BASE, loadLogoBitmap, apiPost } from './api.js';
-import { PROTECT_DEFAULTS, protectOf, makeProtected, levelOf } from './protect.js';
+import { PROTECT_DEFAULTS, PROTECT_LEVELS, protectOf, makeProtected, levelOf } from './protect.js';
 import { DEFAULT_WATERMARK, wantsLogo } from './watermark.js';
 
 const FIELDS = [
@@ -219,4 +219,50 @@ async function migrateOne(p, ev, conf, { wm, logo }) {
   await send(`${base}/preview?pv=${pv}`, { method: 'PUT', body: r.preview, headers: { 'Content-Type': 'image/jpeg' } });
   await send(`${base}/thumb?pv=${pv}`, { method: 'PUT', body: r.thumb, headers: { 'Content-Type': 'image/jpeg' } });
   await send(`${base}/commit`, { method: 'POST', body: JSON.stringify({ pv, cover: !!ev.autoCoverUrl && ev.autoCoverUrl === p.previewUrl }), headers: { 'Content-Type': 'application/json' } });
+}
+
+// ---- Para el fotógrafo: ejemplos de cada nivel de protección, sobre una foto de muestra o una suya (no se sube nada).
+// select: el <select> del nivel del álbum (tocar un ejemplo lo elige).
+const SAMPLE_PHOTO = 'demo/run-cover.jpg';
+export function mountLevelExamples(box, { settings, profile, select }) {
+  box.innerHTML = `<div class="row" style="gap:8px;flex-wrap:wrap">
+      <button type="button" class="btn sm" id="lv-show">👀 Ver ejemplos de cada nivel</button>
+      <label class="btn sm ghost">📷 Probar con una foto mía<input type="file" id="lv-file" accept="image/jpeg,image/png,image/webp" hidden></label>
+    </div>
+    <div id="lv-out" class="stack" style="margin-top:8px"></div>`;
+  const out = $('#lv-out', box);
+  let mark = null;
+  const markOf = async () => {
+    if (mark) return mark;
+    const wm = { ...DEFAULT_WATERMARK, ...(profile?.watermark || {}), name: profile?.displayName || '' };
+    const logo = wantsLogo(wm) ? await loadLogoBitmap(wm.logoKey).catch(() => null) : null;
+    return (mark = { wm, logo });
+  };
+  const draw = async source => {
+    out.innerHTML = '<p class="muted small" style="margin:0">Preparando los ejemplos…</p>';
+    try {
+      const blob = source || await (await fetch(SAMPLE_PHOTO)).blob();
+      const bmp = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+      const { wm, logo } = await markOf();
+      const cards = [];
+      for (const l of PROTECT_LEVELS) {
+        const r = await makeProtected(bmp, bmp.width, bmp.height, wm, logo, 'ejemplo1', protectOf(settings, l.id));
+        cards.push({ l, t: URL.createObjectURL(r.thumb), p: URL.createObjectURL(r.preview) });
+      }
+      bmp.close?.();
+      out.innerHTML = `<p class="muted small" style="margin:0">Así ve el público tu foto con cada nivel ${source ? '(tu foto no se subió)' : '(foto de ejemplo)'}. Tocá uno para elegirlo.</p>
+        ${cards.map(c => `<button type="button" class="lv-card ${select.value === c.l.id ? 'on' : ''}" data-lv="${c.l.id}">
+          <strong>${esc(c.l.label)}</strong>
+          <span class="lv-imgs"><figure><img src="${c.t}" alt=""><figcaption>Al abrir</figcaption></figure><figure><img src="${c.p}" alt=""><figcaption>Con la lupa (lo más claro)</figcaption></figure></span>
+          <span class="muted small">${esc(c.l.hint)}</span></button>`).join('')}`;
+      $$('[data-lv]', out).forEach(b => b.onclick = () => {
+        select.value = b.dataset.lv;
+        select.dispatchEvent(new Event('change'));
+        $$('[data-lv]', out).forEach(x => x.classList.toggle('on', x === b));
+      });
+    } catch (err) { out.innerHTML = ''; toast(errMsg(err), 'error'); }
+  };
+  $('#lv-show', box).onclick = () => draw(null);
+  $('#lv-file', box).onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) draw(f); };
+  select.addEventListener('change', () => $$('[data-lv]', out).forEach(x => x.classList.toggle('on', x.dataset.lv === select.value)));
 }

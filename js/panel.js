@@ -28,7 +28,7 @@ import { initRefresh } from './refresh.js';
 import { pushAvailable, pushOn, pushBlocked, enablePush, disablePush, isIos, isStandalone, listenForeground } from './push.js';
 import { shareLink, eventUrl } from './share.js';
 import { mountShareCard } from './panel-share.js';
-import { mountProtectCard } from './panel-protect.js';
+import { mountProtectCard, mountLevelExamples } from './panel-protect.js';
 import { PROTECT_LEVELS, levelOf } from './protect.js';
 import { cropImage } from './cropper.js';
 import { placeInput, canonicalPlace, multiPlaceInput, guessPlaces } from './places.js';
@@ -2231,6 +2231,7 @@ function renderSetEditor(ev, set, reload) {
       <label class="field">🛡️ Protección de las fotos antes de comprar
         <select id="st-protect">${PROTECT_LEVELS.map(l => `<option value="${l.id}" ${levelOf(set).id === l.id ? 'selected' : ''}>${esc(l.label)}</option>`).join('')}</select>
         <span class="hint" id="st-protect-hint">${esc(levelOf(set).hint)}</span></label>
+      <div id="st-protect-ex"></div>
       <p class="muted small" style="margin:0">Cuánto se desenfocan la miniatura y la vista ampliada (con marca de agua) que ve el público. <strong>Elegila antes de subir:</strong> se aplica a cada foto al subirla${(set.photoCount || 0) > 0 ? '; las que ya subiste quedan como están' : ''}. Lo que descarga el comprador es siempre el original: sin marca y totalmente enfocado.</p>
       <label class="check"><input type="checkbox" id="st-hours" ${set.showHours !== false ? 'checked' : ''}> Mostrar el filtro por horario</label>
       <p class="muted small" style="margin:0">Botones por hora (ej: “15:00 a 16:00”) según la hora en que sacaste cada foto, para que cada uno encuentre la suya más rápido. Desactivalo si la hora de tu cámara no está bien configurada.</p>
@@ -2245,6 +2246,7 @@ function renderSetEditor(ev, set, reload) {
     </form>`;
   if (S.settings.selfieEnabled !== false && set.selfie !== false && (set.photoCount || 0) > 0) drawSelfieStatus(ev);
   $('#st-protect').onchange = e => { $('#st-protect-hint').textContent = levelOf({ protectLevel: e.target.value }).hint; };
+  mountLevelExamples($('#st-protect-ex'), { settings: S.settings, profile: S.profile, select: $('#st-protect') });
   mountPhotos($('#set-photos'), { ev, set, uid: S.user.uid, profile: S.profile, settings: S.settings, bibs: bibsOn(set, ev, S.tax) })
     .catch(e => { $('#set-photos').innerHTML = `<div class="notice danger">${esc(errMsg(e))}</div>`; });
 
