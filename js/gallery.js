@@ -4,6 +4,7 @@ import { $, $$, esc, fmtMoney, toast, errMsg, todayIso, fmtDate, waLink } from '
 import { cart } from './cart.js';
 import { openViewer } from './viewer.js';
 import { setForSale, setUntil, loadSettings, feePercentFor } from './data.js';
+import { mpPercentFor } from './plans-core.js';
 import { computeTotals, splitPhotos, bestPrice } from './pricing.js';
 import { favs } from './favs.js';
 import { shareLink, eventUrl } from './share.js';
@@ -306,7 +307,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
     syncCartMarks();
   }
   // Barra fija abajo con lo que lleva en el carrito (en el celular el botón del carrito queda lejos).
-  // Total estimado del carrito (packs y costo de servicio aplicados; lo confirma el carrito al pagar) y sugerencia de pack.
+  // Total estimado del carrito (packs y tasa de servicio aplicados; lo confirma el carrito al pagar) y sugerencia de pack.
   let settings = null;
   loadSettings().then(s => {
     settings = s;
@@ -322,7 +323,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
         continue;
       }
       const split = splitPhotos(g.items, set.price);
-      const t = computeTotals({ ...split, price: set.price, packs: set.packs, feeMode: set.feeMode, feePercent: feePercentFor(ph, settings) });
+      const t = computeTotals({ ...split, price: set.price, packs: set.packs, feeMode: set.feeMode, feePercent: feePercentFor(ph, settings), mpPercent: mpPercentFor(ph, settings) });
       total += t.total;
       tip ||= packTip(split.count, set);
     }

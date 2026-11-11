@@ -1,7 +1,7 @@
 // Reglas de planes del Worker: las mismas de js/plans-core.js (módulo compartido con el sitio).
-import { planOf, rulesFor, albumPhotoLimit, teamSeats, activeAlbumLimit } from '../../js/plans-core.js';
+import { planOf, rulesFor, albumPhotoLimit, teamSeats, activeAlbumLimit, mpPercentFor } from '../../js/plans-core.js';
 
-export { planOf, rulesFor, albumPhotoLimit, teamSeats, activeAlbumLimit };
+export { planOf, rulesFor, albumPhotoLimit, teamSeats, activeAlbumLimit, mpPercentFor };
 export const GRACE_DAYS = 7;
 export const isFree = user => planOf(user) === 'free';
 export const feePercentFor = (user, settings) => rulesFor(user, settings).fee;

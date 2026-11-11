@@ -132,7 +132,7 @@ export async function renderPhotographerLanding(app) {
           <label class="field">Precio por foto<input type="number" id="lc-price" min="0" step="100" value="2000" inputmode="numeric"></label>
           <label class="field">Fotos vendidas<input type="number" id="lc-count" min="0" step="1" value="10" inputmode="numeric"></label>
           <label class="field">¿Quién paga la comisión?
-            <select id="lc-mode"><option value="buyer">El comprador (costo de servicio)</option><option value="absorb">La absorbo yo</option></select></label>
+            <select id="lc-mode"><option value="buyer">El comprador (tasa de servicio)</option><option value="half">Mitad y mitad</option><option value="absorb">La pago toda yo</option></select></label>
           <label class="field">¿Cuándo cobrás en Mercado Pago?
             <select id="lc-mp">${mpPlans.map(p => `<option value="${esc(String(p.percent))}">${esc(p.label)} · ${esc(String(p.percent).replace('.', ','))}%</option>`).join('')}</select></label>
           <label class="field">Plan

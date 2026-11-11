@@ -108,3 +108,16 @@ export function planFeatures(id, st) {
   return ['Todo lo de Profesional', 'Tu dominio .com.ar incluido (lo registramos y conectamos nosotros)', `${gb} (ampliable)`, days, `Portfolio de ${p.portfolio} fotos`,
     ...(p.featured ? ['Destacado en el directorio'] : []), 'Estadísticas avanzadas', 'Atención prioritaria', ...tr, fee];
 }
+
+// Comisión de Mercado Pago del fotógrafo (%), según el plazo de acreditación que eligió (users.mpReleasePlan).
+export const DEFAULT_MP_FEE_PLANS = [
+  { id: '0', label: 'Al instante', percent: 7.85 },
+  { id: '10', label: 'A 10 días', percent: 5.19 },
+  { id: '18', label: 'A 18 días', percent: 4.10 },
+  { id: '35', label: 'A 35 días', percent: 2.17 },
+  { id: '70', label: 'A 70 días', percent: 0 },
+];
+export function mpPercentFor(user, settings) {
+  const plans = settings?.mpFeePlans?.length ? settings.mpFeePlans : DEFAULT_MP_FEE_PLANS;
+  return Number((plans.find(p => p.id === user?.mpReleasePlan) || plans[0])?.percent) || 0;
+}

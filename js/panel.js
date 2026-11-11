@@ -1094,6 +1094,7 @@ function breakdownHtml(amount, feeMode) {
   const n = netOf(amount, feeMode);
   return `
     <div class="breakdown">
+      ${n.total > amount ? `<div class="bd-row"><span>Tu precio</span><span>${fmtMoney(amount)}</span></div><div class="bd-row muted"><span>+ Tasa de servicio (la paga el comprador)</span><span>${fmtMoney(n.total - amount)}</span></div>` : ''}
       <div class="bd-row"><span>Paga el comprador</span><span>${fmtMoney(n.total)}</span></div>
       <div class="bd-row muted"><span>Comisión Quiero Mis Fotos (${myFee()}%)</span><span>−${fmtMoney(n.platformFee)}</span></div>
       <div class="bd-row muted"><span>Comisión Mercado Pago (${plan.percent}% · ${esc(plan.label.toLowerCase())})</span><span>−${fmtMoney(n.mpFee)}</span></div>
@@ -1102,11 +1103,15 @@ function breakdownHtml(amount, feeMode) {
     <p class="muted small" style="margin:0">La comisión de MP depende del plazo de acreditación que tengas configurado en tu cuenta de Mercado Pago (<a href="#/mp">cambiar</a>). Es una estimación con tarjeta de crédito.</p>`;
 }
 
+// Tasa de servicio = comisión de la plataforma + la de Mercado Pago. El fotógrafo elige quién la paga.
 function feeModeHtml(name, value) {
-  const pct = myFee();
+  const v = ['absorb', 'half', 'buyer'].includes(value) ? value : 'absorb';
+  const opt = (val, title, hint) => `<label class="check"><input type="radio" name="${name}" value="${val}" ${v === val ? 'checked' : ''}> <span>${title} <span class="muted small">(${hint})</span></span></label>`;
   return `
-    <label class="check"><input type="radio" name="${name}" value="absorb" ${value !== 'buyer' ? 'checked' : ''}> <span>Absorbo la comisión <span class="muted small">(el comprador paga el precio; se te descuenta ${pct}%)</span></span></label>
-    <label class="check"><input type="radio" name="${name}" value="buyer" ${value === 'buyer' ? 'checked' : ''}> <span>La paga el comprador <span class="muted small">(se suma ${pct}% como "costo de servicio")</span></span></label>`;
+    <p class="muted small" style="margin:0">La tasa de servicio es la comisión de Quiero Mis Fotos (${myFee()}%) más la de Mercado Pago (${mpPlanOf(S.profile, S.settings).percent}%). Elegí quién la paga:</p>
+    ${opt('absorb', 'La pago toda yo', 'el comprador paga el precio limpio y a vos se te descuentan las dos comisiones')}
+    ${opt('half', 'Mitad yo, mitad el comprador', 'se suma al comprador la mitad como "tasa de servicio"')}
+    ${opt('buyer', 'La paga toda el comprador', 'se suma como "tasa de servicio" y a vos te queda el precio completo')}`;
 }
 
 function viewConfig() {
@@ -1122,7 +1127,7 @@ function viewConfig() {
         <label class="field" style="max-width:240px">Precio por foto (ARS)<input type="number" min="0" step="1" id="cf-price" value="${d.price || ''}" required></label>
         <h3>Packs por cantidad</h3>
         <div id="cf-packs"></div>
-        <h3>Comisión de la plataforma (${myFee()}%)</h3>
+        <h3>Tasa de servicio</h3>
         <div class="stack">${feeModeHtml('cf-fee', d.feeMode)}</div>
         <h3>¿Cuánto te queda por foto?</h3>
         <div id="cf-net"></div>
@@ -1854,9 +1859,10 @@ async function viewEvent(id) {
       const dlg = openDialog(`Precios · ${u.displayName || ''}`, `
         <div class="stack">
           <label class="field" style="max-width:240px">Precio por foto (ARS)<input type="number" id="sp-price" min="0" step="1" inputmode="numeric" value="${st.price || ''}"></label>
-          <label class="field" style="max-width:320px">Comisión de la plataforma<select id="sp-fee">
-            <option value="absorb" ${st.feeMode !== 'buyer' ? 'selected' : ''}>La paga el fotógrafo (el comprador ve el precio limpio)</option>
-            <option value="buyer" ${st.feeMode === 'buyer' ? 'selected' : ''}>Se suma al comprador como costo de servicio</option></select></label>
+          <label class="field" style="max-width:320px">Tasa de servicio<select id="sp-fee">
+            <option value="absorb" ${!['half', 'buyer'].includes(st.feeMode) ? 'selected' : ''}>La paga toda el fotógrafo (el comprador ve el precio limpio)</option>
+            <option value="half" ${st.feeMode === 'half' ? 'selected' : ''}>Mitad el fotógrafo, mitad el comprador</option>
+            <option value="buyer" ${st.feeMode === 'buyer' ? 'selected' : ''}>La paga toda el comprador (tasa de servicio)</option></select></label>
           <div class="field"><span>Packs</span><div id="sp-packs"></div></div>
           <p class="muted small" style="margin:0">Cambia solo este álbum. Las fotos con precio especial no cambian.</p>
         </div>`,
@@ -2121,7 +2127,7 @@ function renderSetEditor(ev, set, reload) {
       <label class="field" style="max-width:240px">Precio por foto (ARS)<input type="number" min="0" step="1" id="st-price" value="${set.price || ''}"></label>
       <h3>Packs</h3>
       <div id="st-packs"></div>
-      <h3>Comisión</h3>
+      <h3>Tasa de servicio</h3>
       <div class="stack" id="st-fee">${feeModeHtml('st-fee', set.feeMode)}</div>
       <h3>¿Cuánto te queda por foto?</h3>
       <div id="st-net"></div>

@@ -4,6 +4,7 @@ import { $, $$, esc, fmtMoney, fmtDate, toast, errMsg } from './util.js';
 import { cart } from './cart.js';
 import { computeTotals, bestPrice, splitPhotos } from './pricing.js';
 import { loadSettings, setForSale, feePercentFor, planOf, setUntil, GRACE_DAYS } from './data.js';
+import { mpPercentFor } from './plans-core.js';
 import { currentUser, openLogin, buyerSession } from './account.js';
 import { apiPost } from './api.js';
 
@@ -83,7 +84,9 @@ function groupHtml(g, settings) {
   }
 
   const split = splitPhotos(g.photos, g.set.price);
-  const t = computeTotals({ ...split, price: g.set.price, packs: g.set.packs, feeMode: g.set.feeMode, feePercent: feePercentFor(g.ph, settings) });
+  const calc = mp => computeTotals({ ...split, price: g.set.price, packs: g.set.packs, feeMode: g.set.feeMode, feePercent: feePercentFor(g.ph, settings), mpPercent: mp });
+  const t = calc(mpPercentFor(g.ph, settings));
+  const tT = calc(0); // por transferencia (sin comisión de Mercado Pago)
   const tip = nextPackTip(split.count, g.set);
   return `
     <section class="card stack">
@@ -92,7 +95,7 @@ function groupHtml(g, settings) {
         ${t.lines.map(l => `<div class="bd-row"><span>${esc(l.label)}${l.times > 1 ? ` × ${l.times}` : ''}</span><span>${fmtMoney(l.amount)}</span></div>`).join('')}
         ${t.savings ? `<div class="bd-row ok"><span>Ahorro por packs</span><span>−${fmtMoney(t.savings)}</span></div>` : ''}
         <div class="bd-row"><span>Subtotal (${n} foto${n > 1 ? 's' : ''})</span><span>${fmtMoney(t.subtotal)}</span></div>
-        ${t.serviceFee ? `<div class="bd-row muted"><span>Costo de servicio</span><span>${fmtMoney(t.serviceFee)}</span></div>` : ''}
+        ${t.serviceFee ? `<div class="bd-row muted"><span>Tasa de servicio</span><span>${fmtMoney(t.serviceFee)}</span></div>` : ''}
         <div class="bd-row total"><span>Total</span><span>${fmtMoney(t.total)}</span></div>
       </div>
       ${tip ? `<div class="notice small">💡 ${tip}</div>` : ''}
@@ -105,7 +108,7 @@ function groupHtml(g, settings) {
         ${g.ev.demo
           ? `<button class="btn primary" disabled>Pagar ${fmtMoney(t.total)}</button>`
           : `<span class="muted small">Pagás con Mercado Pago: tarjeta, débito o dinero en cuenta${transferOk(g.ph, settings) ? (currentUser() ? ', o por transferencia al alias del fotógrafo' : '. Para pagar por transferencia, <a href="#" data-login>ingresá con tu cuenta</a>') : ''}. Al pagar aceptás los <a href="terminos/" target="_blank">términos</a>.</span>
-             ${transferOk(g.ph, settings) && currentUser() ? `<button class="btn" data-pay="${g.key}" data-method="transfer">🏦 Pagar por transferencia</button>` : ''}
+             ${transferOk(g.ph, settings) && currentUser() ? `<button class="btn" data-pay="${g.key}" data-method="transfer">🏦 Pagar por transferencia${tT.total < t.total ? ` ${fmtMoney(tT.total)}` : ''}</button>` : ''}
              <button class="btn primary" data-pay="${g.key}">Pagar ${fmtMoney(t.total)}</button>`}
       </div>
     </section>`;

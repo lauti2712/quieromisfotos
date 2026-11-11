@@ -8,7 +8,7 @@ import { signToken, verifyToken } from './tokens.js';
 import { json, httpError, apiUrl } from './http.js';
 import { extensionWebhook } from './extensions.js';
 import { notifyUser, notifySuper } from './push.js';
-import { feePercentFor, GRACE_DAYS } from './plans.js';
+import { feePercentFor, mpPercentFor, GRACE_DAYS } from './plans.js';
 import { subscriptionWebhook } from './subscriptions.js';
 import { addAlert } from './alerts.js';
 import { createTransferOrder, syncTransferOrder } from './transfers.js';
@@ -59,7 +59,9 @@ export async function checkout(req, env) {
   const bad = photos.findIndex(p => !p || p.eventId !== eventId || p.photographerUid !== photographerUid || p.hidden || p.originalDeleted);
   if (bad >= 0) throw httpError(409, 'Alguna foto del carrito ya no está disponible. Quitala y probá de nuevo.');
 
-  const t = computeTotals({ ...splitPhotos(photos, set.price), price: set.price, packs: set.packs, feeMode: set.feeMode, feePercent: feePercentFor(ph, settings) });
+  // Por transferencia no hay comisión de Mercado Pago: la tasa de servicio es solo la de la plataforma.
+  const t = computeTotals({ ...splitPhotos(photos, set.price), price: set.price, packs: set.packs, feeMode: set.feeMode, feePercent: feePercentFor(ph, settings),
+    mpPercent: method === 'transfer' ? 0 : mpPercentFor(ph, settings) });
   if (method === 'transfer') return json(await createTransferOrder(env, { claims, ev, ph, settings, photos, t, ids, photographerUid, eventId, orderId: newId() }));
   // Mismo comprador, mismas fotos y mismo total con un pago todavía abierto: se reusa (evita pagar dos veces lo mismo).
   const key = [...ids].sort().join(',');
@@ -96,7 +98,7 @@ async function createPreference(req, env, orderId, order, buyerEmail, attempt) {
   const fromStaging = req.headers.get('Origin') === 'https://prueba.quieromisfotos.com.ar';
   const back = `${fromStaging ? 'https://prueba.quieromisfotos.com.ar/' : siteUrl(env)}#/pedido/${orderId}${order.buyerGuest ? `?k=${await orderKey(env, orderId)}` : ''}`;
   const items = [{ id: orderId, title: `Fotos — ${order.eventName}`.slice(0, 250), description: `${order.count} foto(s) digitales`, quantity: 1, unit_price: order.subtotal, currency_id: 'ARS', category_id: 'art' }];
-  if (order.serviceFee) items.push({ id: 'servicio', title: 'Costo de servicio', quantity: 1, unit_price: order.serviceFee, currency_id: 'ARS' });
+  if (order.serviceFee) items.push({ id: 'servicio', title: 'Tasa de servicio', quantity: 1, unit_price: order.serviceFee, currency_id: 'ARS' });
   const pref = await mpFetch(await sellerToken(env, order.photographerUid), '/checkout/preferences', {
     method: 'POST',
     headers: { 'X-Idempotency-Key': attempt ? `${orderId}-${attempt}` : orderId },
