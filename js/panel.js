@@ -1916,9 +1916,10 @@ async function viewEvent(id) {
     const nuevo = parseHash().query.get('nuevo') === '1';
     const drawSteps = (n = mySet.photoCount || 0) => {
       $('#ev-steps').innerHTML = nuevo || !n ? `<div class="card wizard-steps">
-        <span class="ws done">✓ Álbum creado</span><span class="ws ${n ? 'done' : 'now'}">${n ? '✓' : '2'} Subí las fotos</span><span class="ws ${n ? 'now' : ''}">3 Compartí el link</span>
+        <span class="ws done">✓ Álbum creado</span>${n ? '<span class="ws done">✓ Subí las fotos</span>' : '<a class="ws now" href="#" id="ws-up" style="text-decoration:none">2 Subí las fotos ⬇</a>'}<span class="ws ${n ? 'now' : ''}">3 Compartí el link</span>
         ${n ? '' : `<div class="row" style="flex-basis:100%;margin-top:6px"><span class="muted small grow">🔗 El link ya funciona: mandalo ahora y la gente ve las fotos a medida que se suben.</span>
           <button class="btn sm" id="ws-copy">Copiar link</button><a class="btn sm primary" id="ws-wa" target="_blank" rel="noopener">💬 WhatsApp</a></div>`}</div>` : '';
+      $('#ws-up')?.addEventListener('click', e => { e.preventDefault(); ($('#dz') || $('#set-photos'))?.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
       if (!n && $('#ws-copy')) {
         const url = eventUrl(ev.id, (ev.photographerUids || []).length > 1 ? me : '');
         $('#ws-copy').onclick = async () => { try { await navigator.clipboard.writeText(url); toast('Link copiado'); } catch { toast(url); } };
@@ -2099,7 +2100,9 @@ function renderSetEditor(ev, set, reload) {
   let subs = (set.subalbums || []).map(s => ({ ...s })).sort((a, b) => a.order - b.order);
   setTimeout(() => drawShortLink(ev), 0);
 
+  const emptyAlbum = !(set.photoCount > 0);
   box.innerHTML = `
+    ${emptyAlbum ? '<div id="set-photos"></div>' : ''}
     <div class="card stack">
       <h2>Mi set en este evento</h2>
       ${S.profile.mpConnected ? '' : '<div class="notice danger"><strong>Tus fotos todavía no se pueden comprar:</strong> los compradores ven "todavía no está a la venta" hasta que <a href="#/mp">vincules Mercado Pago</a>.</div>'}
@@ -2137,7 +2140,7 @@ function renderSetEditor(ev, set, reload) {
       <div id="st-selfie-status"></div>`}
       <div class="row end"><button class="btn primary" type="submit">Guardar set</button></div>
     </form>
-    <div id="set-photos"></div>`;
+    ${emptyAlbum ? '' : '<div id="set-photos"></div>'}`;
   if (S.settings.selfieEnabled !== false && set.selfie !== false && (set.photoCount || 0) > 0) drawSelfieStatus(ev);
   mountPhotos($('#set-photos'), { ev, set, uid: S.user.uid, profile: S.profile, settings: S.settings, bibs: bibsOn(set, ev, S.tax) })
     .catch(e => { $('#set-photos').innerHTML = `<div class="notice danger">${esc(errMsg(e))}</div>`; });
