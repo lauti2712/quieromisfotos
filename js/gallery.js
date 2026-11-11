@@ -105,7 +105,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
     <div class="gallery" id="g-grid"></div>
     <div id="g-sentinel" style="height:1px"></div>
     <div class="row" style="justify-content:center;margin-top:14px" id="g-more"></div>
-    <p class="muted small" style="text-align:center;margin:18px 0 0">© Las fotos son de sus autores y están protegidas por la Ley 11.723 de Propiedad Intelectual. Quitar o tapar la marca de agua, con IA o de cualquier otra forma, es una infracción.</p>
+    <p class="muted small" style="text-align:center;margin:18px 0 0">© Las fotos son de sus autores y están protegidas por la Ley 11.723 de Propiedad Intelectual. Quitar o tapar la marca de agua es una infracción. Comprando las fotos valorás el trabajo de quien las sacó 💛</p>
     <a class="g-cartbar hidden" id="g-cartbar" href="#/carrito"></a>`;
 
   function drawFilters() {
@@ -314,7 +314,8 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
         <h2 style="margin:0">📸 Esta foto tiene derechos de autor</h2>
         <p style="margin:0">Es de <strong>${credit(p, ph) || 'su fotógrafo'}</strong>. La vista previa tiene marca de agua y baja resolución${sale ? '.' : ', y ya no está a la venta.'}</p>
         ${sale ? `<p style="margin:0;font-size:1.05rem">Llevala <strong>sin marca y en alta calidad</strong> por <strong>${fmtMoney(price)}</strong>.<br><span class="muted small">Descarga inmediata · 🔒 Pago seguro con Mercado Pago</span></p>` : ''}
-        <p class="muted small" style="margin:0">Quitar o tapar la marca de agua (con IA o de cualquier otra forma) es una infracción a la Ley 11.723.</p>
+        ${sale ? `<p style="margin:0">💛 Comprando la foto valorás el trabajo de <strong>${credit(p, ph) || 'quien la sacó'}</strong>: cada compra le permite seguir cubriendo eventos y crecer como fotógrafo.</p>` : ''}
+        <p class="muted small" style="margin:0">Quitar o tapar la marca de agua es una infracción a la Ley 11.723.</p>
       </div>
       <div class="dlg-foot" style="justify-content:center">
         <button class="btn" data-x>Ahora no</button>
