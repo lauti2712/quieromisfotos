@@ -24,10 +24,12 @@ function showHowTo(phs, evName = '') {
   dlg.className = 'howto-dlg';
   dlg.innerHTML = `<div class="dlg-body stack howto">
       <h2 style="margin:0">📸 Cómo comprar tus fotos</h2>
+      <div class="notice small" style="margin:0">🛡️ <strong>Las fotos que ves acá son muestras:</strong> están achicadas, desenfocadas y con marca de agua para protegerlas.
+        Al pagar descargás el <strong>archivo original</strong>: <strong>sin marca de agua, totalmente enfocado y en alta calidad</strong>.</div>
       <ol class="howto-steps">
         <li>Tocá <strong>＋</strong> en las fotos que quieras (o <strong>Elegir varias</strong>).</li>
         <li>Tocá <strong>🛒 Ver carrito</strong>.</li>
-        <li>Pagá con <strong>Mercado Pago</strong> y descargalas al instante, en alta calidad y sin marca de agua. No hace falta crear una cuenta.</li>
+        <li>Pagá con <strong>Mercado Pago</strong> y descargá los originales al instante: sin marca de agua, totalmente enfocados y en alta calidad. No hace falta crear una cuenta.</li>
       </ol>
       <p class="muted small" style="margin:0">ℹ️ <strong>Quiero Mis Fotos</strong> es la plataforma donde los fotógrafos venden sus fotos: no somos los propietarios ni quienes sacamos las fotos. Si tenés un problema con el pago o la descarga, o querés pedir la baja de una foto, <a target="_blank" rel="noopener" href="https://wa.me/5493424856528?text=${encodeURIComponent(`Hola! Les escribo por el evento "${evName}" en Quiero Mis Fotos: `)}">escribinos</a>.</p>
     </div>
