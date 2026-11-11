@@ -2422,11 +2422,14 @@ async function viewAdminPhotographers() {
     .filter(u => !photogPlan || (photogPlan === 'courtesy' ? courtesyOf(u) : planOf(u) === photogPlan && !(photogPlan !== 'free' && courtesyOf(u))))
     .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
   // Fotos vendidas (salesStats) y álbumes / fotos vigentes (sets activos) de cada fotógrafo.
-  const [salesSnap, setsSnap] = await Promise.all([
+  const [salesSnap, setsSnap, paidSnap] = await Promise.all([
     getDocs(collection(db, 'salesStats')).catch(() => null),
     getDocs(collectionGroup(db, 'sets')).catch(() => null),
+    // Monto vendido: suma de lo que pagaron los compradores (compras aprobadas).
+    getDocs(query(collection(db, 'orders'), where('status', '==', 'approved'))).catch(() => null),
   ]);
-  const soldBy = new Map(), liveBy = new Map();
+  const soldBy = new Map(), liveBy = new Map(), amountBy = new Map();
+  for (const d of paidSnap?.docs || []) { const x = d.data(); amountBy.set(x.photographerUid, (amountBy.get(x.photographerUid) || 0) + (Number(x.total) || 0)); }
   for (const d of salesSnap?.docs || []) { const x = d.data(); soldBy.set(x.photographerUid, (soldBy.get(x.photographerUid) || 0) + (x.soldPhotos || 0)); }
   for (const d of setsSnap?.docs || []) { const x = d.data(); if (!setActive(x)) continue; const l = liveBy.get(d.id) || { albums: 0, photos: 0 }; l.albums++; l.photos += x.photoCount || 0; liveBy.set(d.id, l); }
   const privs = await Promise.all(users.map(u => getDoc(doc(db, 'userPrivate', u.uid)).then(s => s.data() || {}).catch(() => ({}))));
@@ -2457,6 +2460,7 @@ async function viewAdminPhotographers() {
           </div>
           <div class="set-stats" style="margin-top:6px">
             <span class="stat-chip ${sold ? 'ok' : ''}" title="Fotos vendidas en total">🛒 ${sold} vendida${sold === 1 ? '' : 's'}</span>
+            <span class="stat-chip ${amountBy.get(u.uid) ? 'ok' : ''}" title="Total que pagaron los compradores (compras aprobadas)">💰 ${fmtMoney(amountBy.get(u.uid) || 0)}</span>
             <a class="stat-chip" target="_blank" href="index.html#/f/${esc(u.slug)}" title="Ver su perfil con los álbumes" style="text-decoration:none;color:inherit">📁 ${live.albums} álbum${live.albums === 1 ? '' : 'es'} vigente${live.albums === 1 ? '' : 's'} ↗</a>
             <span class="stat-chip" title="Fotos en los álbumes vigentes">📷 ${live.photos.toLocaleString('es-AR')} fotos</span>
           </div>
