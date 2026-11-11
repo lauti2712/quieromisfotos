@@ -1847,7 +1847,7 @@ async function viewEvent(id) {
           <a class="btn sm" target="_blank" href="index.html#/evento/${ev.id}?f=${esc(S.user.uid)}" title="Abre la galería tal como la ve el comprador">👁️ Ver como cliente</a>
           <button class="btn sm share-btn" id="ev-share">🔗 Compartir</button>
           ${canEdit ? `<button class="btn sm" id="ev-edit">Editar</button>` : ''}
-          ${canEdit ? (ev.status === 'published' ? '<button class="btn sm" id="ev-toggle">Despublicar</button>' : '<button class="btn primary publish-now" id="ev-toggle">🚀 Publicar ahora</button>') : ''}
+          ${canEdit ? (ev.status === 'published' ? '<button class="btn sm" id="ev-toggle">Despublicar</button>' : `<button class="btn primary publish-now" id="ev-toggle">🚀 Publicar ahora</button><button class="btn" id="ev-sched">📅 ${ev.publishMode === 'scheduled' && ev.publishAt ? `Programado: ${esc(fmtWhen(ev.publishAt.toMillis()))}` : ev.publishMode === 'afterUpload' ? 'Al terminar la subida' : 'Programar publicación'}</button>`) : ''}
         </div>
       </div>
       <div id="ev-state"></div>
@@ -1871,6 +1871,7 @@ async function viewEvent(id) {
     };
   }
 
+  $('#ev-sched')?.addEventListener('click', () => scheduleDialog(ev, reload));
   const setsSnap = await getDocs(collection(db, 'events', id, 'sets'));
   const sets = new Map(setsSnap.docs.map(d => [d.id, d.data()]));
 
@@ -2018,6 +2019,36 @@ async function viewEvent(id) {
   }
 
   drawAlbumState(ev, sets.get(me) || null, reload);
+}
+
+// Programar la publicación de un álbum en borrador: en una fecha y hora, o al terminar la subida.
+function scheduleDialog(ev, reload) {
+  const cur = ev.publishMode === 'afterUpload' ? 'afterUpload' : 'scheduled';
+  const at = ev.publishAt?.toMillis?.() || Date.now() + 3600000;
+  const dlg = openDialog('Programar publicación', `
+    <label class="check"><input type="radio" name="sc-mode" value="scheduled" ${cur === 'scheduled' ? 'checked' : ''}> <span>📅 En una fecha y hora <span class="muted small">(se publica solo)</span></span></label>
+    <input type="datetime-local" id="sc-at" value="${localDT(at)}" style="max-width:260px;margin-left:30px">
+    <label class="check"><input type="radio" name="sc-mode" value="afterUpload" ${cur === 'afterUpload' ? 'checked' : ''}> <span>⏳ Cuando termine de subir las fotos</span></label>
+    <p class="muted small" style="margin:0">Hasta entonces el álbum no se ve. Necesita tener precio para publicarse.</p>`,
+    `${ev.publishMode ? '<button class="btn ghost" id="sc-off">Quitar programación</button>' : ''}<button class="btn primary" id="sc-save">Guardar</button>`);
+  const sync = () => $('#sc-at', dlg).classList.toggle('hidden', $('input[name=sc-mode]:checked', dlg).value !== 'scheduled');
+  $$('input[name=sc-mode]', dlg).forEach(r => { r.onchange = sync; });
+  sync();
+  const save = async upd => {
+    try { await updateDoc(doc(db, 'events', ev.id), { ...upd, updatedAt: serverTimestamp() }); dlg.close(); reload(); }
+    catch (e) { toast(errMsg(e), 'error'); }
+  };
+  $('#sc-save', dlg).onclick = async () => {
+    const mode = $('input[name=sc-mode]:checked', dlg).value;
+    if (!await hasPrice(ev)) return;
+    if (!await requireVerified()) return;
+    if (mode === 'afterUpload') { toast('Listo: se publica solo cuando termine la subida'); return save({ publishMode: 'afterUpload', publishAt: null }); }
+    const ms = Date.parse($('#sc-at', dlg).value);
+    if (!(ms > Date.now() + 60000)) return toast('Elegí una fecha y hora futura.', 'error');
+    toast(`Listo: se publica solo el ${fmtWhen(ms)}`);
+    save({ publishMode: 'scheduled', publishAt: Timestamp.fromMillis(ms) });
+  };
+  $('#sc-off', dlg)?.addEventListener('click', () => { toast('Programación quitada: queda en borrador'); save({ publishMode: 'draft', publishAt: null }); });
 }
 
 // "Publicar cuando termine de subir las fotos": se publica solo (con precio y cuenta confirmada).
