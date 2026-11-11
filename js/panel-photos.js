@@ -36,6 +36,10 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
         <strong>Arrastrá las fotos acá</strong>
         <span class="muted small">o tocá para elegirlas · JPG, PNG o WEBP · la marca de agua se aplica en tu dispositivo</span>
       </label>
+      <div class="notice small stack" style="margin:0;gap:4px">
+        <span>🛡️ <strong>Tus fotos no corren riesgo.</strong> Los compradores solo ven una <strong>vista previa</strong>: más chica, de menor calidad y con marca de agua. El original queda guardado en privado y solo lo descarga quien la compra, <strong>tal cual lo subiste</strong>.</span>
+        <span>💾 <strong>No borres los originales de tu computadora o disco.</strong> Los guardamos para vender y entregar las fotos mientras el álbum está a la venta, pero no garantizamos que queden guardados para siempre (se borran cuando el álbum se cierra o vence).</span>
+      </div>
       <div id="up-cut"></div>
       <p class="muted small mobile-only" style="margin:6px 0 0">📱 Desde el celular: dejá esta pantalla abierta mientras sube (si bloqueás el celular o cambiás de app, se pausa). Si se corta la conexión o volvés después, sigue sola desde donde quedó.</p>
       <div id="up-big" class="up-big hidden"></div>
