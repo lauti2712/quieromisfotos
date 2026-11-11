@@ -679,6 +679,9 @@ async function viewHome() {
     ${newsCardHtml()}
     <div id="home-alerts"></div>
     ${approved && !p.mpConnected && totalPhotos > 0 ? `<div class="notice danger"><strong>💳 Tus fotos se ven pero no se pueden comprar.</strong><br>Falta vincular Mercado Pago: los compradores ven "todavía no está a la venta". <a href="#/mp">Vincular ahora</a></div>` : ''}
+    ${p.status === 'approved' && (S.settings.transfer?.plans || []).includes(planOf(p)) && !p.transferOn && !p.transferBlocked ? `<div class="notice ok row" style="justify-content:space-between;gap:8px">
+      <span>🏦 <strong>Tu plan incluye cobrar por transferencia</strong> (sin la comisión de Mercado Pago). Activalo cargando el alias de tu Mercado Pago.</span>
+      <a class="btn sm primary" href="#/mp?ver=transfer">Activar</a></div>` : ''}
     ${(np => np.length ? `<div class="notice danger"><strong>💲 Álbumes sin precio: nadie puede comprar esas fotos.</strong><br>${np.map(ev => `<a href="#/evento/${ev.id}">${esc(ev.name)}</a>`).join(' · ')}</div>` : '')(evs.filter((ev, i) => sets[i] && (sets[i].photoCount || 0) > 0 && !(sets[i].price > 0) && !sets[i].originalsDeleted))}
     ${installCardHtml()}
     ${p.status === 'pending' ? `<div class="notice warn"><strong>Tu cuenta está pendiente de aprobación.</strong><br>Mientras tanto podés completar tu perfil, subir tu foto y tu portfolio, y configurar precios y marca de agua.</div>` : ''}
@@ -1283,6 +1286,8 @@ async function viewMp() {
 async function drawTransferCard() {
   const box = $('#mp-transfer');
   if (!box) return;
+  // Desde el aviso de Inicio: se baja directo al recuadro.
+  const goTo = parseHash().query.get('ver') === 'transfer';
   const p = S.profile, st = S.settings;
   const plans = st.transfer?.plans || [];
   if (!plans.length) { box.remove(); return; }
@@ -1339,6 +1344,7 @@ async function drawTransferCard() {
     e.target.disabled = false;
   });
   $$('[data-copyv]', box).forEach(b => b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copyv); toast('Copiado'); } catch { toast(b.dataset.copyv); } });
+  if (goTo) { history.replaceState(null, '', '#/mp'); box.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
   // Cuenta vinculada (Mercado Pago no informa el alias, pero sí el titular): se muestra y completa el titular si está vacío.
   if ($('#tr-acct') && p.mpConnected) apiGet('/mp/account').then(a => {
     if (!a?.name && !a?.email) return;
