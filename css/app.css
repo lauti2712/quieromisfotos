@@ -834,3 +834,35 @@ dialog.protect-dlg { padding: 0; max-width: min(420px, calc(100vw - 32px)); }
 #ev-state:not(:empty), #ev-steps:not(:empty), #ev-share-card:not(:empty), #ev-sets > *:not(:first-child), #set-photos:not(:empty) { margin-top: 14px; }
 #ev-sets:not(:empty) { margin-top: 14px; }
 .album-state.warn { border-left-color: var(--warn, #d97706); }
+
+/* Encabezado del álbum: estado, pasos y acciones dentro del mismo bloque, separados por una línea. */
+.card #ev-state:not(:empty), .card #ev-steps:not(:empty) { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+.album-state.in-card { border-left: 0; padding: 0; }
+.wizard-steps.in-card { margin-bottom: 0; }
+
+/* Planes: tabla comparativa (compu) y tarjetas deslizables (celular), con selector mensual / anual. */
+.plan-period { display: flex; gap: 8px; margin: 4px 0 12px; }
+.plans-wrap[data-period="month"] .pc-y, .plans-wrap[data-period="year"] .pc-m { display: none; }
+.plan-compare { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .88rem; table-layout: fixed; }
+.plan-compare th, .plan-compare td { padding: 9px 8px; border-bottom: 1px solid var(--border); text-align: center; vertical-align: middle; }
+.plan-compare thead th { vertical-align: top; border-bottom: 2px solid var(--border); }
+.plan-compare thead th:first-child, .plan-compare tbody th { width: 24%; }
+.plan-compare tbody th { text-align: left; font-weight: 500; color: var(--muted); }
+.plan-compare .pc-hl { background: var(--accent-soft); }
+.plan-compare thead .pc-hl { border-radius: 12px 12px 0 0; }
+.pc-name { font-weight: 800; }
+.pc-rec { font-size: .7rem; margin-left: 4px; }
+.pc-price { font-size: 1.1rem; font-weight: 800; color: var(--accent); margin: 4px 0; white-space: nowrap; }
+.pc-price small { font-size: .75rem; color: var(--muted); font-weight: 600; }
+.pc-cta { margin-top: 8px; min-height: 32px; }
+.pc-yes { color: var(--ok); font-weight: 800; font-size: 1.1rem; }
+.pc-no { color: var(--muted); opacity: .5; }
+.pc-cards { display: none; }
+@media (max-width: 760px) {
+  .pc-table-wrap { display: none; }
+  .pc-cards { display: flex; align-items: flex-start; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 4px 2px 12px; margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
+  .pc-card { flex: 0 0 82%; scroll-snap-align: center; border: 1px solid var(--border); border-radius: 16px; padding: 14px; background: var(--surface); }
+  .pc-card.pc-hl { border-color: var(--accent); }
+  .pc-card.pc-cur { box-shadow: 0 0 0 2px var(--ok) inset; }
+  .pc-card ul { margin: 10px 0 0; padding-left: 0; list-style: none; display: grid; gap: 6px; font-size: .9rem; }
+}

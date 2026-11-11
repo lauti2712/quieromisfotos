@@ -48,7 +48,7 @@ export async function closeAlbum(req, env, eid) {
   const c = await requireUser(req, env);
   const isSuper = c.email === 'lautarom87@gmail.com' && c.email_verified === true;
   const body = await req.json().catch(() => ({}));
-  const uid = isSuper && body.uid ? String(body.uid) : c.uid;
+  const uid = isSuper && body.uid ? String(body.uid) : c.sub;
   const set = await adminGet(env, `events/${eid}/sets/${uid}`);
   if (!set) throw httpError(404, 'No tenés fotos en este evento');
   if (set.originalsDeleted) return json({ ok: true, already: true });
@@ -110,7 +110,7 @@ export async function removeAlbum(req, env, eid) {
   const c = await requireUser(req, env);
   const isSuper = c.email === 'lautarom87@gmail.com' && c.email_verified === true;
   const body = await req.json().catch(() => ({}));
-  const uid = isSuper && body.uid ? String(body.uid) : c.uid;
+  const uid = isSuper && body.uid ? String(body.uid) : c.sub;
   const [ev, set] = await Promise.all([adminGet(env, `events/${eid}`), adminGet(env, `events/${eid}/sets/${uid}`)]);
   if (!ev || !(ev.photographerUids || []).includes(uid)) throw httpError(404, 'No tenés un álbum en este evento');
   if (set && (set.photoCount || 0) > 0 && !set.originalsDeleted) throw httpError(409, 'Primero cerrá el álbum (📦 Cerrar álbum). Después lo podés eliminar del historial.');
