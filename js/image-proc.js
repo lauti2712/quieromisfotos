@@ -1,9 +1,9 @@
-// Procesamiento de imágenes en el navegador: muestra (1080px) y miniatura (400px) con marca de agua (wm = null: sin marca).
+// Procesamiento de imágenes en el navegador: muestra (900px) y miniatura (400px) con marca de agua (wm = null: sin marca).
 // La muestra es chica a propósito: alcanza para elegir en el celular, pero sin marca no sirve para imprimir ni recortar.
 // Funciona en un Web Worker (OffscreenCanvas) o en el hilo principal.
 import { drawWatermark } from './watermark.js';
 
-export const PREVIEW_SIDE = 1080;
+export const PREVIEW_SIDE = 900;
 const WORK_SIDE = 1600; // copia de trabajo sin marca (de acá salen la muestra, la miniatura y la lectura de dorsales/caras)
 export const THUMB_SIDE = 400;
 export const SCAN_SIDE = 1280; // copia sin marca para leer dorsales (no se guarda)
