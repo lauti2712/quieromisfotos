@@ -50,7 +50,7 @@ import { adminGet, adminGetMany, adminQuery } from './admin.js';
 import { isFree, albumPhotoLimit, setActive, activeAlbumLimit } from './plans.js';
 import { signToken, verifyToken } from './tokens.js';
 import { json, httpError, apiUrl } from './http.js';
-import { connectUrl, callback, disconnect } from './mp.js';
+import { connectUrl, callback, disconnect, mpAccount } from './mp.js';
 import { checkout, webhook, syncOrder, retryCheckout, downloadLinks, download, reviewOriginal, guestOrder, orderLink } from './orders.js';
 import { createTag } from './tags.js';
 import { scanBibsRequest } from './bibs.js';
@@ -176,6 +176,7 @@ async function route(req, env, ctx) {
   if (m === 'POST' && url.pathname === '/mp/connect-url') return connectUrl(req, env);
   if (m === 'GET' && url.pathname === '/mp/callback') return callback(req, env);
   if (m === 'POST' && url.pathname === '/mp/disconnect') return disconnect(req, env);
+  if (m === 'GET' && url.pathname === '/mp/account') return mpAccount(req, env);
   if (m === 'POST' && url.pathname === '/mp/webhook') return webhook(req, env);
   if (m === 'POST' && url.pathname === '/checkout') return checkout(req, env);
   if (m === 'POST' && url.pathname === '/tags') return createTag(req, env);

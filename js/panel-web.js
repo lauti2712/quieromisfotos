@@ -31,7 +31,19 @@ export async function viewWeb(view, { uid, profile, settings }) {
         toast('🎉 ¡Suscripción activa! Ya tenés tu plan.');
         const fresh = await getDoc(doc(db, 'users', uid));
         Object.assign(profile, fresh.data());
-      } else if (r.status === 'pending') toast('Tu suscripción todavía se está procesando. Se activa sola cuando Mercado Pago la confirme.');
+        window.dispatchEvent(new Event('qmf-profile-refresh')); // arriba también (el cartel del plan)
+      } else if (r.status === 'pending') {
+        toast('Tu suscripción se está procesando. En cuanto Mercado Pago la confirme se activa sola (no hace falta que hagas nada).');
+        // Mercado Pago suele confirmar en uno o dos minutos: se vuelve a consultar sola y el panel se actualiza.
+        let tries = 0;
+        const again = async () => {
+          if (++tries > 12) return;
+          const x = await apiPost('/plans/sync').catch(() => null);
+          if (x?.status === 'authorized') { toast('🎉 ¡Suscripción activa! Ya tenés tu plan.'); window.dispatchEvent(new Event('qmf-profile-refresh')); }
+          else setTimeout(again, 15000);
+        };
+        setTimeout(again, 15000);
+      }
     } catch (e) { toast(errMsg(e), 'error'); }
   }
   const plan = planOf(profile);
