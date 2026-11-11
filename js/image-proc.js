@@ -2,6 +2,7 @@
 // La muestra es chica a propósito: alcanza para elegir en el celular, pero sin marca no sirve para imprimir ni recortar.
 // Funciona en un Web Worker (OffscreenCanvas) o en el hilo principal.
 import { drawWatermark } from './watermark.js';
+import { makeProtected, PROTECT_VERSION } from './protect.js';
 
 export const PREVIEW_SIDE = 800;
 const WORK_SIDE = 1600; // copia de trabajo sin marca (de acá salen la muestra, la miniatura y la lectura de dorsales/caras)
@@ -37,7 +38,9 @@ export const OPTIMIZE_QUALITY = 0.92;
 const OPTIMIZE_MIN_BYTES = 3e6;
 
 // seed: id de la foto (la marca sale distinta en cada foto y lleva su código corto).
-export async function processFile(file, wm, logo = null, { optimize = false, scan = false, seed = null, side = PREVIEW_SIDE } = {}) {
+// protect: configuración de las versiones protegidas (fotos de álbumes: desenfoque real + compresión, ver protect.js).
+//   Sin protect (portfolio, web del fotógrafo) sale la muestra nítida de siempre.
+export async function processFile(file, wm, logo = null, { optimize = false, scan = false, seed = null, side = PREVIEW_SIDE, protect = null } = {}) {
   const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
   const width = bmp.width, height = bmp.height;
   try {
@@ -51,15 +54,20 @@ export async function processFile(file, wm, logo = null, { optimize = false, sca
     }
     // Copia de trabajo sin marca a 1600px: de ahí salen la muestra, la miniatura y la lectura (mejor que escalar desde el original).
     const work = scaled(bmp, width, height, WORK_SIDE);
+    const scanBlob = scan ? await toBlob(scaled(work, work.width, work.height, SCAN_SIDE), 0.82) : null;
+    const takenAt0 = await exifDate(file).catch(() => null);
+    if (protect) {
+      const { preview, thumb } = await makeProtected(work, work.width, work.height, wm, logo, seed, protect);
+      return { preview, thumb, original, scan: scanBlob, width, height, pv: PROTECT_VERSION, takenAt: takenAt0 || file.lastModified || Date.now(), takenAtExact: !!takenAt0 };
+    }
     const base = scaled(work, work.width, work.height, side);
     const thumbC = scaled(work, work.width, work.height, THUMB_SIDE);
-    const scanBlob = scan ? await toBlob(scaled(work, work.width, work.height, SCAN_SIDE), 0.82) : null;
     if (wm) {
       drawWatermark(base.getContext('2d'), base.width, base.height, wm, logo, seed);
       drawWatermark(thumbC.getContext('2d'), thumbC.width, thumbC.height, wm, logo, seed);
     }
     const [preview, thumb] = await Promise.all([toBlob(base, side <= 800 ? 0.74 : 0.82), toBlob(thumbC, 0.7)]);
-    const takenAt = await exifDate(file).catch(() => null);
+    const takenAt = takenAt0;
     // takenAtExact: la hora sale de la cámara (EXIF); si no, es la del archivo (en el celular, suele ser cuando se eligió).
     return { preview, thumb, original, scan: scanBlob, width, height, takenAt: takenAt || file.lastModified || Date.now(), takenAtExact: !!takenAt };
   } finally {

@@ -261,8 +261,9 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
       drawTools();
     });
   }
-  let cols = 2;
-  try { cols = localStorage.getItem('qmf-cols') === '3' ? 3 : 2; } catch { /* nada */ }
+  // Por defecto, fotos chicas (3 columnas en el celular); se recuerda si eligió las grandes.
+  let cols = 3;
+  try { cols = localStorage.getItem('qmf-cols') === '2' ? 2 : 3; } catch { /* nada */ }
   $('#g-grid', box).classList.toggle('cols3', cols === 3);
   drawTools();
 
@@ -294,6 +295,43 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
     if (b && state.pick) { const p = state.photos[+b.dataset.i]; if (p && forSale(p.photographerUid)) toggleCart(p); return; }
     if (b) openGalleryViewer(+b.dataset.i);
   });
+  // Compu: lupa sobre la miniatura (alrededor del mouse se ve la foto ampliada, que también está desenfocada).
+  if (matchMedia('(hover: hover) and (pointer: fine)').matches) {
+    const grid = $('#g-grid', box);
+    const lens = (it, e) => {
+      const c = it.querySelector('.g-clear');
+      if (!c) return;
+      const r = it.getBoundingClientRect();
+      c.style.setProperty('--lx', `${e.clientX - r.left}px`); c.style.setProperty('--ly', `${e.clientY - r.top}px`);
+      c.style.setProperty('--lr', `${Math.max(40, Math.min(r.width, r.height) * 0.3)}px`);
+    };
+    grid.addEventListener('mouseover', e => {
+      const it = e.target.closest('.g-item');
+      if (!it || it.contains(e.relatedTarget) || state.pick) return;
+      const p = state.photos[+it.dataset.i];
+      if (!p?.previewUrl) return;
+      let c = it.querySelector('.g-clear');
+      if (!c) {
+        c = document.createElement('img');
+        c.className = 'g-clear'; c.alt = ''; c.draggable = false; c.decoding = 'async';
+        c.onload = () => { if (it.matches(':hover')) it.classList.add('clear'); };
+        c.src = p.previewUrl;
+        it.querySelector('img').after(c);
+        if (c.complete) it.classList.add('clear');
+      } else it.classList.add('clear');
+      lens(it, e);
+    });
+    grid.addEventListener('mousemove', e => {
+      const it = e.target.closest('.g-item');
+      if (it && !state.pick) lens(it, e);
+    });
+    grid.addEventListener('mouseout', e => {
+      const it = e.target.closest('.g-item');
+      if (!it || it.contains(e.relatedTarget)) return;
+      it.classList.remove('clear');
+      it.querySelector('.g-clear')?.style.setProperty('--lr', '0px');
+    });
+  }
   $('#g-grid', box).addEventListener('keydown', e => {
     const b = e.target.closest('.g-item');
     if (b && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openGalleryViewer(+b.dataset.i); }
@@ -448,6 +486,9 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
       index,
       src: i => state.photos[i].previewUrl,
       thumb: i => state.photos[i].thumbUrl,
+      // Protegidas: arranca desenfocada; con el mouse o un toque se ve la ampliada (que también está desenfocada).
+      reveal: true,
+      size: i => ({ w: state.photos[i].width, h: state.photos[i].height }),
       count: () => state.photos.length,
       total: () => `${state.photos.length}${state.done ? '' : '+'}`,
       // Cuenta la foto vista una vez (el visor también redibuja al tocar ♥ o carrito).
@@ -459,7 +500,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
 
   // Foto suelta (link compartido de una foto).
   function openSingle(p) {
-    openViewer({ index: 0, src: () => p.previewUrl, thumb: () => p.thumbUrl, count: () => 1, total: () => '1', footer: (i, el, rerender) => viewerFooter(p, el, rerender), onProtect: () => protectDialog(p) });
+    openViewer({ index: 0, src: () => p.previewUrl, thumb: () => p.thumbUrl, reveal: true, size: () => ({ w: p.width, h: p.height }), count: () => 1, total: () => '1', footer: (i, el, rerender) => viewerFooter(p, el, rerender), onProtect: () => protectDialog(p) });
   }
 
   // Crédito: en el plan Empresas, quién sacó la foto ("Juan Pérez para Productora X").
@@ -489,7 +530,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
         ${forSale(p.photographerUid)
           ? `<button class="btn ${inCart ? '' : 'primary'}" id="lb-add">${inCart ? '✓ En el carrito' : '🛒 Agregar al carrito'}</button>`
           : '<button class="btn" disabled>Ya no está a la venta</button>'}</span>
-      ${forSale(p.photographerUid) ? '<span class="lb-note">🛡️ <strong>Vista previa con marca de agua.</strong> Al comprar descargás la foto original en alta calidad, sin marca. · 🔒 Pago seguro con Mercado Pago</span>' : ''}
+      ${forSale(p.photographerUid) ? '<span class="lb-note">🛡️ <strong>Vista previa con marca de agua.</strong> Al comprar descargás la foto original en alta calidad: sin marca y totalmente enfocada. · 🔒 Pago seguro con Mercado Pago</span>' : ''}
       ${forSale(p.photographerUid) && cartSummary().tip ? `<span class="lb-note lb-tip">${esc(cartSummary().tip)}</span>` : ''}`;
     $('#lb-add', el)?.addEventListener('click', () => { toggleCart(p); rerender(); });
     $('#lb-fav', el).onclick = () => { toggleFav(p); rerender(); };

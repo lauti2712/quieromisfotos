@@ -2,9 +2,9 @@
 import { processFile } from './image-proc.js';
 
 self.onmessage = async ({ data }) => {
-  const { id, file, wm, logo, optimize, scan, seed } = data;
+  const { id, file, wm, logo, optimize, scan, seed, protect } = data;
   try {
-    const r = await processFile(file, wm, logo || null, { optimize, scan, seed });
+    const r = await processFile(file, wm, logo || null, { optimize, scan, seed, protect: protect || null });
     self.postMessage({ id, ok: true, ...r });
   } catch (e) {
     self.postMessage({ id, ok: false, error: String(e?.message || e) });

@@ -21,7 +21,7 @@ export async function cleanOrphans(env, { sets, ids, docs, profileObjs, coverObj
   for (const [i, id] of ids.entries()) {
     const s = sets[id], set = docs[i];
     if (!set) { s.objs.forEach(o => add(o, 'Álbum borrado')); continue; }
-    const pidOf = k => k.split('/')[3].replace(/_(p|t)\.jpg$/, '');
+    const pidOf = k => k.split('/')[3].replace(/_(p|t)\d?\.jpg$/, '');
     const pids = [...new Set(s.objs.map(o => pidOf(o.key)))];
     if (pids.length === (set.photoCount || 0)) continue; // coincide: no hay sueltos
     const found = new Set();

@@ -5,6 +5,7 @@
 import { adminQuery, adminCommit, adminGet } from './admin.js';
 import { requireUser } from './firebase.js';
 import { json, httpError } from './http.js';
+import { PREVIEW_SUFFIXES, THUMB_SUFFIXES } from './photos.js';
 
 export const SAMPLE_COUNT = 10;
 const hourOf = ms => Math.floor(ms / 3600_000) * 3600_000;
@@ -30,9 +31,9 @@ export async function keepSamples(env, eid, uid) {
       if (h) hourCounts[hourOf(h)] = (hourCounts[hourOf(h)] || 0) + 1;
       continue;
     }
-    pubKeys.push(`${base}_p.jpg`);
+    pubKeys.push(...PREVIEW_SUFFIXES.map(x => base + x));
     if (sold.has(p.id)) { if (!p.hidden) ops.push({ update: `photos/${p.id}`, data: { hidden: true, soldHidden: true }, mask: ['hidden', 'soldHidden'] }); }
-    else { ops.push({ del: `photos/${p.id}` }); pubKeys.push(`${base}_t.jpg`); }
+    else { ops.push({ del: `photos/${p.id}` }); pubKeys.push(...THUMB_SUFFIXES.map(x => base + x)); }
   }
   ops.push({ update: `events/${eid}/sets/${uid}`, data: { photoCount: keep.size, hourCounts, samplesKept: true, samplesKeptAt: new Date() }, mask: ['photoCount', 'hourCounts', 'samplesKept', 'samplesKeptAt'] });
   for (let i = 0; i < ops.length; i += 400) await adminCommit(env, ops.slice(i, i + 400));
@@ -123,10 +124,10 @@ export async function removeAlbum(req, env, eid) {
   const ops = [], pubKeys = [];
   for (const p of photos) {
     const base = `e/${eid}/${uid}/${p.id}`;
-    pubKeys.push(`${base}_p.jpg`);
+    pubKeys.push(...PREVIEW_SUFFIXES.map(x => base + x));
     // Lo vendido queda oculto con su miniatura (se ve en "Mis compras"); lo demás se borra.
     if (sold.has(p.id)) ops.push({ update: `photos/${p.id}`, data: { hidden: true, soldHidden: true, sample: false }, mask: ['hidden', 'soldHidden', 'sample'] });
-    else { ops.push({ del: `photos/${p.id}` }); pubKeys.push(`${base}_t.jpg`); }
+    else { ops.push({ del: `photos/${p.id}` }); pubKeys.push(...THUMB_SUFFIXES.map(x => base + x)); }
   }
   for (const a of aliases) ops.push({ del: `aliases/${a.id}` });
   const now = new Date();

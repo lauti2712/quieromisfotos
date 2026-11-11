@@ -8,3 +8,4 @@ tests/node_modules/
 *-debug.log
 .prueba-dist/
 .tmp-test/
+Claude outputs/

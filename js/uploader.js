@@ -20,7 +20,8 @@ export function interruptedUpload(eventId) {
 export function clearInterrupted(eventId) { try { localStorage.removeItem(pendingKey(eventId)); } catch { /* nada */ } }
 
 // bibs: además manda una copia sin marca para leer los dorsales (onBibs avisa lo que encontró).
-export function createUploader({ eventId, uid, team = '', wm, logo = null, optimize = false, bibs = false, faces = false, onChange, onPhoto, onBibs }) {
+// protect: configuración de las versiones protegidas (protectOf(settings)); sin ella se suben las muestras nítidas viejas.
+export function createUploader({ eventId, uid, team = '', wm, logo = null, optimize = false, bibs = false, faces = false, protect = null, onChange, onPhoto, onBibs }) {
   // Se pueden reemplazar (setHandlers) si el fotógrafo sale y vuelve al evento mientras sube.
   const lowEnd = (navigator.deviceMemory && navigator.deviceMemory <= 4) || (navigator.hardwareConcurrency || 4) <= 4;
   const concurrency = lowEnd ? 2 : 3;
@@ -57,17 +58,17 @@ export function createUploader({ eventId, uid, team = '', wm, logo = null, optim
     const w = pool().find(x => !x.busy);
     // La copia sin marca (1280 px) sirve para leer dorsales y para las caras de la búsqueda por selfie.
     const scan = bibs || faces;
-    if (!w) return processFile(file, wm, logo, { optimize, scan, seed });
+    if (!w) return processFile(file, wm, logo, { optimize, scan, seed, protect });
     w.busy = true;
     const id = ++seq;
     w.current = id;
     return new Promise((resolve, reject) => {
       waiting.set(id, data => {
         if (data.ok) resolve(data);
-        else if (data.fallback) processFile(file, wm, logo, { optimize, scan, seed }).then(resolve, reject);
+        else if (data.fallback) processFile(file, wm, logo, { optimize, scan, seed, protect }).then(resolve, reject);
         else reject(new Error(data.error));
       });
-      w.postMessage({ id, file, wm, logo, optimize, scan, seed });
+      w.postMessage({ id, file, wm, logo, optimize, scan, seed, protect });
     });
   }
 
@@ -132,14 +133,16 @@ export function createUploader({ eventId, uid, team = '', wm, logo = null, optim
     const extra = r.preview.size + r.thumb.size;
     const orig = r.original || it.file; // optimizado si achicó; si no, el archivo tal cual
     const progress = (base) => (l) => { it.loaded = Math.min(it.file.size, ((base + l) / (extra + orig.size)) * it.file.size); emit(); };
-    await putBlob(`/upload/preview/${eventId}/${pid}`, r.preview, s.token, progress(0));
-    await putBlob(`/upload/thumb/${eventId}/${pid}`, r.thumb, s.token, progress(r.preview.size));
+    // Versión protegida (pv 2): el Worker las guarda con otro nombre (_p2/_t2) para no pisar caché de las viejas.
+    const vq = r.pv ? `?v=${r.pv}` : '';
+    await putBlob(`/upload/preview/${eventId}/${pid}${vq}`, r.preview, s.token, progress(0));
+    await putBlob(`/upload/thumb/${eventId}/${pid}${vq}`, r.thumb, s.token, progress(r.preview.size));
     await putBlob(`/upload/original/${eventId}/${pid}`, orig, s.token, progress(extra));
 
     // El Worker registra la foto: suma al álbum, fija el vencimiento con la primera y controla el tope del plan.
     const c = await postWithToken(`/photos/${eventId}/${pid}`, {
       subalbumId: it.subalbumId || '', width: r.width, height: r.height, takenAt: r.takenAt, takenAtExact: r.takenAtExact,
-      fileName: it.file.name.slice(0, 120), fileBytes: it.file.size,
+      fileName: it.file.name.slice(0, 120), fileBytes: it.file.size, ...(r.pv ? { pv: r.pv } : {}),
     }, s.token);
     const photo = c.photo ? { ...c.photo, takenAt: Timestamp.fromMillis(c.photo.takenAt) } : null;
     it.status = 'done'; it.loaded = it.file.size; it.noTime = !r.takenAtExact;

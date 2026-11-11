@@ -11,6 +11,15 @@ import { json, httpError } from './http.js';
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
 const DAY = 86400_000;
 const hourOf = ms => Math.floor(ms / 3600_000) * 3600_000;
+// Archivos públicos de una foto: _p/_t (muestra y miniatura viejas, nítidas) y _p2/_t2… (protegidas: desenfoque real;
+// el número sube cada vez que se regeneran con otros ajustes). Nombres distintos porque los públicos se sirven con
+// caché "immutable": pisar el mismo nombre no alcanza.
+export const MAX_PV = 9;
+const PVS = Array.from({ length: MAX_PV }, (_, i) => i + 1);
+export const suffixOf = (kind, pv) => `_${kind === 'preview' ? 'p' : 't'}${pv >= 2 ? Math.min(MAX_PV, Math.floor(pv)) : ''}.jpg`;
+export const PREVIEW_SUFFIXES = PVS.map(v => suffixOf('preview', v));
+export const THUMB_SUFFIXES = PVS.map(v => suffixOf('thumb', v));
+export const pubKeysOf = base => [...PREVIEW_SUFFIXES, ...THUMB_SUFFIXES].map(x => base + x);
 
 function member(s, eid) {
   if (s.eid !== eid || s.role !== 'member') throw httpError(403, 'Token no válido para este evento');
@@ -20,7 +29,9 @@ export async function commitPhoto(req, env, s, eid, pid, publicBase) {
   member(s, eid);
   const b = await req.json().catch(() => ({}));
   const base = `e/${eid}/${s.uid}/${pid}`;
-  const [orig, prev, thumb] = await Promise.all([env.PRIVATE.head(base), env.PUBLIC.head(`${base}_p.jpg`), env.PUBLIC.head(`${base}_t.jpg`)]);
+  const pv = Number(b.pv) >= 2 ? 2 : 1;
+  const pKey = base + suffixOf('preview', pv), tKey = base + suffixOf('thumb', pv);
+  const [orig, prev, thumb] = await Promise.all([env.PRIVATE.head(base), env.PUBLIC.head(pKey), env.PUBLIC.head(tKey)]);
   if (!orig || !prev || !thumb) throw httpError(409, 'La foto no terminó de subir. Se reintenta sola.');
 
   const [set, st, user, existing] = await adminGetMany(env, [`events/${eid}/sets/${s.uid}`, 'settings/platform', `users/${s.uid}`, `photos/${pid}`]);
@@ -44,7 +55,7 @@ export async function commitPhoto(req, env, s, eid, pid, publicBase) {
   const bytesPublic = prev.size + thumb.size;
   const photo = {
     eventId: eid, photographerUid: s.uid, subalbumId,
-    previewUrl: `${publicBase}/${base}_p.jpg`, thumbUrl: `${publicBase}/${base}_t.jpg`,
+    previewUrl: `${publicBase}/${pKey}`, thumbUrl: `${publicBase}/${tKey}`, ...(pv >= 2 ? { pv } : {}),
     width: Math.max(1, Math.round(Number(b.width) || 1)), height: Math.max(1, Math.round(Number(b.height) || 1)),
     bytes: orig.size, fileBytes: Math.max(0, Math.round(Number(b.fileBytes) || orig.size)), bytesPublic,
     takenAt: new Date(takenAt), fileName: String(b.fileName || '').slice(0, 120),
@@ -105,7 +116,7 @@ export async function deletePhotos(req, env, s, eid) {
   list.forEach((id, i) => {
     const p = photos[i];
     const base = `e/${eid}/${s.uid}/${id}`;
-    if (!p) { if (!s.by) { keys.push(base, `${base}_p.jpg`, `${base}_t.jpg`); deleted.push(id); } return; } // subida a medias
+    if (!p) { if (!s.by) { keys.push(base, ...pubKeysOf(base)); deleted.push(id); } return; } // subida a medias
     if (p.photographerUid !== s.uid || p.eventId !== eid) return;
     if (s.by && (p.uploadedBy || p.photographerUid) !== s.by) return; // un colaborador solo borra sus fotos
     if (sold.has(id)) {
@@ -113,7 +124,7 @@ export async function deletePhotos(req, env, s, eid) {
       hidden.push(id);
       return;
     }
-    keys.push(base, `${base}_p.jpg`, `${base}_t.jpg`);
+    keys.push(base, ...pubKeysOf(base));
     ops.push({ del: `photos/${id}` });
     dec.photoCount -= 1; dec.bytesOriginal -= p.bytes || 0; dec.bytesPublic -= p.bytesPublic || 0;
     const h = p.takenAt?.getTime?.();

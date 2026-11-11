@@ -710,7 +710,7 @@ body:not(.with-tabbar) .up-fab { bottom: calc(16px + env(safe-area-inset-bottom)
 .gallery.cols3 { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 5px; }
 .gallery.cols3 .g-fav { display: none; }
 .gallery.cols3 .g-add { width: 26px; height: 26px; font-size: 14px; right: 4px; bottom: 4px; }
-@media (max-width: 640px) { .gallery.cols3 { grid-template-columns: repeat(3, 1fr); gap: 3px; } .gallery.cols3 .g-item { border-radius: 6px; } }
+@media (max-width: 640px) { .gallery.cols3 { grid-template-columns: repeat(4, 1fr); gap: 3px; } .gallery.cols3 .g-item { border-radius: 6px; } }
 .gallery.picking .g-fav, .gallery.picking .g-add { display: none; }
 .gallery.picking .g-item { cursor: pointer; }
 .gallery.picking .g-item::after { content: ""; position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border-radius: 50%; border: 2px solid #fff; background: rgba(0,0,0,.35); box-shadow: 0 1px 4px rgba(0,0,0,.4); }
@@ -874,3 +874,28 @@ dialog.protect-dlg { padding: 0; max-width: min(420px, calc(100vw - 32px)); }
 
 /* Visor del sitio público: las muestras (800 px) se muestran a su tamaño, sin estirarse en pantallas grandes. */
 @media (min-width: 761px) { .lightbox.lb-protect .lb-stage img { max-width: min(100%, 800px); max-height: min(100%, 800px); } }
+
+/* ---------- fotos protegidas: desenfoque real (en los píxeles) que se aclara con el mouse o un toque ---------- */
+.g-item .g-clear { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .3s ease, transform .2s, --lr .25s ease; pointer-events: none; -webkit-user-drag: none; user-select: none;
+  /* Lupa en la cuadrícula: solo se ve la ampliada en un círculo alrededor del mouse. */
+  --lr: 0px;
+  -webkit-mask-image: radial-gradient(circle at var(--lx, 50%) var(--ly, 50%), #000 calc(var(--lr) * .72), transparent var(--lr));
+  mask-image: radial-gradient(circle at var(--lx, 50%) var(--ly, 50%), #000 calc(var(--lr) * .72), transparent var(--lr)); }
+.g-item.clear .g-clear { opacity: 1; }
+.g-item:hover .g-clear { transform: scale(1.03); }
+@property --lr { syntax: '<length>'; inherits: false; initial-value: 0px; }
+.lightbox .lb-stage img.lb-veil { position: absolute; margin: 0; max-width: none; max-height: none; object-fit: fill; opacity: 1; pointer-events: none; transition: transform .12s ease-out, opacity .6s ease, --lr .3s ease; -webkit-touch-callout: none; user-select: none; -webkit-user-drag: none;
+  /* Lupa: un agujero redondo (borde suave) en la miniatura deja ver la foto ampliada que está abajo. */
+  --lr: 0px;
+  -webkit-mask-image: radial-gradient(circle at var(--lx, 50%) var(--ly, 50%), transparent calc(var(--lr) * .72), #000 var(--lr));
+  mask-image: radial-gradient(circle at var(--lx, 50%) var(--ly, 50%), transparent calc(var(--lr) * .72), #000 var(--lr)); }
+.lightbox.revealed .lb-stage img.lb-veil { opacity: 0; }
+.lightbox .lb-tip { color: rgba(255,255,255,.8); margin-left: 6px; }
+.lightbox .lb-tip:empty { display: none; }
+@media (max-width: 640px) { .lightbox .lb-tip { font-size: .75rem; } }
+@media print { .g-item .g-clear, .lightbox .lb-veil { visibility: hidden !important; } }
+/* Celular con 4 columnas: precio y "+" más chicos para no tapar la miniatura. */
+@media (max-width: 640px) {
+  .gallery.cols3 .g-tag { left: 3px; top: 3px; padding: 1px 5px; font-size: 9.5px; }
+  .gallery.cols3 .g-add { width: 22px; height: 22px; font-size: 13px; right: 3px; bottom: 3px; }
+}
