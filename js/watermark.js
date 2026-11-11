@@ -9,7 +9,8 @@
 // seed: id de la foto (cada foto sale distinta). Sin semilla (vista previa del panel) se dibuja siempre igual.
 
 export const SITE_MARK = 'www.quieromisfotos.com.ar';
-export const DEFAULT_WATERMARK = { useLogo: false, strength: 0.6 };
+// mesh y subjectSeal: malla fina + sello sobre la persona (contra la IA que "redibuja" la foto). Encendidos para los álbumes.
+export const DEFAULT_WATERMARK = { useLogo: false, strength: 0.6, mesh: true, subjectSeal: true };
 export const MIN_STRENGTH = 0.5;
 // Intensidad guardada (del 50% al 100%). Los perfiles viejos (opacity, o intensidades de 40-45%) suben al mínimo nuevo.
 export const strengthOf = wm => Math.min(1, Math.max(MIN_STRENGTH, Number(wm?.strength) || DEFAULT_WATERMARK.strength));
@@ -71,6 +72,29 @@ export function drawWatermark(ctx, w, h, wm, logo = null, seed = null) {
       ctx.beginPath(); ctx.moveTo(prev[0], prev[1]); ctx.lineTo(pt[0], pt[1]); ctx.stroke();
       prev = pt;
     }
+  }
+
+  // 2b) (opcional, opts.mesh) Malla fina sobre toda la foto: líneas diagonales cruzadas, finas y juntas. Le quita detalle
+  //     a todo (también a la cara y la camiseta) y así una IA que "redibuja" la foto tiene que inventar en vez de copiar.
+  if (opts.mesh) {
+    const gap = Math.max(6, Math.round(small * 0.016));
+    const lw = Math.max(1, small * 0.0016);
+    const R2 = Math.hypot(w, h);
+    ctx.save();
+    ctx.translate(w / 2, h / 2);
+    for (const [ang, col] of [[-(Math.PI / 5 + rnd() * 0.15), 'rgba(255,255,255,1)'], [Math.PI / 5 + rnd() * 0.15, 'rgba(0,0,0,1)']]) {
+      ctx.save();
+      ctx.rotate(ang);
+      ctx.strokeStyle = col;
+      ctx.globalAlpha = 0.1 + 0.08 * k;
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      const off = rnd() * gap;
+      for (let x = -R2 + off; x < R2; x += gap) { ctx.moveTo(x, -R2); ctx.lineTo(x, R2); }
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.restore();
   }
 
   // 3) Mosaico diagonal con el sitio: ángulo entre 20° y 40°, corrimiento al azar y tamaño que varía por fila.
@@ -159,6 +183,20 @@ export function drawWatermark(ctx, w, h, wm, logo = null, seed = null) {
   if (rw > w * 0.9) { rsz = Math.max(8, Math.floor(rsz * w * 0.9 / rw)); ctx.font = font(700, rsz); }
   ctx.globalAlpha = Math.min(0.8, alpha * 1.5);
   stamp(ctx, RIGHTS_MARK, w / 2, h - rsz * 1.4, rsz);
+
+  // 4b) (opcional, opts.subjectSeal) Un sello más sobre la persona (a la altura del pecho, no de la cara), semitransparente:
+  //     lo más valioso de la foto siempre queda marcado.
+  if (opts.subjectSeal) {
+    const sH = Math.round(H * 1.15);
+    const sx = (w - sH * 4.6) / 2 + (rnd() - 0.5) * w * 0.06, sy = h * (0.56 + rnd() * 0.06);
+    ctx.globalAlpha = Math.min(0.6, 0.35 + 0.25 * k);
+    drawQmfIcon(ctx, sx, sy, sH);
+    ctx.textAlign = 'left';
+    const sf = Math.round(sH * 0.42);
+    ctx.font = font(800, sf);
+    stamp(ctx, 'quieromisfotos.com.ar', sx + sH * 1.2, sy + sH / 2, sf);
+    ctx.textAlign = 'center';
+  }
 
   // 5) Código de la foto, chico, 3 veces en lugares que cambian según la foto.
   const code = photoCode(seed);

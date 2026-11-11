@@ -106,10 +106,10 @@ export async function viewPortfolio(view, { uid, profile, settings }) {
     for (const [n, file] of list.entries()) {
       $('#pf-progress').textContent = `Subiendo ${n + 1} de ${list.length}…`;
       try {
-        const r = await processFile(file, wm, logo);
+        const r = await processFile(file, { ...wm, mesh: false, subjectSeal: false }, logo, { side: 1600 });
         // Copia sin marca de agua: solo con un plan con web (la usa si el fotógrafo elige mostrar sus fotos limpias).
         const withWeb = !!PLANS[planOf(profile)]?.web;
-        const c = withWeb ? await processFile(file, null) : null;
+        const c = withWeb ? await processFile(file, null, null, { side: 1600 }) : null;
         const [p, t, cl] = [await uploadAsset('portfolio', r.preview), await uploadAsset('portfolio', r.thumb), c ? await uploadAsset('portfolio', c.preview) : null];
         const slot = free[n];
         const typed = $('#pf-album').value.trim().slice(0, 30);

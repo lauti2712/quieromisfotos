@@ -871,3 +871,6 @@ dialog.protect-dlg { padding: 0; max-width: min(420px, calc(100vw - 32px)); }
 .btn.publish-now { font-weight: 800; padding-left: 18px; padding-right: 18px; box-shadow: 0 4px 14px rgba(255, 90, 31, .35); animation: pub-pulse 2.4s ease-in-out 3; }
 @keyframes pub-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
 @media (prefers-reduced-motion: reduce) { .btn.publish-now { animation: none; } }
+
+/* Visor del sitio público: las muestras (800 px) se muestran a su tamaño, sin estirarse en pantallas grandes. */
+@media (min-width: 761px) { .lightbox.lb-protect .lb-stage img { max-width: min(100%, 800px); max-height: min(100%, 800px); } }
