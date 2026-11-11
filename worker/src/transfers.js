@@ -99,6 +99,21 @@ async function matchForPhotographer(env, uid, orders) {
     await approve(env, o, { paymentId: p.id, paidAt: new Date(p.date_approved || p.date_created) });
     n++;
   }
+  // Segunda vuelta: el comprador transfirió el total sin los centavos (o los mandó aparte, como pesos).
+  for (const o of orders) {
+    const fresh = await adminGet(env, `orders/${o.id}`).catch(() => null);
+    if (!fresh || fresh.status !== 'pending') continue;
+    const whole = Math.round(Number(o.total) || 0) * 100;
+    if (orders.filter(x => Math.round(Number(x.total) || 0) * 100 === whole).length > 1) continue; // ambiguo: lo confirma el fotógrafo
+    const created = (o.createdAt?.getTime?.() || 0) - 2 * 60_000;
+    const p = payments.find(x => !taken.has(x.id) && cents(Number(x.transaction_amount) || 0) === whole && new Date(x.date_created).getTime() >= created);
+    if (!p) continue;
+    const dup = await adminQuery(env, 'orders', { filters: [['mpPaymentId', '==', String(p.id)]], limit: 1 });
+    taken.add(p.id);
+    if (dup.length) continue;
+    await approve(env, o, { paymentId: p.id, paidAt: new Date(p.date_approved || p.date_created), manual: 'sin-centavos' });
+    n++;
+  }
   return n;
 }
 

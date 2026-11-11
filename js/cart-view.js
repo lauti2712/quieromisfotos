@@ -5,7 +5,7 @@ import { cart } from './cart.js';
 import { computeTotals, bestPrice, splitPhotos } from './pricing.js';
 import { loadSettings, setForSale, feePercentFor, planOf, setUntil, GRACE_DAYS } from './data.js';
 import { mpPercentFor, bibFeeFor } from './plans-core.js';
-import { currentUser, openLogin, buyerSession } from './account.js';
+import { currentUser, requireLogin, buyerSession } from './account.js';
 import { apiPost } from './api.js';
 
 const cache = new Map();
@@ -38,9 +38,23 @@ export async function renderCart(app) {
     ${currentUser() ? '' : '<div class="notice small">🛒 <strong>No hace falta crear una cuenta para comprar.</strong> Pagás con Mercado Pago y descargás tus fotos al instante.</div>'}
     ${data.map(g => groupHtml(g, settings)).join('')}`;
 
+  let waitingLogin = false;
   $$('[data-pay]', app).forEach(b => b.onclick = async () => {
     const g = groups.find(x => x.key === b.dataset.pay);
     const transfer = b.dataset.method === 'transfer';
+    // Transferencia: hace falta una cuenta (para seguir el pedido). Se pide recién acá y después sigue solo.
+    if (transfer && !currentUser()) {
+      if (waitingLogin) return;
+      waitingLogin = true;
+      try {
+        const logged = requireLogin('Para pagar por transferencia ingresá con tu cuenta (Google o email). Después seguís directo al alias del fotógrafo.');
+        // Si cierra la ventana sin ingresar, no sigue (y el botón vuelve a andar).
+        const dlg = document.querySelector('dialog.login');
+        const closed = new Promise(res => dlg ? dlg.addEventListener('close', () => setTimeout(res, 1500), { once: true }) : null);
+        await Promise.race([logged, closed]);
+      } finally { waitingLogin = false; }
+      if (!currentUser()) return; // (si el carrito se redibujó al ingresar, igual sigue con este pedido)
+    }
     b.disabled = true; b.textContent = transfer ? 'Preparando…' : 'Preparando el pago…';
     try {
       await buyerSession(); // sin cuenta: compra como invitado
@@ -55,7 +69,6 @@ export async function renderCart(app) {
       toast(errMsg(e), 'error');
     }
   });
-  $$('[data-login]', app).forEach(b => b.onclick = e => { e.preventDefault(); openLogin('Para pagar por transferencia ingresá con tu cuenta (Google o email).'); });
   $$('[data-rm]', app).forEach(b => b.onclick = () => { cart.remove(b.dataset.rm); renderCart(app); });
   $$('[data-rmg]', app).forEach(b => b.onclick = () => {
     const [eid, uid] = b.dataset.rmg.split('|');
@@ -107,8 +120,8 @@ function groupHtml(g, settings) {
       <div class="row end">
         ${g.ev.demo
           ? `<button class="btn primary" disabled>Pagar ${fmtMoney(t.total)}</button>`
-          : `<span class="muted small">Pagás con Mercado Pago: tarjeta, débito o dinero en cuenta${transferOk(g.ph, settings) ? (currentUser() ? ', o por transferencia al alias del fotógrafo' : '. Para pagar por transferencia, <a href="#" data-login>ingresá con tu cuenta</a>') : ''}. Al pagar aceptás los <a href="terminos/" target="_blank">términos</a>.</span>
-             ${transferOk(g.ph, settings) && currentUser() ? `<button class="btn" data-pay="${g.key}" data-method="transfer">🏦 Pagar por transferencia${tT.total < t.total ? ` ${fmtMoney(tT.total)}` : ''}</button>` : ''}
+          : `<span class="muted small">Pagás con Mercado Pago: tarjeta, débito o dinero en cuenta${transferOk(g.ph, settings) ? `, o por transferencia al alias del fotógrafo${currentUser() ? '' : ' (te pide ingresar con tu cuenta)'}` : ''}. Al pagar aceptás los <a href="terminos/" target="_blank">términos</a>.</span>
+             ${transferOk(g.ph, settings) ? `<button class="btn" data-pay="${g.key}" data-method="transfer">🏦 Pagar por transferencia${tT.total < t.total ? ` ${fmtMoney(tT.total)}` : ''}</button>` : ''}
              <button class="btn primary" data-pay="${g.key}">Pagar ${fmtMoney(t.total)}</button>`}
       </div>
     </section>`;

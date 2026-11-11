@@ -104,6 +104,7 @@ function transferBox(o) {
     <div class="row" style="justify-content:space-between"><span>Alias</span><span class="row" style="gap:6px"><strong style="font-size:1.1rem">${esc(o.transferAlias)}</strong><button class="btn sm" data-copy="${esc(o.transferAlias)}">📋 Copiar</button></span></div>
     ${o.transferHolder ? `<div class="row" style="justify-content:space-between"><span>Titular</span><span>${esc(o.transferHolder)}</span></div>` : ''}
     <div class="row" style="justify-content:space-between"><span>Monto exacto</span><span class="row" style="gap:6px"><strong>$ ${esc(txt)}</strong><button class="btn sm" data-copy="${esc(amount.toFixed(2).replace('.', ','))}">📋 Copiar monto</button></span></div>
+    <div class="notice warn small" style="margin:0">⚠️ Hacé <strong>una sola transferencia</strong> por el total. Los <strong>,${esc(dec)} son ${esc(String(Number(dec)))} centavos</strong> (no $${esc(String(Number(dec)))} aparte).</div>
     <div class="notice warn small" style="margin:0">⚠️ <strong>Los centavos (,${esc(dec)}) son importantes:</strong> así reconocemos tu pago solo, en minutos. Si mandás otro monto, el fotógrafo lo tiene que confirmar a mano y puede tardar.</div>
     <div class="row end"><button class="btn primary" id="tr-done">✅ Ya transferí</button></div>
   </div>`;

@@ -2829,6 +2829,7 @@ async function viewAdminPurchases() {
             <td><div class="row" style="gap:4px;flex-wrap:nowrap">
               <a class="btn sm" target="_blank" href="index.html#/pedido/${o.id}" title="Ver la compra como el comprador">Ver</a>
               ${o.status === 'approved' ? `<button class="btn sm" data-pulink="${o.id}" title="Link de descarga para el comprador (sin cuenta)">🔗</button>` : ''}
+              ${o.pay === 'transfer' && ['pending', 'expired'].includes(o.status) ? `<button class="btn sm ok" data-pumark="${o.id}" title="Confirmar a mano que llegó la transferencia">✅ Pagado</button>` : ''}
             </div><span class="muted small">${esc(o.id.slice(0, 8))}</span></td></tr>`;
         }).join('') || '<tr><td colspan="9" class="muted">No hay compras con estos filtros.</td></tr>'}
       </table></div>
@@ -2846,6 +2847,13 @@ async function viewAdminPurchases() {
   $('#pu-st').onchange = e => set('st', e.target.value);
   let t;
   $('#pu-q').oninput = e => { clearTimeout(t); t = setTimeout(() => { purF.q = e.target.value; viewAdminPurchases().then(() => { const i = $('#pu-q'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }); }, 300); };
+  $$('[data-pumark]').forEach(b => b.onclick = async () => {
+    const o = list.find(x => x.id === b.dataset.pumark);
+    if (!confirm(`¿Llegó la transferencia de ${o.buyerName || o.buyerEmail || 'este comprador'} por ${o.eventName}? Se habilita la descarga y se le avisa.`)) return;
+    b.disabled = true;
+    try { await apiPost(`/orders/${o.id}/mark-paid`); toast('Listo: el comprador ya puede descargar'); viewAdminPurchases(); }
+    catch (e) { b.disabled = false; toast(errMsg(e), 'error'); }
+  });
   $$('[data-pulink]').forEach(b => b.onclick = async () => {
     const o = list.find(x => x.id === b.dataset.pulink);
     b.disabled = true;
@@ -3021,7 +3029,22 @@ async function incomeDialog() {
 }
 
 // ================================================================ superadmin: métricas
+// Período de las métricas: 'today', 'yesterday', 7/30/90 días, 0 (todo) o 'custom' (desde/hasta, fechas YYYY-MM-DD).
 let metricsRange = 30;
+let metricsCustom = { from: '', to: '' };
+const dayStart = (d = new Date()) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime(); };
+function metricsWindow() {
+  const DAY = 86400000, today = dayStart();
+  if (metricsRange === 'today') return { from: today, to: Infinity, label: 'hoy' };
+  if (metricsRange === 'yesterday') return { from: today - DAY, to: today, label: 'ayer' };
+  if (metricsRange === 'custom') {
+    const f = metricsCustom.from ? dayStart(new Date(`${metricsCustom.from}T00:00`)) : 0;
+    const t = metricsCustom.to ? dayStart(new Date(`${metricsCustom.to}T00:00`)) + DAY : Infinity;
+    const fmt = v => new Date(`${v}T00:00`).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' });
+    return { from: f, to: t, label: `${metricsCustom.from ? fmt(metricsCustom.from) : 'el principio'} al ${metricsCustom.to ? fmt(metricsCustom.to) : 'hoy'}` };
+  }
+  return { from: metricsRange ? Date.now() - metricsRange * DAY : 0, to: Infinity, label: metricsRange ? `últimos ${metricsRange} días` : 'todo' };
+}
 async function viewAdminMetrics() {
   const [os, xs, us] = await Promise.all([
     getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(2000))),
@@ -3032,9 +3055,10 @@ async function viewAdminMetrics() {
   const all = os.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => o.status === 'approved');
   const exts = (xs?.docs || []).map(d => d.data());
   const users = us.docs.map(d => ({ uid: d.id, ...d.data() }));
-  const from = metricsRange ? Date.now() - metricsRange * 86400000 : 0;
-  const orders = all.filter(o => ts(o) >= from);
-  const extIn = exts.filter(x => (x.paidAt?.toMillis?.() || 0) >= from);
+  const win = metricsWindow();
+  const inWin = t => t >= win.from && t < win.to;
+  const orders = all.filter(o => inWin(ts(o)));
+  const extIn = exts.filter(x => inWin(x.paidAt?.toMillis?.() || 0));
   const sum = (l, f) => l.reduce((a, x) => a + (f(x) || 0), 0);
   const commission = sum(orders, o => o.platformFee);
   const extRevenue = sum(extIn, x => x.price);
@@ -3071,8 +3095,13 @@ async function viewAdminMetrics() {
   $('#view').innerHTML = `
     <div class="row" style="justify-content:space-between;margin-bottom:14px">
       <h1 style="margin:0">Métricas</h1>
-      <div class="tabs" style="margin:0">${[[7, '7 días'], [30, '30 días'], [90, '90 días'], [0, 'Todo']].map(([k, l]) => `<button class="chip ${metricsRange === k ? 'on' : ''}" data-r="${k}">${l}</button>`).join('')}</div>
+      <div class="tabs" style="margin:0;flex-wrap:wrap">${[['today', 'Hoy'], ['yesterday', 'Ayer'], [7, '7 días'], [30, '30 días'], [90, '90 días'], [0, 'Todo'], ['custom', '📅 Período']].map(([k, l]) => `<button class="chip ${metricsRange === k ? 'on' : ''}" data-r="${k}">${l}</button>`).join('')}</div>
     </div>
+    ${metricsRange === 'custom' ? `<form class="row" id="m-custom" style="gap:8px;flex-wrap:wrap;align-items:flex-end;margin:-4px 0 12px">
+      <label class="field" style="margin:0">Desde<input type="date" id="m-from" value="${esc(metricsCustom.from)}" max="${todayIso()}"></label>
+      <label class="field" style="margin:0">Hasta<input type="date" id="m-to" value="${esc(metricsCustom.to)}" max="${todayIso()}"></label>
+      <button class="btn sm primary">Ver</button></form>` : ''}
+    <p class="muted small" style="margin:-6px 0 12px">Período: <strong>${esc(win.label)}</strong>${all.length >= 2000 ? ' · se cuentan las últimas 2.000 ventas' : ''}.</p>
     <div class="stats">
       <div class="stat" id="m-income" role="button" tabindex="0" style="cursor:pointer" title="Ver acreditaciones y retiros"><span class="muted small">Tus ingresos ›</span><strong>${fmtMoney(commission + extRevenue)}</strong><span class="muted small">comisiones ${fmtMoney(commission)} · extensiones ${fmtMoney(extRevenue)}</span></div>
       <div class="stat"><span class="muted small">Vendido por los fotógrafos</span><strong>${fmtMoney(sum(orders, o => o.total))}</strong><span class="muted small">${orders.length} ventas · ${sum(orders, o => o.count)} fotos</span></div>
@@ -3087,7 +3116,19 @@ async function viewAdminMetrics() {
       <p class="muted small">Comisiones + extensiones. Los planes (Pro/Web) se suman cuando se cobren por Mercado Pago.</p></div>
     <div class="card"><h2>Por fotógrafo</h2>${table(group('photographerUid', 'photographerName'), 'Fotógrafo')}</div>
     <div class="card"><h2>Por evento</h2>${table(group('eventId', 'eventName'), 'Evento')}</div>`;
-  $$('[data-r]').forEach(b => b.onclick = () => { metricsRange = Number(b.dataset.r); viewAdminMetrics(); });
+  $$('[data-r]').forEach(b => b.onclick = () => {
+    const r = b.dataset.r;
+    metricsRange = ['today', 'yesterday', 'custom'].includes(r) ? r : Number(r);
+    if (r === 'custom' && !metricsCustom.from) { const d = new Date(); d.setDate(1); metricsCustom = { from: d.toLocaleDateString('en-CA'), to: todayIso() }; }
+    viewAdminMetrics();
+  });
+  $('#m-custom')?.addEventListener('submit', e => {
+    e.preventDefault();
+    let from = $('#m-from').value, to = $('#m-to').value;
+    if (from && to && from > to) [from, to] = [to, from];
+    metricsCustom = { from, to };
+    viewAdminMetrics();
+  });
   $('#m-plans').onclick = () => openDialog(`Planes vigentes (${active.length})`, active.length ? active.map(u => `<div class="item-row"><span class="grow"><strong>${esc(u.displayName || u.uid)}</strong> <span class="muted small">/${esc(u.slug || '')}</span><br>
       <span class="muted small">${esc(PLANS[planOf(u)]?.label || planOf(u))} · ${isCourtesy(u) ? 'cortesía, no suma al ingreso' : `hasta ${esc(fmtTs(u.proUntil))} · ${fmtMoney(planSpec(planOf(u), S.settings).price || 0)}/mes`}</span></span>
       ${u.status !== 'approved' ? `<span class="pill warn">${esc({ pending: 'Pendiente', suspended: 'Suspendido', rejected: 'Rechazado' }[u.status] || u.status || 'Sin estado')}</span>` : isCourtesy(u) ? '<span class="pill">Cortesía</span>' : '<span class="pill ok">Pago</span>'}</div>`).join('') : '<p class="muted">No hay planes vigentes.</p>');
