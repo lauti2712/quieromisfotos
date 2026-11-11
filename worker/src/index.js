@@ -59,6 +59,7 @@ import { commitPhoto, deletePhotos, orderDownloadUntil } from './photos.js';
 import { closeAlbum, forceDeleteAlbum, removeAlbum } from './samples.js';
 import { incomeRequest } from './income.js';
 import { planPaymentsRequest } from './planpay.js';
+import { publishScheduled } from './scheduled-publish.js';
 import { createLoginLink, useLoginLink, resetPasswordLink } from './loginlink.js';
 import { claimOrders, convertGuests } from './guests.js';
 import { statsHit } from './stats.js';
@@ -113,6 +114,7 @@ export default {
       // Lunes 06:00 (Argentina): resumen semanal. Ese tic no manda avisos (quedan para el siguiente) para no pasar el límite de pedidos.
       if (isWeeklyTick(event.scheduledTime)) { ctx.waitUntil(weeklyCron(env).catch(e => console.error('resumen semanal', e))); return; }
       ctx.waitUntil(matchPendingTransfers(env).catch(e => console.error('transferencias', e)));
+      ctx.waitUntil(publishScheduled(env).catch(e => console.error('publicación programada', e)));
       ctx.waitUntil(convertGuests(env).catch(e => console.error('invitados', e)));
       ctx.waitUntil(drainPushQueue(env).catch(e => { console.error('push', e); return 99; })
         .then(sent => (sent > 5 ? null : syncDueSubscriptions(env))).catch(e => console.error('subs', e)));

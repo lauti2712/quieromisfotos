@@ -105,15 +105,16 @@ const writeBuyers = (env, all) => env.PRIVATE.put(BUYERS, JSON.stringify(all), {
 export async function myFace(req, env, action) {
   const c = await requireUser(req, env);
   const all = await readBuyers(env);
-  if (req.method === 'GET') return json({ saved: !!all[c.uid], at: all[c.uid]?.at || null });
+  if (req.method === 'GET') return json({ saved: !!all[c.sub], at: all[c.sub]?.at || null });
   if (action === 'delete') {
-    if (all[c.uid]) { delete all[c.uid]; await writeBuyers(env, all); }
+    if (all[c.sub]) { delete all[c.sub]; await writeBuyers(env, all); }
     return json({ ok: true, saved: false });
   }
   const { d } = await req.json().catch(() => ({}));
   if (!Array.isArray(d) || d.length !== 128 || !d.every(x => Number.isFinite(x) && Math.abs(x) < 2)) throw httpError(400, 'Pedido inválido');
-  if (!all[c.uid] && Object.keys(all).length >= 20000) throw httpError(503, 'No se pudo guardar. Probá más tarde.');
-  all[c.uid] = { d: pack(d), at: new Date().toISOString() };
+  if (!all[c.sub] && Object.keys(all).length >= 20000) throw httpError(503, 'No se pudo guardar. Probá más tarde.');
+  delete all.undefined; // limpia el registro sin dueño del error anterior
+  all[c.sub] = { d: pack(d), at: new Date().toISOString() };
   await writeBuyers(env, all);
   return json({ ok: true, saved: true });
 }
@@ -122,7 +123,8 @@ export async function myFace(req, env, action) {
 // Si el evento todavía no está publicado, el aviso queda pendiente y sale al publicarse (sendPendingFaceHits).
 async function matchSavedFaces(env, eid, by, items) {
   const all = await readBuyers(env);
-  const buyers = Object.entries(all).filter(([uid]) => uid !== by).map(([uid, v]) => [uid, unpack(v.d)]);
+  // 'undefined': registro sin dueño que se guardaba por un error (antes del 11/2026); se ignora.
+  const buyers = Object.entries(all).filter(([uid]) => uid !== by && uid !== 'undefined').map(([uid, v]) => [uid, unpack(v.d)]);
   if (!buyers.length) return;
   const st = await adminGet(env, 'settings/platform');
   if (st?.selfieEnabled === false) return;

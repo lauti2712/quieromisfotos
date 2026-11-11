@@ -681,7 +681,7 @@ async function viewHome() {
     <div id="home-alerts"></div>
     ${approved && !p.mpConnected && totalPhotos > 0 ? `<div class="notice danger"><strong>💳 Tus fotos se ven pero no se pueden comprar.</strong><br>Falta vincular Mercado Pago: los compradores ven "todavía no está a la venta". <a href="#/mp">Vincular ahora</a></div>` : ''}
     ${p.status === 'approved' && (S.settings.transfer?.plans || []).includes(planOf(p)) && !p.transferOn && !p.transferBlocked ? `<div class="notice ok row" style="justify-content:space-between;gap:8px">
-      <span>🏦 <strong>Tu plan incluye cobrar por transferencia</strong> (sin la comisión de Mercado Pago). Activalo cargando el alias de tu Mercado Pago.</span>
+      <span>🏦 <strong>Tu plan incluye cobrar por transferencia</strong> (sin la comisión de Mercado Pago). Activalo cargando el alias de <strong>la cuenta de Mercado Pago que vinculaste</strong>.</span>
       <a class="btn sm primary" href="#/mp?ver=transfer">Activar</a></div>` : ''}
     ${(np => np.length ? `<div class="notice danger"><strong>💲 Álbumes sin precio: nadie puede comprar esas fotos.</strong><br>${np.map(ev => `<a href="#/evento/${ev.id}">${esc(ev.name)}</a>`).join(' · ')}</div>` : '')(evs.filter((ev, i) => sets[i] && (sets[i].photoCount || 0) > 0 && !(sets[i].price > 0) && !sets[i].originalsDeleted))}
     ${installCardHtml()}
@@ -826,12 +826,12 @@ async function drawHomeTransfer(orders) {
     const fee = orders.filter(o => o.payMethod !== 'transfer' && ((o.paidAt || o.createdAt)?.toMillis?.() || 0) >= m.getTime()).reduce((a, o) => a + Math.round(((o.total || 0) * mp.percent) / 100), 0);
     box.innerHTML = `<div class="card stack upsell">
       <h2 style="margin:0">🏦 Cobrá por transferencia y ahorrate la comisión de Mercado Pago</h2>
-      <p style="margin:0">${fee ? `Este mes pagaste <strong>${fmtMoney(fee)}</strong> de comisión de Mercado Pago (${mp.percent}%). ` : ''}Con el cobro por transferencia tus clientes te pagan a tu alias y la venta se acredita sola, <strong>sin la comisión de MP</strong>.</p>
+      <p style="margin:0">${fee ? `Este mes pagaste <strong>${fmtMoney(fee)}</strong> de comisión de Mercado Pago (${mp.percent}%). ` : ''}Con el cobro por transferencia tus clientes te pagan al <strong>alias de la cuenta de Mercado Pago que vinculaste</strong> y la venta se acredita sola, <strong>sin la comisión de MP</strong>.</p>
       <div class="row" style="justify-content:space-between"><span class="muted small">Incluido en ${esc(names)}.</span><a class="btn primary sm" href="#/web">⭐ Ver planes</a></div></div>`;
     return;
   }
   if (!p.transferOn) {
-    box.innerHTML = `<div class="card row" style="justify-content:space-between;gap:8px"><span>🏦 Tu plan incluye <strong>cobro por transferencia</strong>: tus clientes te pagan a tu alias, sin la comisión de Mercado Pago.</span><a class="btn primary sm" href="#/mp">Activarlo</a></div>`;
+    box.innerHTML = `<div class="card row" style="justify-content:space-between;gap:8px"><span>🏦 Tu plan incluye <strong>cobro por transferencia</strong>: tus clientes te pagan al alias de <strong>la cuenta de Mercado Pago que vinculaste</strong>, sin la comisión de Mercado Pago.</span><a class="btn primary sm" href="#/mp">Activarlo</a></div>`;
     return;
   }
   const bal = (await getDoc(doc(db, 'feeBalance', S.user.uid)).catch(() => null))?.data() || {};
@@ -1457,6 +1457,8 @@ async function viewMyEvents() {
 
 function statusPill(ev) {
   if (ev.status === 'removed') return '<span class="pill">Eliminado por el fotógrafo</span>';
+  if (ev.status !== 'published' && ev.publishMode === 'scheduled' && ev.publishAt) return `<span class="pill accent" title="Se publica solo">📅 Se publica el ${esc(fmtWhen(ev.publishAt.toMillis?.() || 0))}</span>`;
+  if (ev.status !== 'published' && ev.publishMode === 'afterUpload') return '<span class="pill accent" title="Se publica solo cuando termine la subida">⏳ Se publica al terminar la subida</span>';
   return ev.status === 'published' ? '<span class="pill ok">Publicado</span>' : '<span class="pill warn">Borrador</span>';
 }
 
@@ -1628,6 +1630,40 @@ function newSetData() {
 }
 
 // Crear/editar evento. Superadmin crea eventos generales; el fotógrafo, propios.
+// ¿Cuándo se publica el álbum? Ahora · al terminar de subir las fotos · en una fecha y hora · borrador.
+// "publishMode" queda en el evento mientras está en borrador: 'afterUpload' lo publica el panel al terminar la subida y
+// 'scheduled' (con publishAt) lo publica el Worker en el aviso de cada 5 minutos.
+const fmtWhen = ms => new Date(ms).toLocaleString('es-AR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const pad2 = n => String(n).padStart(2, '0');
+const localDT = ms => { const d = new Date(ms); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+function pubModeHtml(ev) {
+  // Álbum nuevo: por defecto se publica al terminar la subida. Existente: lo que tenga.
+  const cur = !ev?.id ? 'afterUpload' : ev.status === 'published' ? 'published' : (ev.publishMode || 'draft');
+  const at = ev?.publishAt?.toMillis?.() || Date.now() + 86400000;
+  const opt = (v, t, h) => `<label class="check"><input type="radio" name="ev-pub" value="${v}" ${cur === v ? 'checked' : ''}> <span>${t} <span class="muted small">${h}</span></span></label>`;
+  return `<div class="field"><span>¿Cuándo se publica?</span>
+    <div class="stack" style="gap:6px">
+      ${opt('afterUpload', '⏳ Cuando termine de subir las fotos', '(recomendado: la gente ve el álbum completo)')}
+      ${opt('published', '🟢 Ahora', '(visible apenas lo guardes; las fotos aparecen a medida que se suben)')}
+      ${opt('scheduled', '📅 En una fecha y hora', '(se publica solo)')}
+      <input type="datetime-local" id="ev-pubat" value="${localDT(at)}" style="max-width:260px;margin-left:30px" class="${cur === 'scheduled' ? '' : 'hidden'}">
+      ${opt('draft', '📝 Borrador', '(no se ve; lo publicás vos cuando quieras)')}
+    </div></div>`;
+}
+function bindPubMode(dlg) {
+  $$('input[name=ev-pub]', dlg).forEach(r => r.onchange = () => $('#ev-pubat', dlg).classList.toggle('hidden', r.value !== 'scheduled' || !r.checked));
+}
+function readPubMode(dlg) {
+  const mode = $('input[name=ev-pub]:checked', dlg)?.value || 'draft';
+  if (mode === 'published') return { mode, status: 'published', at: null };
+  if (mode === 'scheduled') {
+    const ms = Date.parse($('#ev-pubat', dlg).value);
+    if (!(ms > Date.now() + 60000)) return { error: 'Elegí una fecha y hora futura para publicar el álbum.' };
+    return { mode, status: 'draft', at: Timestamp.fromMillis(ms) };
+  }
+  return { mode, status: 'draft', at: null };
+}
+
 function eventDialog(ev, onSaved) {
   const isNew = !ev;
   const general = isNew ? S.isSuper : ev.kind === 'general';
@@ -1663,12 +1699,14 @@ function eventDialog(ev, onSaved) {
     </div>
     ${isNew && !general ? `<label class="field" style="max-width:260px">Precio por foto (ARS)<input type="number" id="ev-price" min="1" step="1" inputmode="numeric" required value="${(S.profile.defaults?.price || 0) > 0 ? S.profile.defaults.price : ''}" placeholder="Ej: 2500">
       <span class="hint">${(S.profile.defaults?.price || 0) > 0 ? 'Es el que usaste la última vez. Lo podés cambiar.' : 'Sin precio no se puede publicar ni vender.'} Los packs y demás opciones, en el álbum.</span></label>` : ''}
-    <label class="field">Estado<select id="ev-status"><option value="draft" ${ev.status !== 'published' ? 'selected' : ''}>Borrador (no visible al público)</option><option value="published" ${ev.status === 'published' ? 'selected' : ''}>Publicado (ya tiene link para compartir)</option></select></label>
+    ${pubModeHtml(ev)}
+    <label class="field hidden">Estado<select id="ev-status"><option value="draft" ${ev.status !== 'published' ? 'selected' : ''}>Borrador (no visible al público)</option><option value="published" ${ev.status === 'published' ? 'selected' : ''}>Publicado (ya tiene link para compartir)</option></select></label>
     ${general ? '<p class="muted small" style="margin:0">Los eventos generales siempre están abiertos para que se sumen fotógrafos.</p>'
       : `<label class="check"><input type="checkbox" id="ev-open" ${ev.openToJoin ? 'checked' : ''}> Permitir que otros fotógrafos se sumen a este evento</label>`}
   `, `<button class="btn" data-close>Cancelar</button><button class="btn primary" id="ev-save">${isNew ? 'Crear' : 'Guardar'}</button>`);
 
   placeInput($('#ev-city', dlg));
+  bindPubMode(dlg);
   // Portada: se encuadra (16:9) y se sube. Puede venir de un archivo o de una foto del álbum (desde el original, sin marca).
   const setCover = async blob => {
     const cropped = await cropImage(blob);
@@ -1737,20 +1775,24 @@ function eventDialog(ev, onSaved) {
     // "location" (lo que se muestra en todos lados) = lugar + localidad, sin repetir la ciudad si ya está en el lugar.
     const cityName = city.split(',')[0];
     const loc = !venue ? city : normalize(venue).includes(normalize(cityName)) ? venue : `${venue}, ${city}`;
-    if ($('#ev-status', dlg).value === 'published' && ev?.status !== 'published' && !await requireVerified()) return;
+    const pub = readPubMode(dlg);
+    if (pub.error) return toast(pub.error, 'error');
+    $('#ev-status', dlg).value = pub.status;
+    if (pub.mode !== 'draft' && ev?.status !== 'published' && !await requireVerified()) return;
     const tagNames = [...sel].map(id => tax.tagById.get(id)?.name || '');
     const data = {
       name, date, location: loc, venue, city, tagIds: [...sel].filter(id => tax.tagById.has(id)),
       coverUrl: $('#ev-cover', dlg).value.trim(),
-      status: $('#ev-status', dlg).value,
+      status: pub.status,
+      publishMode: pub.status === 'published' ? null : pub.mode, publishAt: pub.at,
       openToJoin: general ? true : $('#ev-open', dlg).checked,
       searchTokens: searchTokens(name, loc, ...tagNames),
       updatedAt: serverTimestamp(),
     };
     // Sin precio no se publica: en un álbum nuevo se pide acá; al publicar uno existente, se mira el precio del álbum.
     const price = isNew && !general ? Math.round(Number($('#ev-price', dlg).value) || 0) : 0;
-    if (isNew && !general && data.status === 'published' && !(price > 0)) return toast('Poné el precio por foto para publicar el álbum (o guardalo como borrador).', 'error');
-    if (!isNew && data.status === 'published' && ev.status !== 'published' && !await hasPrice(ev)) return;
+    if (isNew && !general && pub.mode !== 'draft' && !(price > 0)) return toast('Poné el precio por foto para publicar el álbum (o elegí "Borrador").', 'error');
+    if (!isNew && pub.mode !== 'draft' && ev.status !== 'published' && !await hasPrice(ev)) return;
     const btn = $('#ev-save', dlg); btn.disabled = true;
     try {
       if (isNew) {
@@ -1765,7 +1807,7 @@ function eventDialog(ev, onSaved) {
         await b.commit();
         if (!general && price > 0) S.profile.defaults = { ...(S.profile.defaults || {}), price };
         dlg.close();
-        toast('Evento creado');
+        toast(pub.mode === 'scheduled' ? `Álbum creado: se publica solo el ${fmtWhen(pub.at.toMillis())}` : pub.mode === 'afterUpload' ? 'Álbum creado: se publica solo cuando termines de subir las fotos' : pub.mode === 'draft' ? 'Álbum creado como borrador' : 'Álbum creado y publicado');
         location.hash = `#/evento/${ref.id}${general ? '' : '?nuevo=1'}`;
       } else {
         await updateDoc(doc(db, 'events', ev.id), data);
@@ -1802,12 +1844,13 @@ async function viewEvent(id) {
           <a class="btn sm" target="_blank" href="index.html#/evento/${ev.id}?f=${esc(S.user.uid)}" title="Abre la galería tal como la ve el comprador">👁️ Ver como cliente</a>
           <button class="btn sm share-btn" id="ev-share">🔗 Compartir</button>
           ${canEdit ? `<button class="btn sm" id="ev-edit">Editar</button>` : ''}
-          ${canEdit ? `<button class="btn sm" id="ev-toggle">${ev.status === 'published' ? 'Despublicar' : 'Publicar'}</button>` : ''}
+          ${canEdit ? `<button class="btn sm" id="ev-toggle">${ev.status === 'published' ? 'Despublicar' : 'Publicar ahora'}</button>` : ''}
         </div>
       </div>
+      <div id="ev-state"></div>
+      <div id="ev-steps"></div>
     </div>
-    <div id="ev-state"></div>
-    <div id="ev-steps"></div>
+    <div id="set-photos"></div>
     <div id="ev-share-card"></div>
     <div id="ev-sets"></div>
     <div class="row end" style="margin-top:14px" id="ev-danger"></div>`;
@@ -1820,7 +1863,7 @@ async function viewEvent(id) {
     $('#ev-toggle').onclick = async () => {
       if (ev.status !== 'published' && !await requireVerified()) return;
       if (ev.status !== 'published' && !await hasPrice(ev)) return;
-      try { await updateDoc(doc(db, 'events', id), { status: ev.status === 'published' ? 'draft' : 'published', updatedAt: serverTimestamp() }); reload(); }
+      try { await updateDoc(doc(db, 'events', id), { status: ev.status === 'published' ? 'draft' : 'published', publishMode: null, publishAt: null, updatedAt: serverTimestamp() }); reload(); }
       catch (e) { toast(errMsg(e), 'error'); }
     };
   }
@@ -1912,7 +1955,7 @@ async function viewEvent(id) {
   if (mySet) {
     const nuevo = parseHash().query.get('nuevo') === '1';
     const drawSteps = (n = mySet.photoCount || 0) => {
-      $('#ev-steps').innerHTML = nuevo || !n ? `<div class="card wizard-steps">
+      $('#ev-steps').innerHTML = nuevo || !n ? `<div class="wizard-steps in-card">
         <span class="ws done">✓ Álbum creado</span>${n ? '<span class="ws done">✓ Subí las fotos</span>' : '<a class="ws now" href="#" id="ws-up" style="text-decoration:none">2 Subí las fotos ⬇</a>'}<span class="ws ${n ? 'now' : ''}">3 Compartí el link</span>
         ${n ? '' : `<div class="row" style="flex-basis:100%;margin-top:6px"><span class="muted small grow">🔗 El link ya funciona: mandalo ahora y la gente ve las fotos a medida que se suben.</span>
           <button class="btn sm" id="ws-copy">Copiar link</button><a class="btn sm primary" id="ws-wa" target="_blank" rel="noopener">💬 WhatsApp</a></div>`}</div>` : '';
@@ -1932,6 +1975,7 @@ async function viewEvent(id) {
     $('#ev-share').onclick = () => $('#ev-share-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
     // Al terminar una subida: festejo y tarjeta de compartir a la vista.
     window.onqmfUploadDone = ({ eventId, count }) => {
+      if (eventId === ev.id && ev.status !== 'published' && ev.publishMode === 'afterUpload' && ev.createdBy === me) publishAfterUpload(ev);
       if (eventId !== ev.id || !document.body.contains($('#ev-share-card'))) return;
       drawSteps(count); share(true);
       $('#ev-share-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1973,6 +2017,20 @@ async function viewEvent(id) {
   drawAlbumState(ev, sets.get(me) || null, reload);
 }
 
+// "Publicar cuando termine de subir las fotos": se publica solo (con precio y cuenta confirmada).
+async function publishAfterUpload(ev) {
+  try {
+    if (!await hasPrice(ev)) return toast('Terminó la subida, pero el álbum no tiene precio: cargalo y publicalo.', 'error');
+    if (needsVerify()) return toast('Terminó la subida. Confirmá tu cuenta (mail) para que el álbum se publique.', 'error');
+    await updateDoc(doc(db, 'events', ev.id), { status: 'published', publishMode: null, publishAt: null, publishedAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    ev.status = 'published'; ev.publishMode = null;
+    toast('🎉 Terminó la subida: el álbum ya está publicado');
+    $('#ev-toggle') && ($('#ev-toggle').textContent = 'Despublicar');
+    const pill = document.querySelector('#view .card .pill.accent, #view .card .pill.warn');
+    if (pill) pill.outerHTML = statusPill(ev);
+  } catch (e) { toast(errMsg(e), 'error'); }
+}
+
 // Estado del álbum (arriba de todo): abierto → "Cerrar álbum"; cerrado → queda en el historial y se puede eliminar;
 // vacío → eliminar o salir. Cerrar libera el lugar; eliminar es opcional y solo con el álbum ya cerrado.
 function drawAlbumState(ev, set, reload) {
@@ -1985,7 +2043,7 @@ function drawAlbumState(ev, set, reload) {
   const closed = !!set?.originalsDeleted;
   const closedAt = (set?.closedAt || set?.originalsDeletedAt)?.toMillis?.() || 0;
   if (closed) {
-    box.innerHTML = `<div class="card album-state closed">
+    box.innerHTML = `<div class="album-state in-card closed">
       <div class="grow"><h2 style="margin:0 0 4px">📦 Álbum cerrado${closedAt ? ` el ${fmtMs(closedAt)}` : ''}</h2>
         <p class="muted small" style="margin:0">Queda en tu historial y en la web con ${n ? `${n} foto${n === 1 ? '' : 's'}` : 'algunas fotos'} de muestra (con marca de agua) para mostrar tu trabajo. Ya no se vende y no ocupa tu lugar de álbum. Quien compró sigue descargando sus fotos.</p></div>
       <div class="row"><a class="btn sm" target="_blank" href="index.html#/evento/${id}?f=${esc(me)}">👁️ Ver cómo queda</a><button class="btn sm danger" id="st-remove">🗑️ Eliminar del historial</button></div>
@@ -2000,7 +2058,7 @@ function drawAlbumState(ev, set, reload) {
       ? `Se vende hasta el <strong>${fmtMs(r.until)}</strong>${r.days <= 3 ? ` (${r.days} día${r.days === 1 ? '' : 's'})` : ''}. Después se cierra solo: el <strong>${fmtMs(closesAt)}</strong> queda en tu historial con 10 fotos de muestra y se libera el lugar.`
       : r.k === 'grace' ? `⛔ Dejó de venderse el ${fmtMs(r.until)}. <strong>Se cierra solo el ${fmtMs(closesAt)}</strong> (quedan 10 fotos de muestra en tu historial).`
       : 'Se vende desde que subís la primera foto.';
-    box.innerHTML = `<div class="card album-state open ${r.k === 'grace' || (r.k === 'active' && r.days <= 3) ? 'warn' : ''}">
+    box.innerHTML = `<div class="album-state in-card open ${r.k === 'grace' || (r.k === 'active' && r.days <= 3) ? 'warn' : ''}">
       <div class="grow"><h2 style="margin:0 0 4px">${r.k === 'grace' ? '🟠 Álbum sin venta' : '🟢 Álbum abierto'}</h2>
         <p class="muted small" style="margin:0">${when} ¿Querés venderlo más días? <strong>Extendé el plazo.</strong> ¿Ya terminaste? Cerralo antes y liberás el lugar para otro álbum.</p></div>
       <div class="row"><button class="btn primary" id="st-ext">⏳ Extender plazo</button><button class="btn" id="st-close">📦 Cerrar álbum</button></div>
@@ -2011,7 +2069,7 @@ function drawAlbumState(ev, set, reload) {
   }
   // Sin fotos: se puede borrar (o salir si el evento es de otro).
   const own = isCreator && solo;
-  box.innerHTML = `<div class="row end" style="margin-top:4px"><button class="btn sm ghost" id="st-empty">${own ? '🗑️ Eliminar álbum' : '🚪 Salir del evento'}</button></div>`;
+  box.innerHTML = `<div class="row end in-card"><button class="btn sm ghost" id="st-empty">${own ? '🗑️ Eliminar álbum' : '🚪 Salir del evento'}</button></div>`;
   $('#st-empty').onclick = async () => {
     if (!confirm(own ? `¿Eliminar "${ev.name}"? Todavía no tiene fotos.` : `¿Salir de "${ev.name}"?`)) return;
     try {
@@ -2104,7 +2162,6 @@ function renderSetEditor(ev, set, reload) {
 
   const emptyAlbum = !(set.photoCount > 0);
   box.innerHTML = `
-    ${emptyAlbum ? '<div id="set-photos"></div>' : ''}
     <div class="card stack">
       <h2>Mi set en este evento</h2>
       ${S.profile.mpConnected ? '' : '<div class="notice danger"><strong>Tus fotos todavía no se pueden comprar:</strong> los compradores ven "todavía no está a la venta" hasta que <a href="#/mp">vincules Mercado Pago</a>.</div>'}
@@ -2145,8 +2202,7 @@ function renderSetEditor(ev, set, reload) {
       <div id="st-selfie-status"></div>`}
       <div class="row end"><button class="btn primary" type="submit">Guardar</button></div>
      </div>
-    </form>
-    ${emptyAlbum ? '' : '<div id="set-photos"></div>'}`;
+    </form>`;
   if (S.settings.selfieEnabled !== false && set.selfie !== false && (set.photoCount || 0) > 0) drawSelfieStatus(ev);
   mountPhotos($('#set-photos'), { ev, set, uid: S.user.uid, profile: S.profile, settings: S.settings, bibs: bibsOn(set, ev, S.tax) })
     .catch(e => { $('#set-photos').innerHTML = `<div class="notice danger">${esc(errMsg(e))}</div>`; });

@@ -834,3 +834,8 @@ dialog.protect-dlg { padding: 0; max-width: min(420px, calc(100vw - 32px)); }
 #ev-state:not(:empty), #ev-steps:not(:empty), #ev-share-card:not(:empty), #ev-sets > *:not(:first-child), #set-photos:not(:empty) { margin-top: 14px; }
 #ev-sets:not(:empty) { margin-top: 14px; }
 .album-state.warn { border-left-color: var(--warn, #d97706); }
+
+/* Encabezado del álbum: estado, pasos y acciones dentro del mismo bloque, separados por una línea. */
+.card #ev-state:not(:empty), .card #ev-steps:not(:empty) { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+.album-state.in-card { border-left: 0; padding: 0; }
+.wizard-steps.in-card { margin-bottom: 0; }
