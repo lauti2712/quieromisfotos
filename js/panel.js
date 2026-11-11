@@ -2374,6 +2374,7 @@ async function viewAdminPhotographers() {
         ${u.status === 'approved' ? `<div><h3>Plan</h3>
           <div class="row" style="gap:6px">
             <button class="btn sm ghost" data-subsync="${u.uid}" title="Revisa en Mercado Pago su suscripción y aplica el plan">🔄 Revisar suscripción</button>
+            <button class="btn sm ghost" data-alias="${u.uid}" title="Ver o corregir el alias para cobrar por transferencia">🏦 Alias: ${u.transferAlias ? `${esc(u.transferAlias)}${u.transferOn ? '' : ' (apagado)'}` : 'sin cargar'}</button>
             ${isPro(u) && !courtesyOf(u) ? `<button class="btn sm ghost" data-unpro="${u.uid}">Quitar plan</button>` : ''}
             ${u.transferOn || bals.has(u.uid) || u.transferBlocked ? `<button class="btn sm ghost" data-fees="${u.uid}">🏦 Comisiones por transferencia${owedOf(u.uid) ? ` · debe ${fmtMoney(owedOf(u.uid))}` : ''}${reported.some(r => r.uid === u.uid) ? ' · 🔔 avisó un pago' : ''}</button>` : ''}
             ${PLANS[planOf(u)]?.team ? `<button class="btn sm ghost" data-seats="${u.uid}" title="Lugares extra para su equipo (además de los del plan)">👥 Lugares extra: ${u.teamExtraSeats || 0}</button>` : ''}
@@ -2532,6 +2533,26 @@ async function viewAdminPhotographers() {
       if (transferBlocked && !confirm(`¿Bloquear el cobro por transferencia de ${u.displayName}? Sus clientes solo van a poder pagar con Mercado Pago.`)) return;
       e.target.disabled = true;
       try { await updateDoc(doc(db, 'users', u.uid), { transferBlocked }); done(transferBlocked ? 'Transferencia bloqueada' : 'Transferencia habilitada'); } catch (err) { e.target.disabled = false; toast(errMsg(err), 'error'); }
+    };
+  });
+  // Alias de transferencias del fotógrafo: verlo y corregirlo (tiene que ser de la cuenta de MP que vinculó).
+  $$('[data-alias]').forEach(b => b.onclick = () => {
+    const u = users.find(x => x.uid === b.dataset.alias);
+    const dlg = openDialog(`Alias · ${u.displayName}`, `
+      <div class="notice warn small" style="margin:0">El alias tiene que ser de la <strong>misma cuenta de Mercado Pago que vinculó</strong>${u.mpConnected ? '' : ' (todavía <strong>no vinculó</strong> Mercado Pago)'}; si no, las transferencias no se acreditan solas.</div>
+      <label class="field">Alias<input type="text" id="al-alias" maxlength="40" value="${esc(u.transferAlias || '')}" placeholder="Ej: juan.fotos.mp"></label>
+      <label class="field">Titular (como aparece al transferir)<input type="text" id="al-holder" maxlength="60" value="${esc(u.transferHolder || '')}"></label>
+      <label class="check"><input type="checkbox" id="al-on" ${u.transferOn ? 'checked' : ''}> Ofrecer pago por transferencia en sus fotos</label>
+      ${u.transferBlocked ? '<p class="muted small" style="margin:0">⚠️ Tiene la transferencia bloqueada por vos: aunque esté activada, no se ofrece. Se desbloquea en "Comisiones por transferencia".</p>' : ''}
+      ${(S.settings.transfer?.plans || []).includes(planOf(u)) ? '' : '<p class="muted small" style="margin:0">Su plan actual no incluye transferencias: se guarda, pero no se ofrece hasta que tenga un plan que la incluya.</p>'}`,
+      '<button class="btn" data-close>Cancelar</button><button class="btn primary" id="al-save">Guardar</button>');
+    $('#al-save', dlg).onclick = async e => {
+      const transferAlias = $('#al-alias', dlg).value.trim(), transferHolder = $('#al-holder', dlg).value.trim(), transferOn = $('#al-on', dlg).checked;
+      if (transferAlias && !/^[A-Za-z0-9.\-]{6,20}$/.test(transferAlias)) return toast('Revisá el alias: entre 6 y 20 letras, números, puntos o guiones.', 'error');
+      if (transferOn && !transferAlias) return toast('Para activarla hace falta el alias.', 'error');
+      e.target.disabled = true;
+      try { await updateDoc(doc(db, 'users', u.uid), { transferAlias, transferHolder, transferOn }); dlg.close(); toast(`Alias de ${u.displayName} guardado`); viewAdminPhotographers(); }
+      catch (err) { e.target.disabled = false; toast(errMsg(err), 'error'); }
     };
   });
   $$('[data-subsync]').forEach(b => b.onclick = async () => {
