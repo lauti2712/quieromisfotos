@@ -628,11 +628,14 @@ function drawTabbar(key) {
 }
 
 // Novedades para los fotógrafos en Inicio, hasta que la cierra (por dispositivo) o vence.
-const NEWS = { id: '2026-11-video-portada-selfie', until: '2026-12-03', items: [
-  ['🎬', 'Video para historias', 'En cada álbum, en <strong>Compartir</strong>, se arma solo un video con tus mejores fotos, más texto para WhatsApp, QR y cartel para la cancha.'],
-  ['🖼️', 'Elegí la portada de tu evento', 'Usá una de tus fotos (sin marca de agua) o subí una imagen, y encuadrala. Ahora tu nombre aparece en cada evento.'],
-  ['🤳', 'Búsqueda por selfie', 'Tus clientes se buscan con una selfie. En álbumes subidos antes, tocá <strong>Prepararlas ahora</strong>.'],
-  ['💡', 'Tip: precio especial', 'Una foto del equipo completo la compra uno y la comparte con todos: subile el precio. Elegí esas fotos en el álbum y tocá <strong>💲 Precio</strong>.'],
+const NEWS = { id: '2026-11-tasa-marca-cierre', until: '2026-12-15', items: [
+  ['🛒', 'Te compran sin crear cuenta', 'Pagan con Mercado Pago y descargan al instante. Menos trabas, más ventas.'],
+  ['💸', 'Vos elegís quién paga la tasa de servicio', 'La pagás vos, mitad y mitad, o el comprador. Lo elegís en <strong>Precios</strong> de cada álbum.'],
+  ['🛡️', 'Marca de agua nueva', 'Con tu nombre o logo y un código por foto. Si alguien intenta guardar una foto, le aparece un aviso para comprarla.'],
+  ['📦', 'Cerrá un álbum cuando termines de vender', 'Liberás el lugar para otro y queda en tu historial con 10 fotos de muestra. Arriba de cada álbum: extender plazo o cerrar.'],
+  ['📅', 'Programá cuándo se publica', 'Al crear un álbum elegí: ahora, al terminar de subir las fotos, en una fecha y hora, o borrador.'],
+  ['👁️', 'Visitas de cada álbum', 'Mirá cuánta gente entró a cada álbum, en <strong>Mis álbumes</strong> y en cada álbum.'],
+  ['🔢', 'Dorsales', 'La lectura de dorsales con IA suma 1% de comisión en los álbumes donde la uses.'],
 ] };
 function newsCardHtml() {
   let seen = false;
