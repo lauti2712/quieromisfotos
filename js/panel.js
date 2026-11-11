@@ -1847,7 +1847,7 @@ async function viewEvent(id) {
           <a class="btn sm" target="_blank" href="index.html#/evento/${ev.id}?f=${esc(S.user.uid)}" title="Abre la galería tal como la ve el comprador">👁️ Ver como cliente</a>
           <button class="btn sm share-btn" id="ev-share">🔗 Compartir</button>
           ${canEdit ? `<button class="btn sm" id="ev-edit">Editar</button>` : ''}
-          ${canEdit ? `<button class="btn sm" id="ev-toggle">${ev.status === 'published' ? 'Despublicar' : 'Publicar ahora'}</button>` : ''}
+          ${canEdit ? (ev.status === 'published' ? '<button class="btn sm" id="ev-toggle">Despublicar</button>' : '<button class="btn primary publish-now" id="ev-toggle">🚀 Publicar ahora</button>') : ''}
         </div>
       </div>
       <div id="ev-state"></div>
