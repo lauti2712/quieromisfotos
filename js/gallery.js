@@ -104,6 +104,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
     <div class="gallery" id="g-grid"></div>
     <div id="g-sentinel" style="height:1px"></div>
     <div class="row" style="justify-content:center;margin-top:14px" id="g-more"></div>
+    <p class="muted small" style="text-align:center;margin:18px 0 0">© Las fotos son de sus autores y están protegidas por la Ley 11.723 de Propiedad Intelectual. Quitar o tapar la marca de agua, con IA o de cualquier otra forma, es una infracción.</p>
     <a class="g-cartbar hidden" id="g-cartbar" href="#/carrito"></a>`;
 
   function drawFilters() {

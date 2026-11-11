@@ -1166,7 +1166,7 @@ function viewConfig() {
     $('#wm-logo-f').classList.toggle('hidden', !$('#wm-uselogo').checked);
     const c = $('#wm-canvas'), ctx = c.getContext('2d');
     drawSampleScene(ctx, c.width, c.height);
-    drawWatermark(ctx, c.width, c.height, readWm(), logo.img);
+    drawWatermark(ctx, c.width, c.height, readWm(), logo.img, () => 0.5); // vista previa fija (sin saltos al mover la barra)
     $('#wm-op-v').textContent = `${Math.round(Number($('#wm-op').value) * 100)}%`;
   };
   const loadLogo = url => {

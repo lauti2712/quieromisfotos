@@ -12,27 +12,31 @@ export const strengthOf = wm => Math.min(1, Math.max(MIN_STRENGTH, Number(wm?.st
 // Compatibilidad con perfiles guardados con el formato anterior ({ type: 'logo' | 'text', ... }).
 export const wantsLogo = wm => !!(wm && wm.logoKey && (wm.useLogo || wm.type === 'logo'));
 
-export function drawWatermark(ctx, w, h, wm, logo = null) {
+// Aviso de derechos visible: además de desalentar, varios asistentes de IA se niegan a borrar marcas de fotos que lo muestran.
+export const RIGHTS_MARK = '© FOTO PROTEGIDA · PROHIBIDO QUITAR LA MARCA DE AGUA';
+
+// rnd: para tests (posición fija); en uso real cada foto sale con ángulo y corrimiento distintos, así la IA no "aprende" un patrón.
+export function drawWatermark(ctx, w, h, wm, logo = null, rnd = Math.random) {
   const opts = { ...DEFAULT_WATERMARK, ...wm };
   const k = strengthOf(opts);
   const alpha = 0.12 + 0.36 * k; // 40% → 0,26 · 50% → 0,30 · 100% → 0,48
   const tiled = SITE_MARK.toUpperCase();
-  const big = Math.max(w, h);
+  const big = Math.max(w, h), small = Math.min(w, h);
 
   ctx.save();
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.lineJoin = 'round';
 
-  // Mosaico diagonal con el sitio: letra fina, más chica y más espaciada para que no tape la foto.
+  // Mosaico diagonal con el sitio, más denso que antes; ángulo entre 20° y 40° y corrimiento al azar en cada foto.
   const size = Math.max(10, Math.round(big * (0.016 + 0.006 * k)));
   ctx.font = `${k >= 0.75 ? 700 : 600} ${size}px system-ui, -apple-system, Arial, sans-serif`;
   ctx.globalAlpha = alpha;
-  const stepX = ctx.measureText(tiled).width + size * 6;
-  const stepY = size * 9;
-  ctx.translate(w / 2, h / 2);
-  ctx.rotate(-Math.PI / 6);
-  const R = Math.hypot(w, h) / 2 + stepX;
+  const stepX = ctx.measureText(tiled).width + size * 3.5;
+  const stepY = size * 5.5;
+  ctx.translate(w / 2 + (rnd() - 0.5) * stepX, h / 2 + (rnd() - 0.5) * stepY);
+  ctx.rotate(-(Math.PI / 9 + rnd() * Math.PI / 9));
+  const R = Math.hypot(w, h) / 2 + stepX * 2;
   let row = 0;
   for (let y = -R; y < R; y += stepY, row++) {
     const offset = row % 2 ? stepX / 2 : 0;
@@ -40,21 +44,29 @@ export function drawWatermark(ctx, w, h, wm, logo = null) {
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-  // Centro: logo del fotógrafo o el sitio
-  ctx.globalAlpha = Math.min(0.8, alpha * 1.3);
+  // Sello central (donde suele estar la persona, lo más difícil de reconstruir para una IA), un poco corrido en cada foto:
+  // logo del fotógrafo o el sitio, más grande, y debajo el aviso de derechos.
+  const cx = w / 2 + (rnd() - 0.5) * w * 0.12, cy = h / 2 + (rnd() - 0.5) * h * 0.12;
+  ctx.globalAlpha = Math.min(0.85, alpha * 1.5);
+  let below = cy;
   if (wantsLogo(opts) && logo) {
-    drawLogo(ctx, logo, w / 2, h / 2, Math.min(w, h) * 0.4);
+    const side = small * 0.45;
+    drawLogo(ctx, logo, cx, cy, side);
+    below = cy + side * 0.5 * Math.min(1, logo.height / Math.max(logo.width, logo.height)) + small * 0.05;
   } else {
-    let cs = Math.round(Math.min(w, h) * 0.05);
-    ctx.font = `600 ${cs}px system-ui, -apple-system, Arial, sans-serif`;
-    const max = w * 0.85;
+    let cs = Math.round(small * 0.075);
+    ctx.font = `700 ${cs}px system-ui, -apple-system, Arial, sans-serif`;
+    const max = w * 0.78;
     const tw = ctx.measureText(SITE_MARK).width;
-    if (tw > max) {
-      cs = Math.max(11, Math.floor(cs * max / tw));
-      ctx.font = `600 ${cs}px system-ui, -apple-system, Arial, sans-serif`;
-    }
-    stamp(ctx, SITE_MARK, w / 2, h / 2, cs);
+    if (tw > max) { cs = Math.max(11, Math.floor(cs * max / tw)); ctx.font = `700 ${cs}px system-ui, -apple-system, Arial, sans-serif`; }
+    stamp(ctx, SITE_MARK, cx, cy, cs);
+    below = cy + cs * 1.2;
   }
+  let rs = Math.round(small * 0.03);
+  ctx.font = `700 ${rs}px system-ui, -apple-system, Arial, sans-serif`;
+  const rw = ctx.measureText(RIGHTS_MARK).width;
+  if (rw > w * 0.8) { rs = Math.max(9, Math.floor(rs * w * 0.8 / rw)); ctx.font = `700 ${rs}px system-ui, -apple-system, Arial, sans-serif`; }
+  stamp(ctx, RIGHTS_MARK, cx, Math.min(h - rs, below), rs);
   ctx.restore();
 }
 
