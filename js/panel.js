@@ -2829,6 +2829,7 @@ async function viewAdminPurchases() {
             <td><div class="row" style="gap:4px;flex-wrap:nowrap">
               <a class="btn sm" target="_blank" href="index.html#/pedido/${o.id}" title="Ver la compra como el comprador">Ver</a>
               ${o.status === 'approved' ? `<button class="btn sm" data-pulink="${o.id}" title="Link de descarga para el comprador (sin cuenta)">🔗</button>` : ''}
+              ${o.pay === 'transfer' && ['pending', 'expired'].includes(o.status) ? `<button class="btn sm ok" data-pumark="${o.id}" title="Confirmar a mano que llegó la transferencia">✅ Pagado</button>` : ''}
             </div><span class="muted small">${esc(o.id.slice(0, 8))}</span></td></tr>`;
         }).join('') || '<tr><td colspan="9" class="muted">No hay compras con estos filtros.</td></tr>'}
       </table></div>
@@ -2846,6 +2847,13 @@ async function viewAdminPurchases() {
   $('#pu-st').onchange = e => set('st', e.target.value);
   let t;
   $('#pu-q').oninput = e => { clearTimeout(t); t = setTimeout(() => { purF.q = e.target.value; viewAdminPurchases().then(() => { const i = $('#pu-q'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }); }, 300); };
+  $$('[data-pumark]').forEach(b => b.onclick = async () => {
+    const o = list.find(x => x.id === b.dataset.pumark);
+    if (!confirm(`¿Llegó la transferencia de ${o.buyerName || o.buyerEmail || 'este comprador'} por ${o.eventName}? Se habilita la descarga y se le avisa.`)) return;
+    b.disabled = true;
+    try { await apiPost(`/orders/${o.id}/mark-paid`); toast('Listo: el comprador ya puede descargar'); viewAdminPurchases(); }
+    catch (e) { b.disabled = false; toast(errMsg(e), 'error'); }
+  });
   $$('[data-pulink]').forEach(b => b.onclick = async () => {
     const o = list.find(x => x.id === b.dataset.pulink);
     b.disabled = true;
