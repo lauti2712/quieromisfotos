@@ -819,3 +819,18 @@ dialog.howto-dlg { padding: 0; max-width: min(440px, calc(100vw - 32px)); }
 .ph-more { margin: 10px 0 0 56px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; gap: 14px; }
 .ph-more h3 { margin: 0 0 6px; font-size: .95rem; }
 @media (max-width: 640px) { .ph-more { margin-left: 0; } .ph-row > .item-row { flex-wrap: wrap; } .ph-row > .item-row > .row { width: 100%; justify-content: flex-end; } }
+
+/* Fotos en venta: sin menú de "Guardar imagen" (iOS), sin arrastrarlas ni seleccionarlas. Al mantenerlas apretadas
+   aparece el aviso de derechos con la opción de comprarla (gallery.js). Disuade; no impide una captura. */
+.g-item img, .lightbox.lb-protect #lb-img { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; -webkit-user-drag: none; }
+dialog.protect-dlg { padding: 0; max-width: min(420px, calc(100vw - 32px)); }
+
+/* Visor: la foto no recibe el puntero (los gestos van al escenario), así "Guardar imagen" no la toma. */
+.lightbox.lb-protect #lb-img { pointer-events: none; }
+/* Sitio público: al imprimir no salen las fotos de los eventos. */
+@media print { .gallery .g-item img, .lightbox.lb-protect, dialog.protect-dlg img { visibility: hidden !important; } }
+
+/* Página del álbum (panel): un poco de aire entre cada bloque. */
+#ev-state:not(:empty), #ev-steps:not(:empty), #ev-share-card:not(:empty), #ev-sets > *:not(:first-child), #set-photos:not(:empty) { margin-top: 14px; }
+#ev-sets:not(:empty) { margin-top: 14px; }
+.album-state.warn { border-left-color: var(--warn, #d97706); }

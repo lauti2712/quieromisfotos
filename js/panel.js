@@ -14,7 +14,7 @@ import {
 } from './util.js';
 const waOf = (u, priv) => priv?.whatsapp || u.socials?.whatsapp || '';
 import { initTheme } from './theme.js';
-import { activeAlbumLimit, albumBonusOf, photoBonusOf } from './plans-core.js';
+import { activeAlbumLimit, albumBonusOf, photoBonusOf, bibFeeFor } from './plans-core.js';
 import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, ACTIVITY_TYPE, USER_TAG_TYPES, tagPills, SERVICES, isPro, mpPlanOf, GEAR_TYPES, PLANS, planOf, siteUrlOf, setUntil, setDeleteAt, GRACE_DAYS, albumPhotoLimit, feePercentFor, isFreePlan, setActive, planSpec, rulesFor, bibsOn } from './data.js';
 import { viewWeb } from './panel-web.js';
 import { sellerNet } from './pricing.js';
@@ -552,6 +552,7 @@ async function drawAlerts() {
 }
 
 function route() {
+  feeExtra = 0; // el % extra por dorsales es solo del álbum que se edita
   updateSupportLink(); // el globito de ayuda se va solo cuando completa lo básico
   // Al cambiar de pantalla se cierran los diálogos abiertos.
   document.querySelectorAll('dialog[open]').forEach(d => d.close());
@@ -1082,9 +1083,11 @@ function packsEditor(el, packs, getFeeMode = () => 'absorb', getUnit = () => 0) 
   };
 }
 
+// % extra de comisión del álbum que se está editando (lectura de dorsales con IA). Fuera del editor del álbum, 0.
+let feeExtra = 0;
 // Neto del fotógrafo para un monto (después de la comisión de la plataforma y la de MP).
 function netOf(amount, feeMode) {
-  return sellerNet(amount, { feeMode, feePercent: myFee(), mpPercent: mpPlanOf(S.profile, S.settings).percent });
+  return sellerNet(amount, { feeMode, feePercent: myFee() + feeExtra, mpPercent: mpPlanOf(S.profile, S.settings).percent });
 }
 
 // Desglose de una venta de `amount` (precio que fijó el fotógrafo).
@@ -1094,19 +1097,24 @@ function breakdownHtml(amount, feeMode) {
   const n = netOf(amount, feeMode);
   return `
     <div class="breakdown">
+      ${n.total > amount ? `<div class="bd-row"><span>Tu precio</span><span>${fmtMoney(amount)}</span></div><div class="bd-row muted"><span>+ Tasa de servicio (la paga el comprador)</span><span>${fmtMoney(n.total - amount)}</span></div>` : ''}
       <div class="bd-row"><span>Paga el comprador</span><span>${fmtMoney(n.total)}</span></div>
-      <div class="bd-row muted"><span>Comisión Quiero Mis Fotos (${myFee()}%)</span><span>−${fmtMoney(n.platformFee)}</span></div>
+      <div class="bd-row muted"><span>Comisión Quiero Mis Fotos (${myFee()}%${feeExtra ? ` + ${feeExtra}% por dorsales` : ''})</span><span>−${fmtMoney(n.platformFee)}</span></div>
       <div class="bd-row muted"><span>Comisión Mercado Pago (${plan.percent}% · ${esc(plan.label.toLowerCase())})</span><span>−${fmtMoney(n.mpFee)}</span></div>
       <div class="bd-row total"><span>Te queda</span><span>${fmtMoney(n.net)}</span></div>
     </div>
     <p class="muted small" style="margin:0">La comisión de MP depende del plazo de acreditación que tengas configurado en tu cuenta de Mercado Pago (<a href="#/mp">cambiar</a>). Es una estimación con tarjeta de crédito.</p>`;
 }
 
+// Tasa de servicio = comisión de la plataforma + la de Mercado Pago. El fotógrafo elige quién la paga.
 function feeModeHtml(name, value) {
-  const pct = myFee();
+  const v = ['absorb', 'half', 'buyer'].includes(value) ? value : 'absorb';
+  const opt = (val, title, hint) => `<label class="check"><input type="radio" name="${name}" value="${val}" ${v === val ? 'checked' : ''}> <span>${title} <span class="muted small">(${hint})</span></span></label>`;
   return `
-    <label class="check"><input type="radio" name="${name}" value="absorb" ${value !== 'buyer' ? 'checked' : ''}> <span>Absorbo la comisión <span class="muted small">(el comprador paga el precio; se te descuenta ${pct}%)</span></span></label>
-    <label class="check"><input type="radio" name="${name}" value="buyer" ${value === 'buyer' ? 'checked' : ''}> <span>La paga el comprador <span class="muted small">(se suma ${pct}% como "costo de servicio")</span></span></label>`;
+    <p class="muted small" style="margin:0">La tasa de servicio es la comisión de Quiero Mis Fotos (${myFee()}%${feeExtra ? ` + ${feeExtra}% por la lectura de dorsales` : ''}) más la de Mercado Pago (${mpPlanOf(S.profile, S.settings).percent}%). Elegí quién la paga:</p>
+    ${opt('absorb', 'La pago toda yo', 'el comprador paga el precio limpio y a vos se te descuentan las dos comisiones')}
+    ${opt('half', 'Mitad yo, mitad el comprador', 'se suma al comprador la mitad como "tasa de servicio"')}
+    ${opt('buyer', 'La paga toda el comprador', 'se suma como "tasa de servicio" y a vos te queda el precio completo')}`;
 }
 
 function viewConfig() {
@@ -1122,17 +1130,17 @@ function viewConfig() {
         <label class="field" style="max-width:240px">Precio por foto (ARS)<input type="number" min="0" step="1" id="cf-price" value="${d.price || ''}" required></label>
         <h3>Packs por cantidad</h3>
         <div id="cf-packs"></div>
-        <h3>Comisión de la plataforma (${myFee()}%)</h3>
+        <h3>Tasa de servicio</h3>
         <div class="stack">${feeModeHtml('cf-fee', d.feeMode)}</div>
         <h3>¿Cuánto te queda por foto?</h3>
         <div id="cf-net"></div>
       </div>
       <div class="card stack">
         <h2>Marca de agua</h2>
-        <p class="muted small" style="margin:0">Todas las muestras llevan <strong>www.quieromisfotos.com.ar</strong> en mosaico. Si querés, sumá tu logo en el centro. El original que descarga el comprador va sin marca.</p>
+        <p class="muted small" style="margin:0">Todas las muestras llevan <strong>www.quieromisfotos.com.ar</strong> en mosaico, 3 a 5 sellos chicos alrededor del centro (sin tapar lo principal), trazos finos y un código de la foto: así cuesta mucho más borrarla (también con IA) y, si aparece copiada, se sabe de qué álbum salió. Los sellos llevan el logo de Quiero Mis Fotos y tu nombre; si querés, usá tu logo en vez del nombre. El original que descarga el comprador va sin marca.</p>
         <div class="grid2">
           <div class="stack">
-            <label class="check"><input type="checkbox" id="wm-uselogo" ${wantsLogo(wm) ? 'checked' : ''}> Agregar mi logo en el centro</label>
+            <label class="check"><input type="checkbox" id="wm-uselogo" ${wantsLogo(wm) ? 'checked' : ''}> Usar mi logo en los sellos (en vez de mi nombre)</label>
             <div class="field" id="wm-logo-f">
               <span class="hint">PNG con fondo transparente, idealmente blanco. Máximo 2 MB.</span>
               <div class="row">
@@ -1141,8 +1149,8 @@ function viewConfig() {
               </div>
             </div>
             <label class="field">Intensidad de la marca de agua <span class="hint" id="wm-op-v">${Math.round(strengthOf(wm) * 100)}%</span>
-              <input type="range" id="wm-op" min="0.4" max="1" step="0.05" value="${strengthOf(wm)}">
-              <span class="hint">Desde 40%. Más intensa protege más tus fotos; más suave deja ver mejor la foto. Se aplica a las fotos que subas desde ahora.</span></label>
+              <input type="range" id="wm-op" min="0.5" max="1" step="0.05" value="${strengthOf(wm)}">
+              <span class="hint">Desde 50%. Más intensa protege más tus fotos; más suave deja ver mejor la foto. Se aplica a las fotos que subas desde ahora.</span></label>
           </div>
           <div><canvas class="wm-preview" id="wm-canvas" width="960" height="640"></canvas>
             <p class="muted small">Vista previa de una muestra.</p></div>
@@ -1159,14 +1167,14 @@ function viewConfig() {
 
   let logo = { key: wm.logoKey || '', url: wm.logoUrl || '', img: null };
   const readWm = () => ({
-    useLogo: $('#wm-uselogo').checked && !!logo.key, strength: Math.max(0.4, Number($('#wm-op').value)),
+    useLogo: $('#wm-uselogo').checked && !!logo.key, strength: Math.max(0.5, Number($('#wm-op').value)),
     logoKey: logo.key, logoUrl: logo.url,
   });
   const preview = () => {
     $('#wm-logo-f').classList.toggle('hidden', !$('#wm-uselogo').checked);
     const c = $('#wm-canvas'), ctx = c.getContext('2d');
     drawSampleScene(ctx, c.width, c.height);
-    drawWatermark(ctx, c.width, c.height, readWm(), logo.img);
+    drawWatermark(ctx, c.width, c.height, { ...readWm(), name: S.profile.displayName || '' }, logo.img); // sin semilla: vista previa fija
     $('#wm-op-v').textContent = `${Math.round(Number($('#wm-op').value) * 100)}%`;
   };
   const loadLogo = url => {
@@ -1483,18 +1491,6 @@ function retentionState(set) {
 }
 const fmtMs = ms => new Date(ms).toLocaleDateString('es-AR', { day: 'numeric', month: 'long' });
 
-// Explicación del plazo + botón Extender (editor del álbum).
-function retentionHtml(set) {
-  const r = retentionState(set);
-  const btn = '<button class="btn primary sm" id="ext-btn">⏳ Extender plazo</button>';
-  if (r.k === 'deleted') return `<div class="notice">🗑️ Los originales se eliminaron${r.at ? ` el ${fmtMs(r.at)}` : ''}. Las fotos se siguen viendo con marca de agua, pero ya no se pueden vender.</div>`;
-  if (r.k === 'notstarted') return `<p class="muted small" style="margin:0">⏳ Tus fotos se venden durante ${myRules().days} días desde que subís la primera. Después podés extender el plazo.</p>`;
-  if (r.k === 'active') return `<div class="notice ${r.days <= 3 ? 'warn' : ''} row" style="justify-content:space-between">
-      <span>⏳ Se vende hasta el <strong>${fmtMs(r.until)}</strong> (${r.days} día${r.days === 1 ? '' : 's'}). Después tenés ${GRACE_DAYS} días para extender antes de que se borren los originales.</span>${btn}</div>`;
-  return `<div class="notice danger row" style="justify-content:space-between">
-      <span>⛔ Este álbum dejó de venderse el ${fmtMs(r.until)}. <strong>Los originales se borran el ${fmtMs(r.deleteAt)}</strong>: extendé el plazo para volver a venderlo.</span>${btn}</div>`;
-}
-
 // Tope del álbum en cantidad de fotos (según el plan + packs comprados).
 function capOf(set) {
   const max = albumPhotoLimit(set, S.settings, S.profile);
@@ -1648,7 +1644,7 @@ function eventDialog(ev, onSaved) {
       <label class="field">Localidad<input type="text" id="ev-city" maxlength="80" required value="${esc(ev.city || '')}" placeholder="Empezá a escribir y elegí de la lista"></label>
     </div>
     <label class="field">Lugar (opcional)<input type="text" id="ev-loc" maxlength="100" value="${esc(ev.city ? ev.venue || '' : ev.location || '')}" placeholder="Ej: Cancha de Querandí, Hipódromo, Parque Independencia"></label>
-    ${tax.types.map(t => {
+    ${tax.types.filter(t => t.id !== 'lugar').map(t => { // "Lugar" ya se pide arriba (campo Lugar); las etiquetas viejas se conservan
       const tags = tax.tags.filter(g => g.typeId === t.id);
       const canAdd = USER_TAG_TYPES.includes(t.id);
       return `<div class="field"><span>${esc(t.name)}</span>
@@ -1798,8 +1794,8 @@ async function viewEvent(id) {
       <div class="row" style="justify-content:space-between;align-items:flex-start">
         <div>
           <div class="row" style="margin-bottom:6px">${statusPill(ev)} ${ev.kind === 'general' ? '<span class="pill accent">Evento general</span>' : ''} ${ev.openToJoin ? '<span class="pill">Abierto a fotógrafos</span>' : ''}</div>
-          <h1 style="margin-bottom:4px">${esc(ev.name)}</h1>
-          <div class="muted">${esc(fmtDate(ev.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}${ev.location ? ` · 📍 ${esc(ev.location)}` : ''}<span id="ev-views"></span></div>
+          <h1 style="margin-bottom:4px">${esc(ev.name)} <span class="muted" id="ev-views" style="font-size:1rem;font-weight:500;white-space:nowrap"></span></h1>
+          <div class="muted">${esc(fmtDate(ev.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}${ev.location ? ` · 📍 ${esc(ev.location)}` : ''}</div>
           ${tags.length ? `<div class="pills" style="margin-top:8px">${tags.map(t => `<span class="pill">${esc(t.name)}</span>`).join('')}</div>` : ''}
         </div>
         <div class="row">
@@ -1818,7 +1814,7 @@ async function viewEvent(id) {
 
   const reload = () => viewEvent(id);
   $('#ev-share').onclick = () => shareEvent(ev);
-  getDoc(doc(db, 'stats', id)).then(x => { const n = x.data()?.views || 0; if ($('#ev-views')) $('#ev-views').textContent = ` · 👁️ ${n.toLocaleString('es-AR')} visita${n === 1 ? '' : 's'}`; }).catch(() => {});
+  getDoc(doc(db, 'stats', id)).then(x => { const n = x.data()?.views || 0; if ($('#ev-views')) $('#ev-views').textContent = `👁️ ${n.toLocaleString('es-AR')} visita${n === 1 ? '' : 's'}`; }).catch(() => {});
   if (canEdit) {
     $('#ev-edit').onclick = () => eventDialog(ev, reload);
     $('#ev-toggle').onclick = async () => {
@@ -1854,9 +1850,10 @@ async function viewEvent(id) {
       const dlg = openDialog(`Precios · ${u.displayName || ''}`, `
         <div class="stack">
           <label class="field" style="max-width:240px">Precio por foto (ARS)<input type="number" id="sp-price" min="0" step="1" inputmode="numeric" value="${st.price || ''}"></label>
-          <label class="field" style="max-width:320px">Comisión de la plataforma<select id="sp-fee">
-            <option value="absorb" ${st.feeMode !== 'buyer' ? 'selected' : ''}>La paga el fotógrafo (el comprador ve el precio limpio)</option>
-            <option value="buyer" ${st.feeMode === 'buyer' ? 'selected' : ''}>Se suma al comprador como costo de servicio</option></select></label>
+          <label class="field" style="max-width:320px">Tasa de servicio<select id="sp-fee">
+            <option value="absorb" ${!['half', 'buyer'].includes(st.feeMode) ? 'selected' : ''}>La paga toda el fotógrafo (el comprador ve el precio limpio)</option>
+            <option value="half" ${st.feeMode === 'half' ? 'selected' : ''}>Mitad el fotógrafo, mitad el comprador</option>
+            <option value="buyer" ${st.feeMode === 'buyer' ? 'selected' : ''}>La paga toda el comprador (tasa de servicio)</option></select></label>
           <div class="field"><span>Packs</span><div id="sp-packs"></div></div>
           <p class="muted small" style="margin:0">Cambia solo este álbum. Las fotos con precio especial no cambian.</p>
         </div>`,
@@ -1916,9 +1913,10 @@ async function viewEvent(id) {
     const nuevo = parseHash().query.get('nuevo') === '1';
     const drawSteps = (n = mySet.photoCount || 0) => {
       $('#ev-steps').innerHTML = nuevo || !n ? `<div class="card wizard-steps">
-        <span class="ws done">✓ Álbum creado</span><span class="ws ${n ? 'done' : 'now'}">${n ? '✓' : '2'} Subí las fotos</span><span class="ws ${n ? 'now' : ''}">3 Compartí el link</span>
+        <span class="ws done">✓ Álbum creado</span>${n ? '<span class="ws done">✓ Subí las fotos</span>' : '<a class="ws now" href="#" id="ws-up" style="text-decoration:none">2 Subí las fotos ⬇</a>'}<span class="ws ${n ? 'now' : ''}">3 Compartí el link</span>
         ${n ? '' : `<div class="row" style="flex-basis:100%;margin-top:6px"><span class="muted small grow">🔗 El link ya funciona: mandalo ahora y la gente ve las fotos a medida que se suben.</span>
           <button class="btn sm" id="ws-copy">Copiar link</button><a class="btn sm primary" id="ws-wa" target="_blank" rel="noopener">💬 WhatsApp</a></div>`}</div>` : '';
+      $('#ws-up')?.addEventListener('click', e => { e.preventDefault(); ($('#dz') || $('#set-photos'))?.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
       if (!n && $('#ws-copy')) {
         const url = eventUrl(ev.id, (ev.photographerUids || []).length > 1 ? me : '');
         $('#ws-copy').onclick = async () => { try { await navigator.clipboard.writeText(url); toast('Link copiado'); } catch { toast(url); } };
@@ -1997,12 +1995,17 @@ function drawAlbumState(ev, set, reload) {
   }
   if (n > 0) {
     const r = retentionState(set);
-    const when = r.k === 'active' ? `Se vende hasta el <strong>${fmtMs(r.until)}</strong>.` : r.k === 'grace' ? `Dejó de venderse el ${fmtMs(r.until)}.` : '';
-    box.innerHTML = `<div class="card album-state open">
-      <div class="grow"><h2 style="margin:0 0 4px">🟢 Álbum abierto</h2>
-        <p class="muted small" style="margin:0">${when} Cuando termines de vender, cerralo: queda en tu historial con 10 fotos de muestra y se libera el lugar para subir otro álbum.</p></div>
-      <div class="row"><button class="btn" id="st-close">📦 Cerrar álbum</button></div>
+    const closesAt = r.k === 'active' ? r.until + GRACE_DAYS * 86400000 : r.deleteAt;
+    const when = r.k === 'active'
+      ? `Se vende hasta el <strong>${fmtMs(r.until)}</strong>${r.days <= 3 ? ` (${r.days} día${r.days === 1 ? '' : 's'})` : ''}. Después se cierra solo: el <strong>${fmtMs(closesAt)}</strong> queda en tu historial con 10 fotos de muestra y se libera el lugar.`
+      : r.k === 'grace' ? `⛔ Dejó de venderse el ${fmtMs(r.until)}. <strong>Se cierra solo el ${fmtMs(closesAt)}</strong> (quedan 10 fotos de muestra en tu historial).`
+      : 'Se vende desde que subís la primera foto.';
+    box.innerHTML = `<div class="card album-state open ${r.k === 'grace' || (r.k === 'active' && r.days <= 3) ? 'warn' : ''}">
+      <div class="grow"><h2 style="margin:0 0 4px">${r.k === 'grace' ? '🟠 Álbum sin venta' : '🟢 Álbum abierto'}</h2>
+        <p class="muted small" style="margin:0">${when} ¿Querés venderlo más días? <strong>Extendé el plazo.</strong> ¿Ya terminaste? Cerralo antes y liberás el lugar para otro álbum.</p></div>
+      <div class="row"><button class="btn primary" id="st-ext">⏳ Extender plazo</button><button class="btn" id="st-close">📦 Cerrar álbum</button></div>
     </div>`;
+    $('#st-ext').onclick = () => extensionDialog(ev, set, 'time');
     $('#st-close').onclick = () => closeAlbumDialog(ev, reload);
     return;
   }
@@ -2061,7 +2064,7 @@ async function drawShortLink(ev) {
   const box = $('#short-link');
   if (!box) return;
   if (!myRules().shortLinks) {
-    box.innerHTML = `<p class="muted small" style="margin:0">🔒 Link corto propio (ej: quieromisfotos.com.ar/torneo-apertura): con el plan <a href="#/web">Profesional</a>.</p>`;
+    box.innerHTML = '';
     return;
   }
   const snap = await getDocs(query(collection(db, 'aliases'), where('uid', '==', S.user.uid), where('eventId', '==', ev.id))).catch(() => null);
@@ -2099,7 +2102,9 @@ function renderSetEditor(ev, set, reload) {
   let subs = (set.subalbums || []).map(s => ({ ...s })).sort((a, b) => a.order - b.order);
   setTimeout(() => drawShortLink(ev), 0);
 
+  const emptyAlbum = !(set.photoCount > 0);
   box.innerHTML = `
+    ${emptyAlbum ? '<div id="set-photos"></div>' : ''}
     <div class="card stack">
       <h2>Mi set en este evento</h2>
       ${S.profile.mpConnected ? '' : '<div class="notice danger"><strong>Tus fotos todavía no se pueden comprar:</strong> los compradores ven "todavía no está a la venta" hasta que <a href="#/mp">vincules Mercado Pago</a>.</div>'}
@@ -2109,44 +2114,53 @@ function renderSetEditor(ev, set, reload) {
         ${isFreePlan(S.profile) ? '<a class="btn sm" href="#/web">⭐ Más fotos por álbum con un plan pago</a>' : capOf(set).max ? `<button class="btn sm" id="space-btn">➕ ${capOf(set).photos ? 'Más fotos' : 'Más espacio'}</button>` : ''}
       </div>
       ${(c => c.max ? `<div class="meter"><span class="${c.used >= c.max ? 'danger' : c.used >= c.max * 0.9 ? 'warn' : ''}" style="width:${Math.min(100, (c.used / c.max) * 100).toFixed(1)}%"></span></div>` : '')(capOf(set))}
-      ${retentionHtml(set)}
       <div id="short-link"></div>
     </div>
     ${!(set.price > 0) && (set.photoCount || 0) > 0 ? '<div class="notice danger"><strong>💲 Este álbum no tiene precio: nadie puede comprar las fotos.</strong><br>Cargá el precio por foto acá abajo y tocá Guardar.</div>' : ''}
-    <form class="card stack" id="set-form">
+    <form class="stack" id="set-form" style="gap:14px">
+     <div class="card stack">
       <div class="row" style="justify-content:space-between"><h2 style="margin:0">Precios</h2><button type="button" class="btn sm" id="use-def">Usar mis valores por defecto</button></div>
       <label class="field" style="max-width:240px">Precio por foto (ARS)<input type="number" min="0" step="1" id="st-price" value="${set.price || ''}"></label>
       <h3>Packs</h3>
       <div id="st-packs"></div>
-      <h3>Comisión</h3>
+      <h3>Tasa de servicio</h3>
       <div class="stack" id="st-fee">${feeModeHtml('st-fee', set.feeMode)}</div>
       <h3>¿Cuánto te queda por foto?</h3>
       <div id="st-net"></div>
-      <h2 style="margin-top:8px">Sub-álbumes</h2>
+      <div class="row end"><button class="btn primary" type="submit">Guardar precios</button></div>
+     </div>
+     <div class="card stack">
+      <h2 style="margin:0">Sub-álbumes</h2>
       <p class="muted small" style="margin:0">Ej: categorías, partidos o turnos. Ayudan al comprador a encontrar sus fotos.</p>
       <div id="st-subs" class="stack"></div>
       <div class="row"><input type="text" id="st-sub-new" placeholder="Nombre del sub-álbum" style="max-width:300px"><button type="button" class="btn" id="st-sub-add">Agregar</button></div>
       <h2 style="margin-top:8px">Galería</h2>
       <label class="check"><input type="checkbox" id="st-hours" ${set.showHours !== false ? 'checked' : ''}> Mostrar el filtro por horario</label>
       <p class="muted small" style="margin:0">Botones por hora (ej: “15:00 a 16:00”) según la hora en que sacaste cada foto, para que cada uno encuentre la suya más rápido. Desactivalo si la hora de tu cámara no está bien configurada.</p>
-      ${S.settings.bibsEnabled === false ? '' : `<label class="check"><input type="checkbox" id="st-bibs" ${bibsOn(set, ev, S.tax) ? 'checked' : ''}> 🔢 Leer los dorsales automáticamente al subir</label>
+      ${S.settings.bibsEnabled === false ? '' : `<label class="check"><input type="checkbox" id="st-bibs" ${bibsOn(set, ev, S.tax) ? 'checked' : ''}> <span>🔢 Leer los dorsales automáticamente al subir <span class="muted small">(+${bibFeeFor({ bibScans: 1 }, S.settings)}% de comisión en este álbum, por el uso de IA)</span></span></label>
       <p class="muted small" style="margin:0">Para carreras (running, ciclismo, triatlón…): cada participante busca su número y ve solo sus fotos. Se aplica a las fotos que subas desde ahora; si alguno no se leyó bien, lo corregís con “🔢 Dorsales” en tus fotos.</p>
       <p class="muted small" style="margin:0">🔗 Link directo para cada corredor (cambiá el número al final): <code style="word-break:break-all">${esc(`${location.origin}/e/${ev.id}/?s=1&dorsal=123`)}</code></p>`}
       ${S.settings.selfieEnabled === false ? '' : `<label class="check"><input type="checkbox" id="st-selfie" ${set.selfie !== false ? 'checked' : ''}> 🤳 Búsqueda por selfie</label>
       <p class="muted small" style="margin:0">Cada uno se saca una selfie y ve las fotos donde aparece. Las caras se procesan en tu dispositivo al subir y solo se guarda una huella numérica (nunca imágenes de caras).</p>
       <div id="st-selfie-status"></div>`}
-      <div class="row end"><button class="btn primary" type="submit">Guardar set</button></div>
+      <div class="row end"><button class="btn primary" type="submit">Guardar</button></div>
+     </div>
     </form>
-    <div id="set-photos"></div>`;
+    ${emptyAlbum ? '' : '<div id="set-photos"></div>'}`;
   if (S.settings.selfieEnabled !== false && set.selfie !== false && (set.photoCount || 0) > 0) drawSelfieStatus(ev);
   mountPhotos($('#set-photos'), { ev, set, uid: S.user.uid, profile: S.profile, settings: S.settings, bibs: bibsOn(set, ev, S.tax) })
     .catch(e => { $('#set-photos').innerHTML = `<div class="notice danger">${esc(errMsg(e))}</div>`; });
 
   const stFee = () => $('input[name=st-fee]:checked')?.value || 'absorb';
+  // Comisión extra por dorsales: si están activados (o ya se leyeron en este álbum).
+  const syncExtra = () => { feeExtra = ($('#st-bibs')?.checked || (set.bibScans || 0) > 0) ? bibFeeFor({ bibScans: 1 }, S.settings) : 0; };
+  syncExtra();
+  $('#st-fee').innerHTML = feeModeHtml('st-fee', set.feeMode);
   let packs = packsEditor($('#st-packs'), set.packs, stFee, () => Number($('#st-price').value) || 0);
   const drawNet = () => { $('#st-net').innerHTML = breakdownHtml(Math.round(Number($('#st-price').value) || 0), stFee()); packs.refresh(); };
   $('#st-price').addEventListener('input', drawNet);
   $('#st-fee').addEventListener('change', drawNet);
+  $('#st-bibs')?.addEventListener('change', () => { const v = stFee(); syncExtra(); $('#st-fee').innerHTML = feeModeHtml('st-fee', v); drawNet(); });
   drawNet();
   const drawSubs = () => {
     $('#st-subs').innerHTML = subs.length ? subs.map((s, i) => `
