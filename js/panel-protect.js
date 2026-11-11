@@ -10,7 +10,7 @@ import { DEFAULT_WATERMARK, wantsLogo } from './watermark.js';
 
 const FIELDS = [
   ['thumbSide', 'Miniatura: lado más largo (px)', 1],
-  ['thumbBlur', 'Miniatura: desenfoque extra', 0.1],
+  ['thumbBlur', 'Miniatura: desenfoque (0 = nítida)', 0.1],
   ['thumbQuality', 'Miniatura: calidad JPEG (0,3 a 0,9)', 0.05],
   ['previewSide', 'Foto ampliada: lado más largo (px)', 10],
   ['previewBlur', 'Foto ampliada: desenfoque', 0.1],
@@ -22,8 +22,8 @@ export function mountProtectCard(box, { settings, onSaved }) {
   const cfg = protectOf(settings);
   box.innerHTML = `
     <h2 style="margin:0">🛡️ Protección de fotos</h2>
-    <p class="muted small" style="margin:0">Lo que se ve antes de comprar: una <strong>miniatura</strong> muy desenfocada (cuadrícula y estado inicial del visor)
-      y una <strong>foto ampliada</strong> algo más clara, que aparece al pasar el mouse o tocar la foto. Las dos llevan el desenfoque y la marca de agua grabados en los píxeles.
+    <p class="muted small" style="margin:0">Lo que se ve antes de comprar: una <strong>miniatura</strong> chica (cuadrícula y estado inicial del visor) y una <strong>foto ampliada</strong>
+      desenfocada que se ve con la lupa. El desenfoque y la marca de agua van grabados en los píxeles.
       Lo más claro que se puede ver es lo que alguien puede capturar: subir el desenfoque protege más, pero cuesta más reconocerse. Los originales no se tocan.</p>
     <form id="pr-form" class="stack">
       <div class="grid2">${FIELDS.map(([k, label]) => `<label class="field">${label}
@@ -73,7 +73,7 @@ export function mountProtectCard(box, { settings, onSaved }) {
       bmp.close?.();
       const u1 = URL.createObjectURL(r.thumb), u2 = URL.createObjectURL(r.preview);
       out.innerHTML = `<div class="grid2">
-        <figure style="margin:0"><img src="${u1}" alt="" style="width:100%;border-radius:8px"><figcaption class="muted small">Miniatura / estado inicial · ${fmtBytes(r.thumb.size)}</figcaption></figure>
+        <figure style="margin:0"><img src="${u1}" alt="" style="width:100%;border-radius:8px"><figcaption class="muted small">Miniatura · ${fmtBytes(r.thumb.size)}</figcaption></figure>
         <figure style="margin:0"><img src="${u2}" alt="" style="width:100%;border-radius:8px"><figcaption class="muted small">Foto ampliada (lo más claro que se ve) · ${fmtBytes(r.preview.size)}</figcaption></figure></div>`;
     } catch (err) { out.innerHTML = ''; toast(errMsg(err), 'error'); }
   };

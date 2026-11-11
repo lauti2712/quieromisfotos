@@ -1,5 +1,5 @@
 // Versiones protegidas de las fotos de los álbumes (lo único público antes de comprar):
-//  - miniatura (_t2): chica y muy desenfocada, para la cuadrícula y el estado inicial del visor;
+//  - miniatura (_t2): chica (240 px) y nítida, con marca de agua, para la cuadrícula y el estado inicial del visor;
 //  - muestra (_p2): más grande, desenfocada en menor medida y bien comprimida (lo "más claro" que se puede ver).
 // El desenfoque se aplica a los píxeles (no es un filtro CSS) y la marca de agua va encima, nítida.
 // Los parámetros salen de settings/platform.protect (los cambia el superadmin) y se completan con estos.
@@ -8,7 +8,7 @@ import { drawWatermark } from './watermark.js';
 export const PROTECT_VERSION = 2;
 export const PROTECT_DEFAULTS = {
   thumbSide: 240,     // px del lado más largo
-  thumbBlur: 0.4,     // desenfoque extra (sigma en px, sobre la miniatura; se suma al de la muestra)
+  thumbBlur: 0,       // desenfoque de la miniatura (sigma en px; 0 = nítida: es chica y la protege su tamaño)
   thumbQuality: 0.6,  // JPEG 0..1
   previewSide: 720,
   previewBlur: 1.6,   // sigma en px sobre la muestra ("marcado": se reconoce la escena, no los detalles)
@@ -115,9 +115,9 @@ export function blurCanvas(c, sigma) {
 // src: imagen/canvas/bitmap sin marca (o una muestra vieja, en la migración). Devuelve { preview, thumb } en JPEG.
 export async function makeProtected(src, sw, sh, wm, logo, seed, cfg = PROTECT_DEFAULTS) {
   const p = scaled(src, sw, sh, cfg.previewSide);
-  blurCanvas(p, cfg.previewBlur);
+  // La miniatura sale de la foto sin desenfocar (con su propio desenfoque, si se configura).
   const t = scaled(p, p.width, p.height, cfg.thumbSide);
-  // La miniatura sale de la muestra ya desenfocada + su propio desenfoque (más fuerte en proporción).
+  blurCanvas(p, cfg.previewBlur);
   blurCanvas(t, cfg.thumbBlur);
   if (wm) {
     drawWatermark(p.getContext('2d'), p.width, p.height, wm, logo, seed);
