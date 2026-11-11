@@ -29,6 +29,19 @@ test('comisión absorb vs buyer', () => {
 test('neto del fotógrafo descuenta plataforma y Mercado Pago', async () => {
   const { sellerNet } = await import('../js/pricing.js');
   assert.deepEqual(sellerNet(3000, { feeMode: 'absorb', feePercent: 3, mpPercent: 7.85 }), { total: 3000, platformFee: 90, mpFee: 236, net: 2674 });
-  // si paga el comprador, MP cobra sobre el total con el costo de servicio incluido
-  assert.deepEqual(sellerNet(3000, { feeMode: 'buyer', feePercent: 3, mpPercent: 7.85 }), { total: 3090, platformFee: 90, mpFee: 243, net: 2757 });
+  // Tasa de servicio = plataforma + Mercado Pago. Si la paga toda el comprador, al fotógrafo le queda el precio (o unos pesos más por redondeo).
+  assert.deepEqual(sellerNet(3000, { feeMode: 'buyer', feePercent: 3, mpPercent: 7.85 }), { total: 3354, platformFee: 90, mpFee: 263, net: 3001 });
+  // Mitad y mitad: el comprador suma la mitad de la tasa y el fotógrafo resigna la otra mitad.
+  const h = sellerNet(3000, { feeMode: 'half', feePercent: 3, mpPercent: 7.85 });
+  assert.equal(h.total, 3170);
+  assert.ok(Math.abs((h.total - 3000) - (3000 - h.net)) <= 2, `reparto parejo: ${JSON.stringify(h)}`);
+});
+
+test('transferencia (sin Mercado Pago): la tasa es solo la de la plataforma', () => {
+  const b = computeTotals({ count: 2, price: 5000, packs: [], feeMode: 'buyer', feePercent: 3, mpPercent: 0 });
+  assert.deepEqual([b.total, b.serviceFee, b.platformFee], [10300, 300, 300]);
+  const h = computeTotals({ count: 2, price: 5000, packs: [], feeMode: 'half', feePercent: 3, mpPercent: 0 });
+  assert.deepEqual([h.total, h.serviceFee], [10150, 150]);
+  const x = computeTotals({ count: 2, price: 5000, packs: [], feeMode: 'raro', feePercent: 3, mpPercent: 7 });
+  assert.equal(x.feeMode, 'absorb'); // valores desconocidos: lo paga el fotógrafo
 });

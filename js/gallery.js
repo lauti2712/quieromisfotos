@@ -4,7 +4,7 @@ import { $, $$, esc, fmtMoney, toast, errMsg, todayIso, fmtDate, waLink } from '
 import { cart } from './cart.js';
 import { openViewer } from './viewer.js';
 import { setForSale, setUntil, loadSettings, feePercentFor } from './data.js';
-import { mpPercentFor } from './plans-core.js';
+import { mpPercentFor, bibFeeFor } from './plans-core.js';
 import { computeTotals, splitPhotos, bestPrice } from './pricing.js';
 import { favs } from './favs.js';
 import { shareLink, eventUrl } from './share.js';
@@ -333,6 +333,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
   box.addEventListener('click', e => { if (gSuppress) { gSuppress = false; e.stopPropagation(); e.preventDefault(); } }, true);
   const photoOf = el => state.photos[Number(el?.closest('.g-item')?.dataset.i)];
   box.addEventListener('contextmenu', e => { const it = e.target.closest('.g-item'); if (!it) return; e.preventDefault(); protectDialog(photoOf(it)); });
+  box.addEventListener('dragstart', e => { if (e.target.closest('.g-item')) e.preventDefault(); });
   box.addEventListener('touchstart', e => {
     clearTimeout(gPress?.t); gPress = null;
     const it = e.target.closest('.g-item');
@@ -366,7 +367,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
         continue;
       }
       const split = splitPhotos(g.items, set.price);
-      const t = computeTotals({ ...split, price: set.price, packs: set.packs, feeMode: set.feeMode, feePercent: feePercentFor(ph, settings), mpPercent: mpPercentFor(ph, settings) });
+      const t = computeTotals({ ...split, price: set.price, packs: set.packs, feeMode: set.feeMode, feePercent: feePercentFor(ph, settings) + bibFeeFor(set, settings), mpPercent: mpPercentFor(ph, settings) });
       total += t.total;
       tip ||= packTip(split.count, set);
     }

@@ -8,7 +8,7 @@ import { signToken, verifyToken } from './tokens.js';
 import { json, httpError, apiUrl } from './http.js';
 import { extensionWebhook } from './extensions.js';
 import { notifyUser, notifySuper } from './push.js';
-import { feePercentFor, mpPercentFor, GRACE_DAYS } from './plans.js';
+import { feePercentFor, mpPercentFor, bibFeeFor, GRACE_DAYS } from './plans.js';
 import { subscriptionWebhook } from './subscriptions.js';
 import { addAlert } from './alerts.js';
 import { createTransferOrder, syncTransferOrder } from './transfers.js';
@@ -60,7 +60,7 @@ export async function checkout(req, env) {
   if (bad >= 0) throw httpError(409, 'Alguna foto del carrito ya no está disponible. Quitala y probá de nuevo.');
 
   // Por transferencia no hay comisión de Mercado Pago: la tasa de servicio es solo la de la plataforma.
-  const t = computeTotals({ ...splitPhotos(photos, set.price), price: set.price, packs: set.packs, feeMode: set.feeMode, feePercent: feePercentFor(ph, settings),
+  const t = computeTotals({ ...splitPhotos(photos, set.price), price: set.price, packs: set.packs, feeMode: set.feeMode, feePercent: feePercentFor(ph, settings) + bibFeeFor(set, settings),
     mpPercent: method === 'transfer' ? 0 : mpPercentFor(ph, settings) });
   if (method === 'transfer') return json(await createTransferOrder(env, { claims, ev, ph, settings, photos, t, ids, photographerUid, eventId, orderId: newId() }));
   // Mismo comprador, mismas fotos y mismo total con un pago todavía abierto: se reusa (evita pagar dos veces lo mismo).

@@ -1,9 +1,9 @@
-// Procesamiento de imágenes en el navegador: muestra (900px) y miniatura (400px) con marca de agua (wm = null: sin marca).
+// Procesamiento de imágenes en el navegador: muestra (1200px) y miniatura (400px) con marca de agua (wm = null: sin marca).
 // La muestra es chica a propósito: alcanza para elegir en el celular, pero sin marca no sirve para imprimir ni recortar.
 // Funciona en un Web Worker (OffscreenCanvas) o en el hilo principal.
 import { drawWatermark } from './watermark.js';
 
-export const PREVIEW_SIDE = 900;
+export const PREVIEW_SIDE = 1200;
 const WORK_SIDE = 1600; // copia de trabajo sin marca (de acá salen la muestra, la miniatura y la lectura de dorsales/caras)
 export const THUMB_SIDE = 400;
 export const SCAN_SIDE = 1280; // copia sin marca para leer dorsales (no se guarda)
@@ -36,7 +36,8 @@ function scaled(src, sw, sh, maxSide) {
 export const OPTIMIZE_QUALITY = 0.92;
 const OPTIMIZE_MIN_BYTES = 3e6;
 
-export async function processFile(file, wm, logo = null, { optimize = false, scan = false } = {}) {
+// seed: id de la foto (la marca sale distinta en cada foto y lleva su código corto).
+export async function processFile(file, wm, logo = null, { optimize = false, scan = false, seed = null } = {}) {
   const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
   const width = bmp.width, height = bmp.height;
   try {
@@ -54,10 +55,10 @@ export async function processFile(file, wm, logo = null, { optimize = false, sca
     const thumbC = scaled(work, work.width, work.height, THUMB_SIDE);
     const scanBlob = scan ? await toBlob(scaled(work, work.width, work.height, SCAN_SIDE), 0.82) : null;
     if (wm) {
-      drawWatermark(base.getContext('2d'), base.width, base.height, wm, logo);
-      drawWatermark(thumbC.getContext('2d'), thumbC.width, thumbC.height, wm, logo);
+      drawWatermark(base.getContext('2d'), base.width, base.height, wm, logo, seed);
+      drawWatermark(thumbC.getContext('2d'), thumbC.width, thumbC.height, wm, logo, seed);
     }
-    const [preview, thumb] = await Promise.all([toBlob(base, 0.72), toBlob(thumbC, 0.7)]);
+    const [preview, thumb] = await Promise.all([toBlob(base, 0.78), toBlob(thumbC, 0.7)]);
     const takenAt = await exifDate(file).catch(() => null);
     // takenAtExact: la hora sale de la cámara (EXIF); si no, es la del archivo (en el celular, suele ser cuando se eligió).
     return { preview, thumb, original, scan: scanBlob, width, height, takenAt: takenAt || file.lastModified || Date.now(), takenAtExact: !!takenAt };

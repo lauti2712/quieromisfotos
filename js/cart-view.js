@@ -4,7 +4,7 @@ import { $, $$, esc, fmtMoney, fmtDate, toast, errMsg } from './util.js';
 import { cart } from './cart.js';
 import { computeTotals, bestPrice, splitPhotos } from './pricing.js';
 import { loadSettings, setForSale, feePercentFor, planOf, setUntil, GRACE_DAYS } from './data.js';
-import { mpPercentFor } from './plans-core.js';
+import { mpPercentFor, bibFeeFor } from './plans-core.js';
 import { currentUser, openLogin, buyerSession } from './account.js';
 import { apiPost } from './api.js';
 
@@ -84,7 +84,7 @@ function groupHtml(g, settings) {
   }
 
   const split = splitPhotos(g.photos, g.set.price);
-  const calc = mp => computeTotals({ ...split, price: g.set.price, packs: g.set.packs, feeMode: g.set.feeMode, feePercent: feePercentFor(g.ph, settings), mpPercent: mp });
+  const calc = mp => computeTotals({ ...split, price: g.set.price, packs: g.set.packs, feeMode: g.set.feeMode, feePercent: feePercentFor(g.ph, settings) + bibFeeFor(g.set, settings), mpPercent: mp });
   const t = calc(mpPercentFor(g.ph, settings));
   const tT = calc(0); // por transferencia (sin comisión de Mercado Pago)
   const tip = nextPackTip(split.count, g.set);

@@ -53,21 +53,21 @@ export function createUploader({ eventId, uid, team = '', wm, logo = null, optim
     return workers;
   }
 
-  function process(file) {
+  function process(file, seed) {
     const w = pool().find(x => !x.busy);
     // La copia sin marca (1280 px) sirve para leer dorsales y para las caras de la búsqueda por selfie.
     const scan = bibs || faces;
-    if (!w) return processFile(file, wm, logo, { optimize, scan });
+    if (!w) return processFile(file, wm, logo, { optimize, scan, seed });
     w.busy = true;
     const id = ++seq;
     w.current = id;
     return new Promise((resolve, reject) => {
       waiting.set(id, data => {
         if (data.ok) resolve(data);
-        else if (data.fallback) processFile(file, wm, logo, { optimize, scan }).then(resolve, reject);
+        else if (data.fallback) processFile(file, wm, logo, { optimize, scan, seed }).then(resolve, reject);
         else reject(new Error(data.error));
       });
-      w.postMessage({ id, file, wm, logo, optimize, scan });
+      w.postMessage({ id, file, wm, logo, optimize, scan, seed });
     });
   }
 
@@ -123,9 +123,10 @@ export function createUploader({ eventId, uid, team = '', wm, logo = null, optim
       it.status = 'done'; it.loaded = it.file.size; emit();
       return;
     }
-    const r = await process(it.file);
-    const s = await uploadSession(eventId, team);
+    // El id de la foto sale antes de procesarla: es la semilla de la marca de agua y su código corto.
     const pid = it.pid || (it.pid = doc(collection(db, 'photos')).id);
+    const r = await process(it.file, pid);
+    const s = await uploadSession(eventId, team);
     it.status = 'uploading'; emit();
 
     const extra = r.preview.size + r.thumb.size;

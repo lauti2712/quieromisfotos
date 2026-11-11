@@ -121,3 +121,7 @@ export function mpPercentFor(user, settings) {
   const plans = settings?.mpFeePlans?.length ? settings.mpFeePlans : DEFAULT_MP_FEE_PLANS;
   return Number((plans.find(p => p.id === user?.mpReleasePlan) || plans[0])?.percent) || 0;
 }
+
+// Lectura de dorsales con IA: la plataforma cobra un % extra de comisión en los álbumes donde se usó (sets.bibScans > 0).
+export const BIB_FEE_PERCENT = 1;
+export const bibFeeFor = (set, settings) => ((set?.bibScans || 0) > 0 ? Number(settings?.bibFeePercent ?? BIB_FEE_PERCENT) || 0 : 0);

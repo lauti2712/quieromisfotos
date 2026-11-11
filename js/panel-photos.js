@@ -179,9 +179,10 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
     dlg.innerHTML = `
       <div class="dlg-head"><h2>Precio de ${n} foto${n > 1 ? 's' : ''}</h2><button class="btn ghost sm" data-close>✕</button></div>
       <form class="dlg-body stack" id="pp-form">
-        <label class="field">Precio por foto<input type="number" id="pp-price" min="0" step="100" inputmode="numeric" value="${first.price > 0 ? first.price : ''}" placeholder="${set.price ? `Precio del álbum: ${set.price}` : ''}">
-          <span class="hint">Dejalo vacío para usar el precio del álbum${set.price ? ` (${fmtMoney(set.price)})` : ''}. Una foto con precio propio se cobra aparte y no entra en packs.</span></label>
-        <label class="check"><input type="checkbox" id="pp-nopack" ${first.noPack || first.price > 0 ? 'checked' : ''}> No incluir en packs</label>
+        <p class="muted small" style="margin:0">Para fotos que valen más que el resto (ej: la del equipo completo, un festejo, una foto premiada). Le ponés un precio propio a ${n > 1 ? 'estas fotos' : 'esta foto'}; las demás siguen con el precio del álbum${set.price ? ` (${fmtMoney(set.price)})` : ''}.</p>
+        <label class="field">Precio especial por foto<input type="number" id="pp-price" min="0" step="100" inputmode="numeric" value="${first.price > 0 ? first.price : ''}" placeholder="${set.price ? `Vacío = precio del álbum (${set.price})` : ''}">
+          <span class="hint">⚠️ Una foto con precio especial <strong>no entra en los packs</strong> de fotos: se cobra aparte, siempre a este precio. Dejalo vacío para volver al precio del álbum.</span></label>
+        <label class="check"><input type="checkbox" id="pp-nopack" ${first.noPack || first.price > 0 ? 'checked' : ''}> <span>Sacarla de los packs igual <span class="muted small">(con el precio del álbum, pero sin descuento de pack)</span></span></label>
         <div class="row end"><button class="btn primary" type="submit">Guardar</button></div>
       </form>`;
     document.body.appendChild(dlg);
@@ -238,7 +239,7 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
   };
 
   // ------------------------------------------------ subida
-  const wm = { ...DEFAULT_WATERMARK, ...(profile.watermark || {}) };
+  const wm = { ...DEFAULT_WATERMARK, ...(profile.watermark || {}), name: profile.displayName || '' };
   let logo = null;
   if (wantsLogo(wm)) {
     try { logo = await loadLogoBitmap(wm.logoKey); }

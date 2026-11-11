@@ -18,7 +18,7 @@ function hintOnce() {
 export function openViewer({ index, src, thumb, count, total = count, footer, onIndex, onProtect }) {
   let i = index;
   const lb = document.createElement('div');
-  lb.className = 'lightbox';
+  lb.className = onProtect ? 'lightbox lb-protect' : 'lightbox'; // lb-protect: fotos en venta (sitio público)
   lb.setAttribute('role', 'dialog');
   lb.innerHTML = `
     <div class="lb-top"><span class="small" id="lb-count"></span><span class="spacer"></span><button class="btn sm" id="lb-close" aria-label="Cerrar">✕</button></div>
@@ -93,6 +93,8 @@ export function openViewer({ index, src, thumb, count, total = count, footer, on
     lb.remove();
   };
   const onKey = e => {
+    // Sitio público: con el visor abierto, Ctrl/Cmd+S (guardar) y Ctrl/Cmd+P (imprimir) muestran el aviso de derechos.
+    if (onProtect && (e.ctrlKey || e.metaKey) && ['s', 'p'].includes(e.key.toLowerCase())) { e.preventDefault(); onProtect(i); return; }
     if (e.key === 'Escape') close();
     else if (e.key === 'ArrowLeft') go(-1);
     else if (e.key === 'ArrowRight') go(1);
@@ -158,29 +160,33 @@ export function openViewer({ index, src, thumb, count, total = count, footer, on
       else lastTap = now;
     }
   });
-  img.addEventListener('dblclick', e => zoomTo(z > 1 ? 1 : 2.5, e.clientX, e.clientY));
+  // La foto no recibe el puntero (CSS pointer-events: none): clic derecho / "guardar" no la toman. Los gestos se
+  // escuchan en el escenario y se fija si el puntero está sobre la foto.
+  const onImg = e => { const r = img.getBoundingClientRect(); return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom; };
+  stage.addEventListener('dblclick', e => { if (onImg(e)) zoomTo(z > 1 ? 1 : 2.5, e.clientX, e.clientY); });
   stage.addEventListener('wheel', e => { e.preventDefault(); zoomTo(z * (e.deltaY < 0 ? 1.2 : 1 / 1.2), e.clientX, e.clientY); }, { passive: false });
   let drag = null;
-  img.addEventListener('mousedown', e => { if (z > 1) { e.preventDefault(); drag = { x: e.clientX, y: e.clientY, tx, ty }; } });
+  stage.addEventListener('mousedown', e => { if (z > 1 && onImg(e)) { e.preventDefault(); drag = { x: e.clientX, y: e.clientY, tx, ty }; } });
   window.addEventListener('mousemove', e => { if (drag) { tx = drag.tx + e.clientX - drag.x; ty = drag.ty + e.clientY - drag.y; apply(); } });
   window.addEventListener('mouseup', () => { drag = null; });
-  stage.addEventListener('click', e => { if (e.target === stage) close(); });
+  stage.addEventListener('click', e => { if (e.target === stage && !onImg(e)) close(); });
+  stage.addEventListener('dragstart', e => e.preventDefault());
   img.draggable = false;
   // Algo cambió afuera (ej. se agregó al carrito desde el aviso de derechos): se redibuja el pie.
   const redraw = () => { if (document.body.contains(lb)) drawFooter(); };
   window.addEventListener('qmf-viewer-redraw', redraw);
-  img.addEventListener('contextmenu', e => { e.preventDefault(); onProtect?.(i); });
+  stage.addEventListener('contextmenu', e => { if (!onProtect || !onImg(e)) return; e.preventDefault(); onProtect(i); });
   // Mantener apretada (celular): en vez de "Guardar imagen", el aviso de derechos con la opción de comprarla.
   let press = null;
-  img.addEventListener('touchstart', e => {
+  stage.addEventListener('touchstart', e => {
     clearTimeout(press);
-    if (e.touches.length !== 1 || z > 1 || !onProtect) return;
+    if (e.touches.length !== 1 || z > 1 || !onProtect || !onImg(e.touches[0])) return;
     const t0 = e.touches[0];
     press = setTimeout(() => { press = null; onProtect(i); }, 600);
     press.x = t0.clientX; press.y = t0.clientY;
   }, { passive: true });
-  img.addEventListener('touchmove', e => { if (press && Math.hypot(e.touches[0].clientX - press.x, e.touches[0].clientY - press.y) > 10) { clearTimeout(press); press = null; } }, { passive: true });
-  img.addEventListener('touchend', () => { clearTimeout(press); press = null; });
+  stage.addEventListener('touchmove', e => { if (press && Math.hypot(e.touches[0].clientX - press.x, e.touches[0].clientY - press.y) > 10) { clearTimeout(press); press = null; } }, { passive: true });
+  stage.addEventListener('touchend', () => { clearTimeout(press); press = null; });
   show();
   return { close };
 }
