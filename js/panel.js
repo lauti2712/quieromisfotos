@@ -1794,8 +1794,8 @@ async function viewEvent(id) {
       <div class="row" style="justify-content:space-between;align-items:flex-start">
         <div>
           <div class="row" style="margin-bottom:6px">${statusPill(ev)} ${ev.kind === 'general' ? '<span class="pill accent">Evento general</span>' : ''} ${ev.openToJoin ? '<span class="pill">Abierto a fotógrafos</span>' : ''}</div>
-          <h1 style="margin-bottom:4px">${esc(ev.name)}</h1>
-          <div class="muted">${esc(fmtDate(ev.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}${ev.location ? ` · 📍 ${esc(ev.location)}` : ''}<span id="ev-views"></span></div>
+          <h1 style="margin-bottom:4px">${esc(ev.name)} <span class="muted" id="ev-views" style="font-size:1rem;font-weight:500;white-space:nowrap"></span></h1>
+          <div class="muted">${esc(fmtDate(ev.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}${ev.location ? ` · 📍 ${esc(ev.location)}` : ''}</div>
           ${tags.length ? `<div class="pills" style="margin-top:8px">${tags.map(t => `<span class="pill">${esc(t.name)}</span>`).join('')}</div>` : ''}
         </div>
         <div class="row">
@@ -1814,7 +1814,7 @@ async function viewEvent(id) {
 
   const reload = () => viewEvent(id);
   $('#ev-share').onclick = () => shareEvent(ev);
-  getDoc(doc(db, 'stats', id)).then(x => { const n = x.data()?.views || 0; if ($('#ev-views')) $('#ev-views').textContent = ` · 👁️ ${n.toLocaleString('es-AR')} visita${n === 1 ? '' : 's'}`; }).catch(() => {});
+  getDoc(doc(db, 'stats', id)).then(x => { const n = x.data()?.views || 0; if ($('#ev-views')) $('#ev-views').textContent = `👁️ ${n.toLocaleString('es-AR')} visita${n === 1 ? '' : 's'}`; }).catch(() => {});
   if (canEdit) {
     $('#ev-edit').onclick = () => eventDialog(ev, reload);
     $('#ev-toggle').onclick = async () => {
@@ -2064,7 +2064,7 @@ async function drawShortLink(ev) {
   const box = $('#short-link');
   if (!box) return;
   if (!myRules().shortLinks) {
-    box.innerHTML = `<p class="muted small" style="margin:0">🔒 Link corto propio (ej: quieromisfotos.com.ar/torneo-apertura): con el plan <a href="#/web">Profesional</a>.</p>`;
+    box.innerHTML = '';
     return;
   }
   const snap = await getDocs(query(collection(db, 'aliases'), where('uid', '==', S.user.uid), where('eventId', '==', ev.id))).catch(() => null);
