@@ -28,6 +28,8 @@ import { initRefresh } from './refresh.js';
 import { pushAvailable, pushOn, pushBlocked, enablePush, disablePush, isIos, isStandalone, listenForeground } from './push.js';
 import { shareLink, eventUrl } from './share.js';
 import { mountShareCard } from './panel-share.js';
+import { mountProtectCard } from './panel-protect.js';
+import { PROTECT_LEVELS, levelOf } from './protect.js';
 import { cropImage } from './cropper.js';
 import { placeInput, canonicalPlace, multiPlaceInput, guessPlaces } from './places.js';
 
@@ -2226,6 +2228,10 @@ function renderSetEditor(ev, set, reload) {
       <div id="st-subs" class="stack"></div>
       <div class="row"><input type="text" id="st-sub-new" placeholder="Nombre del sub-álbum" style="max-width:300px"><button type="button" class="btn" id="st-sub-add">Agregar</button></div>
       <h2 style="margin-top:8px">Galería</h2>
+      <label class="field">🛡️ Protección de las fotos antes de comprar
+        <select id="st-protect">${PROTECT_LEVELS.map(l => `<option value="${l.id}" ${levelOf(set).id === l.id ? 'selected' : ''}>${esc(l.label)}</option>`).join('')}</select>
+        <span class="hint" id="st-protect-hint">${esc(levelOf(set).hint)}</span></label>
+      <p class="muted small" style="margin:0">Cuánto se desenfocan la miniatura y la vista ampliada (con marca de agua) que ve el público. <strong>Elegila antes de subir:</strong> se aplica a cada foto al subirla${(set.photoCount || 0) > 0 ? '; las que ya subiste quedan como están' : ''}. Lo que descarga el comprador es siempre el original: sin marca y totalmente enfocado.</p>
       <label class="check"><input type="checkbox" id="st-hours" ${set.showHours !== false ? 'checked' : ''}> Mostrar el filtro por horario</label>
       <p class="muted small" style="margin:0">Botones por hora (ej: “15:00 a 16:00”) según la hora en que sacaste cada foto, para que cada uno encuentre la suya más rápido. Desactivalo si la hora de tu cámara no está bien configurada.</p>
       ${S.settings.bibsEnabled === false ? '' : `<label class="check"><input type="checkbox" id="st-bibs" ${bibsOn(set, ev, S.tax) ? 'checked' : ''}> <span>🔢 Leer los dorsales automáticamente al subir <span class="muted small">(+${bibFeeFor({ bibScans: 1 }, S.settings)}% de comisión en este álbum, por el uso de IA)</span></span></label>
@@ -2238,6 +2244,7 @@ function renderSetEditor(ev, set, reload) {
      </div>
     </form>`;
   if (S.settings.selfieEnabled !== false && set.selfie !== false && (set.photoCount || 0) > 0) drawSelfieStatus(ev);
+  $('#st-protect').onchange = e => { $('#st-protect-hint').textContent = levelOf({ protectLevel: e.target.value }).hint; };
   mountPhotos($('#set-photos'), { ev, set, uid: S.user.uid, profile: S.profile, settings: S.settings, bibs: bibsOn(set, ev, S.tax) })
     .catch(e => { $('#set-photos').innerHTML = `<div class="notice danger">${esc(errMsg(e))}</div>`; });
 
@@ -2304,6 +2311,7 @@ function renderSetEditor(ev, set, reload) {
         feeMode: $('input[name=st-fee]:checked').value,
         subalbums: clean,
         showHours: $('#st-hours').checked,
+        protectLevel: $('#st-protect').value,
         ...($('#st-bibs') ? { detectBibs: $('#st-bibs').checked } : {}),
         ...($('#st-selfie') ? { selfie: $('#st-selfie').checked } : {}),
         updatedAt: serverTimestamp(),
@@ -3191,6 +3199,7 @@ async function viewAdminStorage() {
       <div id="lim-plans" class="stack"></div>
       <div class="row"><button type="button" class="btn sm" id="lim-add">+ Agregar pack</button><span class="spacer" style="flex:1"></span><button class="btn primary">Guardar</button></div>
     </form>
+    <div class="card stack" id="prot-card"></div>
     <div class="card stack"><h2 style="margin:0">Borrado de originales</h2>
       <p class="muted small" style="margin:0">Los álbumes se venden ${S.settings.retentionDays} días desde la primera foto (más las extensiones pagas). Después quedan ${GRACE_DAYS} días para descargas y para extender, y se borran los originales: quedan 10 fotos de muestra con marca de agua (las más vendidas), sin venta.
         ${ret.mode === 'on' ? '<strong>Borrado activo.</strong>' : '<strong>Modo simulación:</strong> todavía no borra nada, solo informa.'}</p>
@@ -3228,6 +3237,8 @@ async function viewAdminStorage() {
     try { const r = await apiPost('/admin/backup'); toast(`Respaldo listo (${fmtBytes(r.total)})`); viewAdminStorage(); }
     catch (err) { toast(errMsg(err), 'error'); b.disabled = false; b.textContent = '💾 Respaldar ahora'; }
   };
+
+  mountProtectCard($('#prot-card'), { settings: S.settings, onSaved: async () => { S.settings = await loadSettings(true); } });
 
   // ---- límite por álbum + packs de espacio
   let sp = (S.settings.storagePlans || []).map(p => ({ ...p }));

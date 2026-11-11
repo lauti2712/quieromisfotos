@@ -30,6 +30,7 @@
 //   GET    /dl/{token}                                                        descarga del original
 //   GET    /w/{slug}  ·  {slug}.quieromisfotos.com.ar  ·  dominio propio           web personal del fotógrafo (planes Web)
 //   POST   /admin/storage/scan         Bearer (superadmin)                    recalcula el uso de R2 (también corre a diario)
+//   PUT    /admin/protect/{eid}/{uid}/{pid}/{preview|thumb}, POST …/commit  (superadmin): migración a fotos protegidas (reprotect.js)
 //   GET    /admin/costs[?fresh=1]      Bearer (superadmin)                    uso del mes y costo estimado (costs.js; aviso diario)
 //   POST   /extensions/checkout        Bearer (fotógrafo) {eventId, planId}    extensión paga del plazo -> { initPoint }
 //   POST   /extensions/{id}/sync       Bearer (fotógrafo)                     consulta el pago a MP
@@ -40,7 +41,7 @@
 //   POST   /tags                       Bearer (fotógrafo aprobado) {type, name}  alta de actividad/club/lugar sin duplicados
 //
 // Claves en R2:
-//   qmf-public:  e/{eid}/{uid}/{pid}_p.jpg  (muestra)   e/{eid}/{uid}/{pid}_t.jpg  (miniatura)
+//   qmf-public:  e/{eid}/{uid}/{pid}_p2.jpg (muestra)   e/{eid}/{uid}/{pid}_t2.jpg (miniatura), protegidas; _p/_t: las viejas
 //                u/{uid}/{kind}-{rand}.jpg  (avatar/logo/portada)
 //   qmf-private: e/{eid}/{uid}/{pid}        (original, nunca público)
 
@@ -55,7 +56,7 @@ import { checkout, webhook, syncOrder, retryCheckout, downloadLinks, download, r
 import { createTag } from './tags.js';
 import { scanBibsRequest } from './bibs.js';
 import { addFaces, myFaces, matchFaces, myFace } from './faces.js';
-import { commitPhoto, deletePhotos, orderDownloadUntil } from './photos.js';
+import { commitPhoto, deletePhotos, orderDownloadUntil, pubKeysOf, suffixOf } from './photos.js';
 import { closeAlbum, forceDeleteAlbum, removeAlbum } from './samples.js';
 import { incomeRequest } from './income.js';
 import { planPaymentsRequest } from './planpay.js';
@@ -68,6 +69,7 @@ import { teamInvite, teamJoin, teamRemove, teamEvents, teamRefresh, canUploadFor
 import { checkDomains, requestDomain, activateDomain, domainStatus, checkPendingDomains } from './domains.js';
 import { renderSite } from './site.js';
 import { scanRequest, scanStorage } from './storage.js';
+import { protectPart, protectCommit } from './reprotect.js';
 import { runBackup, backupRequest } from './backup.js';
 import { costsRequest, checkCosts } from './costs.js';
 import { mailTest, mailNews } from './mail.js';
@@ -197,6 +199,10 @@ async function route(req, env, ctx) {
   if (m === 'POST' && url.pathname === '/admin/domains/activate') return activateDomain(req, env);
   if (m === 'POST' && url.pathname === '/admin/domains/status') return domainStatus(req, env);
   if (m === 'POST' && url.pathname === '/admin/storage/scan') return scanRequest(req, env);
+  if (parts[0] === 'admin' && parts[1] === 'protect' && parts.length === 6) {
+    if (m === 'PUT') return protectPart(req, env, parts[2], parts[3], parts[4], parts[5]);
+    if (m === 'POST' && parts[5] === 'commit') return protectCommit(req, env, ctx, parts[2], parts[3], parts[4]);
+  }
   if (m === 'GET' && url.pathname === '/admin/costs') return costsRequest(req, env, ctx);
   if (m === 'GET' && url.pathname === '/admin/income') return incomeRequest(req, env);
   if (m === 'GET' && url.pathname === '/admin/plan-payments') return planPaymentsRequest(req, env);
@@ -336,7 +342,8 @@ async function uploadPhotoPart(req, env, kind, eid, pid, ctx) {
     await env.PRIVATE.put(base, req.body, { httpMetadata: { contentType: type }, customMetadata: { uid: s.uid } });
     return json({ ok: true });
   }
-  const key = `${base}_${kind === 'preview' ? 'p' : 't'}.jpg`;
+  // ?v=2: versión protegida (desenfoque real); se guarda con otro nombre (_p2/_t2).
+  const key = base + suffixOf(kind, Number(new URL(req.url).searchParams.get('v')) || 1);
   await env.PUBLIC.put(key, req.body, { httpMetadata: { contentType: 'image/jpeg', cacheControl: 'public, max-age=31536000, immutable' } });
   return json({ ok: true, key, url: `${publicBase(req, env)}/${key}` });
 }
@@ -351,7 +358,7 @@ async function deletePhoto(req, env, eid, pid) {
     throw httpError(409, 'Esta foto ya fue vendida: no se puede borrar hasta que venza la descarga del comprador. Podés ocultarla.');
   }
   const base = `e/${eid}/${s.uid}/${pid}`;
-  await Promise.all([env.PUBLIC.delete([`${base}_p.jpg`, `${base}_t.jpg`]), env.PRIVATE.delete(base)]);
+  await Promise.all([env.PUBLIC.delete(pubKeysOf(base)), env.PRIVATE.delete(base)]);
   return json({ ok: true });
 }
 

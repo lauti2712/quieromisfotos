@@ -234,7 +234,7 @@ async function fillEventCards(env, ids, docs, sets) {
     const data = {};
     if (!(ev.photographerNames || []).length && names.length) data.photographerNames = names;
     if (!ev.coverUrl && !ev.autoCoverUrl && withPhotos[0] && base) {
-      const previews = withPhotos[0].objs.filter(o => o.kind === 'pub' && o.key.endsWith('_p.jpg'));
+      const previews = withPhotos[0].objs.filter(o => o.kind === 'pub' && /_p\d?\.jpg$/.test(o.key));
       if (previews.length) data.autoCoverUrl = `${base}/${previews[Math.floor(Math.random() * previews.length)].key}`;
     }
     if (Object.keys(data).length) ops.push({ update: `events/${eid}`, data, mask: Object.keys(data) });

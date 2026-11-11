@@ -3,6 +3,22 @@
 export const $ = (sel, el = document) => el.querySelector(sel);
 export const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
 
+// Fotos protegidas: las muestras y miniaturas se guardan con un número de versión (_p.jpg → _p2.jpg → _p3.jpg…) y la
+// anterior se borra. Si una dirección guardada antes (carrito, favoritas, compras, portadas) ya no existe, se prueba
+// con la versión siguiente.
+if (typeof document !== 'undefined') {
+  document.addEventListener('error', e => {
+    const img = e.target;
+    if (img?.tagName !== 'IMG') return;
+    const m = /_(p|t)(\d?)\.jpg(?=$|\?)/.exec(img.src || '');
+    if (!m) return;
+    const next = (Number(m[2]) || 1) + 1;
+    if (next > 9 || Number(img.dataset.pvTries || 0) >= 8) return;
+    img.dataset.pvTries = String(Number(img.dataset.pvTries || 0) + 1);
+    img.src = img.src.replace(/_(p|t)(\d?)\.jpg(?=$|\?)/, `_${m[1]}${next}.jpg`);
+  }, true);
+}
+
 export function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }

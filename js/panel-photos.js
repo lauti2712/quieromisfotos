@@ -6,6 +6,7 @@ import { $, $$, esc, toast, errMsg, fmtBytes, setBytes, fmtMoney } from './util.
 import { createUploader, fileKey, interruptedUpload, clearInterrupted } from './uploader.js';
 import { uploadSession, postWithToken, loadLogoBitmap } from './api.js';
 import { DEFAULT_WATERMARK, wantsLogo } from './watermark.js';
+import { protectOf } from './protect.js';
 import { albumPhotoLimit } from './data.js';
 
 const PAGE = 120;
@@ -279,7 +280,7 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
   }
   let up;
   if (activeUploader?.busy() && activeUploader.eventId === ev.id && (activeUploader.team || '') === team) { up = activeUploader; up.setHandlers(handlers); }
-  else up = activeUploader = createUploader({ eventId: ev.id, uid, team, wm, logo, optimize: settings.optimizeOriginals !== false, bibs: bibs && settings.bibsEnabled !== false, faces: settings.selfieEnabled !== false && set.selfie !== false, ...handlers });
+  else up = activeUploader = createUploader({ eventId: ev.id, uid, team, wm, logo, optimize: settings.optimizeOriginals !== false, bibs: bibs && settings.bibsEnabled !== false, faces: settings.selfieEnabled !== false && set.selfie !== false, protect: protectOf(settings, set.protectLevel), ...handlers });
   let drawT;
   const scheduleDraw = () => { clearTimeout(drawT); drawT = setTimeout(() => document.body.contains(box) && draw(), 400); };
 
