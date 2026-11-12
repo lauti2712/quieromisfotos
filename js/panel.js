@@ -2240,11 +2240,14 @@ function renderSetEditor(ev, set, reload) {
       <p class="muted small" style="margin:0">🔗 Link directo para cada corredor (cambiá el número al final): <code style="word-break:break-all">${esc(`${location.origin}/e/${ev.id}/?s=1&dorsal=123`)}</code></p>`}
       ${S.settings.selfieEnabled === false ? '' : `<label class="check"><input type="checkbox" id="st-selfie" ${set.selfie !== false ? 'checked' : ''}> 🤳 Búsqueda por selfie</label>
       <p class="muted small" style="margin:0">Cada uno se saca una selfie y ve las fotos donde aparece. Las caras se procesan en tu dispositivo al subir y solo se guarda una huella numérica (nunca imágenes de caras).</p>
+      <label class="check" id="st-facetap-l" ${set.selfie === false ? 'hidden' : ''}><input type="checkbox" id="st-facetap" ${set.faceTap !== false ? 'checked' : ''}> 👆 Tocar una cara para ver todas las fotos de esa persona</label>
+      <p class="muted small" id="st-facetap-h" style="margin:0" ${set.selfie === false ? 'hidden' : ''}>En la foto ampliada, el comprador toca la cara de alguien y ve las fotos de este evento donde aparece. <strong>Apagalo en eventos con chicos</strong> (escolares, infantiles), así nadie puede buscar a otra persona.</p>
       <div id="st-selfie-status"></div>`}
       <div class="row end"><button class="btn primary" type="submit">Guardar</button></div>
      </div>
     </form>`;
-  if (S.settings.selfieEnabled !== false && set.selfie !== false && (set.photoCount || 0) > 0) drawSelfieStatus(ev);
+  if (S.settings.selfieEnabled !== false && set.selfie !== false && (set.photoCount || 0) > 0) drawSelfieStatus(ev, set);
+  $('#st-selfie')?.addEventListener('change', e => { $('#st-facetap-l').hidden = $('#st-facetap-h').hidden = !e.target.checked; });
   $('#st-protect').onchange = e => { $('#st-protect-hint').textContent = levelOf({ protectLevel: e.target.value }).hint; };
   mountLevelExamples($('#st-protect-ex'), { settings: S.settings, profile: S.profile, select: $('#st-protect') });
   mountPhotos($('#set-photos'), { ev, set, uid: S.user.uid, profile: S.profile, settings: S.settings, bibs: bibsOn(set, ev, S.tax) })
@@ -2316,6 +2319,7 @@ function renderSetEditor(ev, set, reload) {
         protectLevel: $('#st-protect').value,
         ...($('#st-bibs') ? { detectBibs: $('#st-bibs').checked } : {}),
         ...($('#st-selfie') ? { selfie: $('#st-selfie').checked } : {}),
+        ...($('#st-facetap') ? { faceTap: $('#st-facetap').checked } : {}),
         updatedAt: serverTimestamp(),
       });
       // Precio, packs y comisión pasan a ser los predeterminados de sus próximos álbumes (los puede cambiar en cada uno).
@@ -2331,13 +2335,14 @@ function renderSetEditor(ev, set, reload) {
 
 // Búsqueda por selfie: cuántas fotos ya tienen las caras procesadas y botón para preparar las que faltan
 // (fotos subidas antes de activarla o si se cerró la página antes de terminar). Usa las muestras (ya subidas).
-async function drawSelfieStatus(ev) {
+async function drawSelfieStatus(ev, set = {}) {
   const box = $('#st-selfie-status');
   if (!box) return;
   try {
     const s = await uploadSession(ev.id);
     const r = await fetch(`${API_BASE}/faces/${ev.id}/mine`, { headers: { 'X-Upload-Token': s.token } }).then(x => x.json());
-    const done = new Set(r.ids || []);
+    // Con "tocar una cara" activado, también se preparan las que tienen huella pero no el lugar de cada cara (subidas antes).
+    const done = new Set(set.faceTap === false ? r.ids || [] : r.boxed || []);
     const snap = await getDocs(query(collection(db, 'photos'), where('eventId', '==', ev.id), where('photographerUid', '==', S.user.uid), where('hidden', '==', false), limit(5000)));
     const todo = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => !done.has(p.id) && (!p.uploadedBy || p.uploadedBy === S.user.uid));
     if (!todo.length) { box.innerHTML = `<p class="small" style="margin:0">✅ Las ${done.size} fotos ya están listas para la búsqueda por selfie.</p>`; return; }
@@ -2356,13 +2361,13 @@ async function drawSelfieStatus(ev) {
             const img = new Image(); img.crossOrigin = 'anonymous';
             img.src = `${API_BASE}/public/${new URL(p.previewUrl).pathname.replace(/^\//, '')}`;
             await img.decode();
-            batch.push({ p: p.id, f: await photoFaces(img) });
+            batch.push({ p: p.id, ...(await photoFaces(img)) });
           } catch (err) { console.warn('caras', err); }
           if (batch.length >= 20) await flush();
         }
         await flush();
         toast('Listo: ya se pueden buscar con una selfie');
-        drawSelfieStatus(ev);
+        drawSelfieStatus(ev, set);
       } catch (err) { e.target.disabled = false; toast(errMsg(err), 'error'); }
     };
   } catch (err) { box.innerHTML = ''; console.warn('selfie', err); }

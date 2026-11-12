@@ -3,6 +3,7 @@
 // onProtect: al intentar guardar la foto (clic derecho o mantenerla apretada) en vez del menú del navegador.
 // thumb: miniatura que se muestra al instante mientras baja la foto grande.
 // El botón "atrás" del celular cierra el visor (no se va del evento).
+// layer(i, el, redraw): capa del tamaño de la foto, encima de todo (ej. las caras que se pueden tocar). Se redibuja con el pie.
 // reveal: fotos protegidas. Arriba va la miniatura (muy desenfocada) y abajo la foto ampliada (algo más clara).
 //   Lupa: en la compu, donde está el mouse se abre un círculo que deja ver la ampliada; en el celular, tocando la foto
 //   aparece el círculo ahí (se arrastra con el dedo; tocándolo de nuevo se cierra). Sin zoom, y en el celular la foto
@@ -19,14 +20,14 @@ function hintOnce() {
   return true;
 }
 
-export function openViewer({ index, src, thumb, count, total = count, footer, onIndex, onProtect, reveal = false, size }) {
+export function openViewer({ index, src, thumb, count, total = count, footer, onIndex, onProtect, reveal = false, size, layer }) {
   let i = index;
   const lb = document.createElement('div');
   lb.className = onProtect ? 'lightbox lb-protect' : 'lightbox'; // lb-protect: fotos en venta (sitio público)
   lb.setAttribute('role', 'dialog');
   lb.innerHTML = `
     <div class="lb-top"><span class="small" id="lb-count"></span>${reveal ? '<span class="lb-tip small" id="lb-tip"></span>' : ''}<span class="spacer"></span><button class="btn sm" id="lb-close" aria-label="Cerrar">✕</button></div>
-    <div class="lb-stage"><button class="lb-nav lb-prev" aria-label="Anterior">‹</button><img id="lb-img" alt="">${reveal ? '<img class="lb-veil" id="lb-veil" alt="" aria-hidden="true">' : ''}<button class="lb-nav lb-next" aria-label="Siguiente">›</button></div>
+    <div class="lb-stage"><button class="lb-nav lb-prev" aria-label="Anterior">‹</button><img id="lb-img" alt="">${reveal ? '<img class="lb-veil" id="lb-veil" alt="" aria-hidden="true">' : ''}${layer ? '<div class="lb-layer" id="lb-layer"></div>' : ''}<button class="lb-nav lb-next" aria-label="Siguiente">›</button></div>
     ${hintOnce() ? `<div class="lb-hint">${reveal ? 'Deslizá para ver otra' : 'Deslizá para ver otra · doble toque para zoom'}</div>` : ''}
     <div class="lb-bottom" id="lb-bottom"></div>`;
   document.body.appendChild(lb);
@@ -103,6 +104,13 @@ export function openViewer({ index, src, thumb, count, total = count, footer, on
     img.style.width = veil.style.width = `${w}px`;
     img.style.height = veil.style.height = `${h}px`;
     veil.style.left = `${img.offsetLeft}px`; veil.style.top = `${img.offsetTop}px`;
+    placeLayer();
+  };
+  // La capa (caras) se ubica justo encima de la foto.
+  const placeLayer = () => {
+    const ly = $('#lb-layer', lb);
+    if (!ly) return;
+    Object.assign(ly.style, { left: `${img.offsetLeft}px`, top: `${img.offsetTop}px`, width: `${img.offsetWidth}px`, height: `${img.offsetHeight}px` });
   };
 
   // Redibuja solo la barra de abajo (favorita, carrito) sin volver a cargar la foto.
@@ -110,6 +118,8 @@ export function openViewer({ index, src, thumb, count, total = count, footer, on
     const bottom = $('#lb-bottom', lb);
     bottom.innerHTML = '';
     footer?.(i, bottom, drawFooter);
+    const ly = $('#lb-layer', lb);
+    if (ly) { ly.innerHTML = ''; layer(i, ly, drawFooter); placeLayer(); }
   };
   const show = () => {
     resetZoom();

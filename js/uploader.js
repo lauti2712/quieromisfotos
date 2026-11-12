@@ -165,7 +165,7 @@ export function createUploader({ eventId, uid, team = '', wm, logo = null, optim
         const job = faceJobs.shift();
         try {
           const bmp = await createImageBitmap(job.blob);
-          faceBatch.push({ p: job.pid, f: await photoFaces(bmp) });
+          faceBatch.push({ p: job.pid, ...(await photoFaces(bmp)) });
           bmp.close?.();
         } catch (e) { console.warn('caras', e); }
         if (faceBatch.length >= 20 || !faceJobs.length) await flushFaces();
