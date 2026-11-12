@@ -253,15 +253,26 @@ function draw(app, o) {
       steps.innerHTML = groups.map((g, k) => `<button class="btn" data-group="${k}" disabled>Preparando fotos ${k * SHARE_GROUP + 1} a ${k * SHARE_GROUP + g.length}…</button>`).join('');
       btn.textContent = 'Tocá cada botón para guardarlas 👇';
       for (const [k, g] of groups.entries()) {
-        const files = [];
-        for (const [j, link] of g.entries()) {
-          const res = await fetch(link.url);
-          if (!res.ok) throw new Error('No se pudo bajar una foto. Probá de nuevo.');
-          const blob = await res.blob();
-          const ext = blob.type.includes('png') ? 'png' : blob.type.includes('webp') ? 'webp' : 'jpg';
-          files.push(new File([blob], `quieromisfotos-${o.id.slice(0, 6)}-${String(k * SHARE_GROUP + j + 1).padStart(3, '0')}.${ext}`, { type: blob.type || 'image/jpeg' }));
-        }
         const b = $(`[data-group="${k}"]`, steps);
+        const files = new Array(g.length);
+        let done = 0;
+        const label = () => { b.textContent = `Preparando fotos ${k * SHARE_GROUP + 1} a ${k * SHARE_GROUP + g.length}… (${done} de ${g.length})`; };
+        label();
+        // De a 3 a la vez (más rápido que una por una) y con tope de tiempo por foto: si la conexión se cuelga, avisa.
+        const one = async j => {
+          const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 90_000);
+          try {
+            const res = await fetch(g[j].url, { signal: ctl.signal });
+            if (!res.ok) throw new Error('No se pudo bajar una foto. Probá de nuevo.');
+            const blob = await res.blob();
+            const ext = blob.type.includes('png') ? 'png' : blob.type.includes('webp') ? 'webp' : 'jpg';
+            files[j] = new File([blob], `quieromisfotos-${o.id.slice(0, 6)}-${String(k * SHARE_GROUP + j + 1).padStart(3, '0')}.${ext}`, { type: blob.type || 'image/jpeg' });
+            done++; label();
+          } catch (e) { throw e.name === 'AbortError' ? new Error('La conexión está muy lenta. Probá con wifi o usá Descargar.') : e; }
+          finally { clearTimeout(t); }
+        };
+        let next = 0;
+        await Promise.all([0, 1, 2].map(async () => { while (next < g.length) await one(next++); }));
         b.disabled = false; b.classList.add('primary');
         b.textContent = `📲 Guardar fotos ${k * SHARE_GROUP + 1} a ${k * SHARE_GROUP + g.length}`;
         b.onclick = async () => {
