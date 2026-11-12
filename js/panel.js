@@ -630,14 +630,13 @@ function drawTabbar(key) {
 }
 
 // Novedades para los fotógrafos en Inicio, hasta que la cierra (por dispositivo) o vence.
-const NEWS = { id: '2026-11-tasa-marca-cierre', until: '2026-12-15', items: [
-  ['🛒', 'Te compran sin crear cuenta', 'Pagan con Mercado Pago y descargan al instante. Menos trabas, más ventas.'],
+const NEWS = { id: '2026-11-caras-marca-tasa', until: '2026-12-31', items: [
+  ['👆', 'Tocá una cara y aparecen todas sus fotos', 'En la foto ampliada, el comprador toca la cara de alguien y ve todas las fotos del evento donde aparece. Se apaga por álbum, en la configuración del álbum (apagalo en eventos con chicos). Para álbumes viejos, tocá <strong>Prepararlas ahora</strong>.'],
+  ['🛡️', 'Marca de agua más fuerte y a tu gusto', 'Tu nombre o tu logo en 3 a 5 sellos, una malla fina y un sello sobre la persona que complican borrarla con IA, y un código por foto. Elegí logo e intensidad en <strong>⚙️ Precios y marca</strong> y el nivel de protección en cada álbum.'],
   ['💸', 'Vos elegís quién paga la tasa de servicio', 'La pagás vos, mitad y mitad, o el comprador. Lo elegís en <strong>Precios</strong> de cada álbum.'],
-  ['🛡️', 'Marca de agua nueva', 'Con tu nombre o logo y un código por foto. Si alguien intenta guardar una foto, le aparece un aviso para comprarla.'],
-  ['📦', 'Cerrá un álbum cuando termines de vender', 'Liberás el lugar para otro y queda en tu historial con 10 fotos de muestra. Arriba de cada álbum: extender plazo o cerrar.'],
-  ['📅', 'Programá cuándo se publica', 'Al crear un álbum elegí: ahora, al terminar de subir las fotos, en una fecha y hora, o borrador.'],
-  ['👁️', 'Visitas de cada álbum', 'Mirá cuánta gente entró a cada álbum, en <strong>Mis álbumes</strong> y en cada álbum.'],
-  ['🔢', 'Dorsales', 'La lectura de dorsales con IA suma 1% de comisión en los álbumes donde la uses.'],
+  ['📅', 'Programá cuándo se publica', 'Ahora, al terminar de subir las fotos, en una fecha y hora, o borrador. Arriba de cada álbum tenés <strong>🚀 Publicar ahora</strong> y <strong>📅 Programar</strong>.'],
+  ['📦', 'Cerrá un álbum cuando termines de vender', 'Liberás el lugar para otro y queda en tu historial con 10 fotos de muestra.'],
+  ['👁️', 'Visitas de cada álbum', 'Mirá cuánta gente entró a cada álbum, al lado del nombre y en <strong>Mis álbumes</strong>.'],
 ] };
 function newsCardHtml() {
   let seen = false;
@@ -3538,7 +3537,7 @@ async function viewAdminConfig() {
       <button class="btn" id="a-weekly">Enviármelo ahora</button>
     </div>
     <div class="card row" style="justify-content:space-between">
-      <div><strong>📣 Novedades a los fotógrafos</strong><br><span class="muted small">Video para historias, portada, búsqueda por selfie y precio especial. Primero mandátelo de prueba; el envío a todos se hace una sola vez.</span></div>
+      <div><strong>📣 Novedades a los fotógrafos</strong><br><span class="muted small">Tocar una cara, marca de agua nueva, tasa de servicio, publicación programada, cierre de álbum y visitas. Primero mandátelo de prueba; el envío a todos se hace una sola vez.</span></div>
       <button class="btn" id="a-news-test">Enviarme la prueba</button>
       <button class="btn primary" id="a-news">Enviar a todos</button>
     </div>
