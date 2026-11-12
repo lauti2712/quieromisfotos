@@ -86,7 +86,7 @@ export async function drainPushQueue(env) {
     const emails = await authEmails(env, noPush).catch(() => ({}));
     await sendMany(env, Object.values(emails).map(to => ({
       to, subject: job.title.replace(/^📸\s*/, '📸 '),
-      html: mailLayout({ title: job.title.replace(/^📸\s*/, ''), intro: esc(job.body), cta: { label: '📸 Ver las fotos', url: job.link },
+      html: mailLayout({ title: job.title.replace(/^📸\s*/, ''), intro: esc(job.body), cta: { label: job.cta || '📸 Ver las fotos', url: job.link },
         foot: job.foot || 'Te llega este mail porque tocaste 🔔 Avisarme en Quiero Mis Fotos. Para no recibir más avisos, tocá de nuevo 🔔 en el evento o en el perfil del fotógrafo.' }),
     }))).catch(e => console.error('mail seguidores', e));
   }

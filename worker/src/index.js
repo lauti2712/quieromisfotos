@@ -56,6 +56,7 @@ import { connectUrl, callback, disconnect, mpAccount } from './mp.js';
 import { checkout, webhook, syncOrder, retryCheckout, downloadLinks, download, reviewOriginal, guestOrder, orderLink } from './orders.js';
 import { createTag } from './tags.js';
 import { scanBibsRequest } from './bibs.js';
+import { dailySummary } from './daily.js';
 import { addFaces, myFaces, matchFaces, myFace, faceBoxes, tapFace } from './faces.js';
 import { commitPhoto, deletePhotos, orderDownloadUntil, pubKeysOf, suffixOf } from './photos.js';
 import { closeAlbum, forceDeleteAlbum, removeAlbum } from './samples.js';
@@ -85,6 +86,7 @@ const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
 const SESSION_TTL = 2 * 3600;
 const BACKUP_CRON = '0 7 * * 1'; // lunes 04:00 (Argentina)
 const PUSH_CRON = '*/5 * * * *'; // cola de avisos a seguidores
+const DAILY_CRON = '0 2 * * *'; // 23:00 (Argentina): resumen del día al superadmin
 const NOTIFY_AT_PHOTOS = 20; // aviso a seguidores cuando el álbum llega a esta cantidad de fotos
 
 export default {
@@ -112,6 +114,7 @@ export default {
   // Crons: diario (uso de R2, retención, limpieza), semanal (respaldo) y cada 5 minutos (avisos, suscripciones y, los lunes a las 6, el resumen semanal).
   async scheduled(event, env, ctx) {
     if (event.cron === BACKUP_CRON) { ctx.waitUntil(runBackup(env)); return; }
+    if (event.cron === DAILY_CRON) { ctx.waitUntil(dailySummary(env).catch(e => console.error('resumen diario', e))); return; }
     // Cada 5 minutos: avisos a seguidores y suscripciones (de a pocas). Una tarea por vez para no pasar el límite de pedidos.
     if (event.cron === PUSH_CRON) {
       // Lunes 06:00 (Argentina): resumen semanal. Ese tic no manda avisos (quedan para el siguiente) para no pasar el límite de pedidos.
