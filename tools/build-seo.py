@@ -349,9 +349,11 @@ FAQ = [
     ('¿Cómo cobro las fotos que vendo?', 'Cada venta se paga con Mercado Pago y la plata entra directo a tu cuenta. Vos elegís en Mercado Pago el plazo de acreditación: al instante o a más días, con menos comisión.'),
     *([('¿Puedo cobrar por transferencia?', f'Sí, en {", ".join(n for i, n in PLAN_IDS if i in (st.get("transfer") or {}).get("plans", []))}. Tus clientes te transfieren a tu alias de Mercado Pago y la venta se acredita sola: no pagás la comisión de Mercado Pago. La comisión de Quiero Mis Fotos se acumula y la pagás aparte por transferencia.')]
       if (st.get('transfer') or {}).get('plans') else []),
+    ('¿Quién paga la tasa de servicio?', 'Lo elegís vos en cada álbum: la absorbés toda, se reparte mitad y mitad con el comprador, o la paga toda el comprador. La tasa incluye la comisión de Quiero Mis Fotos y la de Mercado Pago.'),
+    ('¿Me pueden robar las fotos?', 'Las muestras van con tu marca de agua en varios puntos, una malla fina y un código por foto, y se muestran chicas (800 px). Si alguien intenta guardarlas, le aparece un aviso de derechos con el botón para comprarla. Nadie puede bajar el original sin pagar.'),
     ('¿Qué deportes y eventos puedo subir?', 'Fútbol, rugby, hockey, básquet, vóley, running, maratones, ciclismo, triatlón, eventos escolares y cualquier evento deportivo o social donde la gente quiera sus fotos.'),
     ('¿Tengo que poner la marca de agua a mano?', 'No. Subís las fotos y la plataforma les pone tu marca de agua, arma la galería y guarda los originales. El comprador descarga la foto en alta calidad y sin marca después de pagar.'),
-    ('¿Cómo encuentran sus fotos los deportistas?', 'Por evento, por horario y, en carreras, por número de dorsal: la plataforma lee los dorsales de las fotos. Vos compartís un link por evento en WhatsApp o Instagram.'),
+    ('¿Cómo encuentran sus fotos los deportistas?', 'Por evento, por horario y, en carreras, por número de dorsal: la plataforma lee los dorsales de las fotos (suma un 1% de comisión solo en los álbumes donde la usás). Vos compartís un link por evento en WhatsApp o Instagram.'),
     ('¿Puedo subir desde el celular?', 'Sí. Subís cientos de fotos desde la compu o el celular, y si se corta la conexión la subida sigue sola.'),
     ('¿Puedo poner mis propios precios?', 'Sí. Precio por foto, packs (por ejemplo 5 fotos a un precio menor) y precios distintos por álbum o por foto.'),
 ]
@@ -359,11 +361,14 @@ STEPS = [('📸', 'Subís las fotos', 'Desde la compu o el celular, de a cientos
          ('🪄', 'Nosotros las preparamos', 'Marca de agua automática, galería lista para compartir y originales guardados seguros.'),
          ('🔗', 'Compartís el link', 'Un link por evento para el grupo del club, Instagram o WhatsApp, con la portada del evento.'),
          ('💰', 'Cobrás directo', 'Cada venta entra a tu Mercado Pago y el comprador descarga sus fotos en alta calidad al instante.')]
-plan_cards = ''.join(f'''<div class="lp-plan{' hot' if pid == 'web' else ''}"><h3>{e(name)}</h3>
-  <div class="lp-price">{money(plans[pid]['price']) + '<small>/mes</small>' if plans[pid]['price'] else '$0'}</div>
-  {f'<p class="muted small">o {money(plans[pid]["year"])}/año</p>' if plans[pid].get('year') else ''}
-  <ul>{''.join(f'<li class="plan-hl">🏦 <strong>{e(t)}</strong></li>' if t.startswith('Cobrá por transferencia') else f'<li>{e(t)}</li>' for t in plans[pid]['items'])}</ul>
-  <a class="btn{' primary' if pid == 'web' else ''}" href="/panel.html?plan={pid}">{'Empezar gratis' if pid == 'free' else 'Quiero este plan'}</a></div>''' for pid, name in PLAN_IDS)
+# Comparativa de planes: la misma tabla que el panel y el sitio (js/plans-compare.js), con los valores de Plataforma.
+cmp_js = ("import { plansCompareHtml, periodToggleHtml } from './js/plans-compare.js';"
+          "const st = JSON.parse(process.argv[1]);"
+          "process.stdout.write(periodToggleHtml() + plansCompareHtml(st, { cta: id => `<a class=\"btn sm ${id === 'web' ? 'primary' : ''}\" href=\"/panel.html?plan=${id}\">${id === 'free' ? 'Empezar gratis' : 'Quiero este plan'}</a>` }));")
+plans_cmp = subprocess.check_output(['node', '--input-type=module', '-e', cmp_js, json.dumps(st, default=str)], cwd=ROOT).decode()
+period_js = ('<script>document.querySelectorAll("[data-period]").forEach(function(b){b.onclick=function(){'
+             'document.querySelectorAll("[data-period]").forEach(function(x){x.classList.toggle("on",x===b)});'
+             'document.querySelector(".plans-wrap").dataset.period=b.dataset.period}})</script>')
 soy_body = f'''<div class="lp">
 <section class="lp-hero"><div class="lp-hero-txt">
   <h1>Vendé tus fotos de eventos deportivos online</h1>
@@ -374,15 +379,19 @@ soy_body = f'''<div class="lp">
 <section class="lp-sec"><h2>Cómo funciona</h2><div class="lp-steps">{''.join(f'<div class="lp-step"><span class="lp-n">{i + 1}</span><span class="lp-ic">{ic}</span><h3>{e(t)}</h3><p>{e(d)}</p></div>' for i, (ic, t, d) in enumerate(STEPS))}</div></section>
 <section class="lp-sec"><h2>Todo lo que necesitás para vender tus fotos</h2><ul>
   <li><strong>Tus precios:</strong> por foto, packs y precios especiales; al comprador se le aplica solo la combinación más barata.</li>
-  <li><strong>Búsqueda por dorsal</strong> en carreras y filtro por horario: el deportista encuentra su foto rápido y compra más.</li>
-  <li><strong>Aviso de cada venta</strong> en tu celular y estadísticas de visitas y ventas por evento.</li>
+  <li><strong>Tasa de servicio a tu elección:</strong> la absorbés vos, mitad y mitad, o la paga toda el comprador.</li>
+  <li><strong>Tus fotos protegidas:</strong> marca de agua con tu nombre en varios puntos, malla fina que complica borrarla con IA, código en cada foto y muestras livianas. Si alguien intenta guardarla, le ofrecemos comprarla.</li>
+  <li><strong>Búsqueda por dorsal</strong> en carreras (suma un 1% solo en los álbumes donde la usás) y filtro por horario: el deportista encuentra su foto rápido y compra más.</li>
+  <li><strong>Publicás cuando quieras:</strong> al instante, al terminar la subida, en un día y hora programados o como borrador.</li>
+  <li><strong>Aviso de cada venta</strong> en tu celular y estadísticas de visitas y ventas por álbum.</li>
+  <li><strong>Historial de álbumes:</strong> cuando un álbum termina, queda guardado con 10 fotos de muestra y libera el lugar.</li>
   <li><strong>Seguidores:</strong> la gente te sigue y le avisamos cuando subís fotos nuevas.</li>
   <li><strong>Perfil y portfolio</strong> con botón de WhatsApp para que te pidan presupuesto.</li>
   <li><strong>Tu propia web</strong> (tunombre.quieromisfotos.com.ar) o tu dominio .com.ar, con los planes Profesional.</li>
   <li><strong>Plan Empresas</strong> para productoras y equipos de fotógrafos: cada uno sube a tus álbumes y vos cobrás todo.</li>
 </ul></section>
-<section class="lp-sec" id="planes"><h2>Planes para fotógrafos</h2>{promo_html}<div class="lp-plans four">{plan_cards}</div>
-  <p class="muted small">A la comisión de cada plan se suma la de Mercado Pago, que depende del plazo de cobro que elijas. Los planes pagos se cobran por Mercado Pago y los cancelás cuando quieras.</p></section>
+<section class="lp-sec" id="planes"><h2>Planes para fotógrafos</h2>{promo_html}{plans_cmp}{period_js}
+  <p class="muted small">* A la comisión de cada plan se suma la de Mercado Pago, que depende del plazo de cobro que elijas. En todos los planes elegís quién paga la tasa de servicio: la absorbés vos, mitad y mitad, o la paga toda el comprador. Los planes pagos se cobran por Mercado Pago y los cancelás cuando quieras.</p></section>
 <section class="lp-sec lp-faq"><h2>Preguntas frecuentes</h2>{''.join(f'<details><summary>{e(q)}</summary><p>{e(a)}</p></details>' for q, a in FAQ)}</section>
 <section class="lp-final"><h2>¿Arrancamos?</h2><p>Creá tu cuenta en un minuto, subí tu primer evento y compartí el link hoy mismo.</p>
   <a class="btn primary" href="/panel.html?plan=free">Crear mi cuenta gratis</a></section>

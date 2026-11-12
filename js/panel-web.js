@@ -5,6 +5,7 @@ import { apiPost, apiGet } from './api.js';
 import { auth } from './fb.js';
 import { PLANS, planOf, hasWeb, siteUrlOf, planSpec, planFeatures, TRANSFER_FEATURE } from './data.js';
 import { shareLink } from './share.js';
+import { plansCompareHtml as plansCompare, periodToggleHtml } from './plans-compare.js';
 
 const TEMPLATES = [
   { id: 'clasica', name: 'Clásica', desc: 'Foto grande de portada, fondo claro.', bg: '#ffffff', fg: '#14161b' },
@@ -18,57 +19,11 @@ const planInfo = st => {
   return ['free', 'lite', 'web', 'webdomain', 'empresa'].map(id => ({ id, items: planFeatures(id, st) }));
 };
 
-// Filas de la comparativa: [característica, valor por plan]. true = ✓, false/'' = no incluido, texto = valor.
-function planRows(st) {
-  const ids = ['free', 'lite', 'web', 'webdomain', 'empresa'];
-  const sp = Object.fromEntries(ids.map(id => [id, planSpec(id, st)]));
-  const pct = n => `${String(n).replace('.', ',')}%`;
-  const now = new Date().toISOString().slice(0, 10);
-  const fee = id => { const p = sp[id]; return p.promoUntil && p.promoUntil >= now ? `${pct(p.fee)} <span class="muted small">(${pct(p.baseFee)} desde el ${p.promoUntil.slice(8, 10)}/${p.promoUntil.slice(5, 7)})</span>` : pct(p.fee); };
-  const v = f => Object.fromEntries(ids.map(id => [id, f(id, sp[id])]));
-  const paid = id => id !== 'free';
-  const webs = id => ['web', 'webdomain', 'empresa'].includes(id);
-  const top = id => ['webdomain', 'empresa'].includes(id);
-  return [
-    ['Comisión por venta*', v(id => fee(id))],
-    ['Álbumes', v(id => (paid(id) ? 'Ilimitados' : '1 a la vez'))],
-    ['Fotos por álbum', v((id, p) => `${Number(p.albumPhotos).toLocaleString('es-AR')}${paid(id) ? ' <span class="muted small">(ampliable)</span>' : ''}`)],
-    ['Días de venta por álbum', v((id, p) => `${p.days} días`)],
-    ['Cobro por transferencia (sin comisión de MP)', v(id => (st?.transfer?.plans || []).includes(id))],
-    ['Fotos en tu portfolio', v((id, p) => String(p.portfolio))],
-    ['Foto de portada en tu perfil', v(id => paid(id))],
-    ['Estadísticas', v(id => ({ free: 'Básicas', lite: 'Por evento', web: 'Completas' }[id] || 'Avanzadas'))],
-    ['Tu web (tunombre.quieromisfotos.com.ar)', v(id => webs(id))],
-    ['Fotos de tu web sin marca de agua', v(id => webs(id))],
-    ['Links cortos para tus álbumes', v(id => webs(id))],
-    ['Tu dominio .com.ar incluido', v(id => top(id))],
-    ['Destacado en el directorio', v((id, p) => !!p.featured)],
-    ['Atención prioritaria', v(id => top(id))],
-    ['Equipo de fotógrafos (cada uno con su cuenta)', v((id, p) => (id === 'empresa' ? `${p.team} fotógrafos` : false))],
-  ];
-}
-const cell = x => (x === true ? '<span class="pc-yes" aria-label="Incluido">✓</span>' : x ? x : '<span class="pc-no" aria-label="No incluido">—</span>');
-
-function plansCompareHtml(st, current) {
-  const ids = ['free', 'lite', 'web', 'webdomain', 'empresa'];
-  const rows = planRows(st);
-  const head = id => {
-    const p = planSpec(id, st);
-    const first = PLANS[id]?.domain && p.first > p.price ? p.first : 0;
-    return `<div class="pc-name">${esc(PLANS[id].label)}${id === 'web' ? ' <span class="pill accent pc-rec">Recomendado</span>' : ''}</div>
-      <div class="pc-price">${id === 'free' ? '<span>Gratis</span>' : `<span class="pc-m">${fmtMoney(p.price)}<small>/mes</small></span><span class="pc-y">${p.year ? `${fmtMoney(p.year)}<small>/año</small>` : `${fmtMoney(p.price)}<small>/mes</small>`}</span>`}</div>
-      ${first ? `<div class="muted small">Primer mes ${fmtMoney(first)} (incluye el dominio)</div>` : ''}
-      <div class="pc-cta">${id === current ? '<span class="pill ok">Tu plan</span>' : id === 'free' ? '' : `<button class="btn sm ${id === 'web' ? 'primary' : ''}" data-sub="${id}">${current === 'free' ? 'Suscribirme' : 'Cambiar a este plan'}</button>`}</div>`;
-  };
-  return `<div class="plans-wrap" data-period="month">
-    <div class="table-wrap pc-table-wrap"><table class="plan-compare">
-      <thead><tr><th></th>${ids.map(id => `<th class="${id === current ? 'pc-cur' : ''} ${id === 'web' ? 'pc-hl' : ''}">${head(id)}</th>`).join('')}</tr></thead>
-      <tbody>${rows.map(([label, vals]) => `<tr><th scope="row">${label}</th>${ids.map(id => `<td class="${id === current ? 'pc-cur' : ''} ${id === 'web' ? 'pc-hl' : ''}">${cell(vals[id])}</td>`).join('')}</tr>`).join('')}</tbody>
-    </table></div>
-    <div class="pc-cards">${ids.map(id => `<div class="pc-card ${id === current ? 'pc-cur' : ''} ${id === 'web' ? 'pc-hl' : ''}">${head(id)}
-      <ul>${rows.filter(([, vals]) => vals[id]).map(([label, vals]) => `<li>${vals[id] === true ? `✓ ${label}` : `<span class="muted small">${label.replace('*', '')}:</span> ${vals[id]}`}</li>`).join('')}</ul></div>`).join('')}</div>
-  </div>`;
-}
+// Comparativa compartida con /soy-fotografo (js/plans-compare.js); acá el botón suscribe o cambia de plan.
+const plansCompareHtml = (st, current) => plansCompare(st, {
+  current,
+  cta: id => (id === current ? '<span class="pill ok">Tu plan</span>' : id === 'free' ? '' : `<button class="btn sm ${id === 'web' ? 'primary' : ''}" data-sub="${id}">${current === 'free' ? 'Suscribirme' : 'Cambiar a este plan'}</button>`),
+});
 
 export async function viewWeb(view, { uid, profile, settings }) {
   // Viene de elegir un plan en "Soy fotógrafo": se abre directo la suscripción.
@@ -113,10 +68,7 @@ export async function viewWeb(view, { uid, profile, settings }) {
   view.innerHTML = `
     <h1>Planes y mi web</h1>
     <p class="muted">Con el plan Profesional vendés sin límite de álbumes, pagás menos comisión y tenés tu propia web con tus fotos, servicios y contacto.</p>
-    <div class="plan-period" role="group" aria-label="Forma de pago">
-      <button type="button" class="chip on" data-period="month">Mensual</button>
-      <button type="button" class="chip" data-period="year">Anual <span class="muted small">· 2 meses gratis</span></button>
-    </div>
+    ${periodToggleHtml()}
     ${plansCompareHtml(settings, plan)}
     <p class="muted small" style="margin:6px 0 0">* A la comisión de la plataforma se suma la de Mercado Pago, que depende del plazo de cobro que elijas en tu cuenta de MP. Los planes se debitan con Mercado Pago y los cancelás cuando quieras.</p>
     ${plan !== 'free' ? `<p class="muted small">${profile.courtesy ? '🎁 Tenés este plan de cortesía, sin costo y sin vencimiento' : `${profile.trial ? '🎁 Estás usando la prueba gratis, hasta' : 'Tu plan está activo hasta'} el ${esc(fmtTs(profile.proUntil))}`}${subActive ? ` y se renueva solo ${sub.period === 'year' ? 'cada año' : 'cada mes'} con Mercado Pago` : profile.trial ? '. Suscribite antes para no perder tu web' : ''}.

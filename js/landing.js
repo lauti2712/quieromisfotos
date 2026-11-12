@@ -2,6 +2,7 @@
 import { $, $$, esc, fmtMoney } from './util.js';
 import { loadSettings, DEFAULT_SETTINGS, planSpec, rulesFor, planFeatures, TRANSFER_FEATURE, promoOf } from './data.js';
 import { sellerNet } from './pricing.js';
+import { plansCompareHtml, periodToggleHtml } from './plans-compare.js';
 
 // Fotos de la animación (Pexels, licencia libre): una disciplina por ciclo.
 const SLIDES = [
@@ -20,7 +21,12 @@ const STEPS = [
 
 const FEATURES = [
   { ic: '💲', t: 'Tus precios', d: 'Precio por foto y packs (ej: 5 fotos x $8.500). Al comprador se le aplica solo la combinación más barata.' },
-  { ic: '📊', t: 'Ventas claras', d: 'Ves cuánto vendiste, cuánto te queda neto y qué álbumes venden más.' },
+  { ic: '🧾', t: 'Vos elegís quién paga la tasa', d: 'La tasa de servicio la absorbés vos, la pagan mitad y mitad, o la paga toda el comprador. Se ve clara en la calculadora.' },
+  { ic: '🛡️', t: 'Tus fotos protegidas', d: 'Marca de agua con tu nombre en varios puntos, una malla fina que complica borrarla con IA, código en cada foto y muestras livianas. Si alguien intenta guardarla, le ofrecemos comprarla.' },
+  { ic: '🔢', t: 'Búsqueda por dorsal', d: 'En carreras, la plataforma lee los números de las fotos y cada corredor encuentra las suyas. Suma un 1% solo en los álbumes donde la usás.' },
+  { ic: '🗓️', t: 'Publicás cuando quieras', d: 'Al instante, apenas termina la subida, en un día y hora programados, o lo dejás como borrador hasta que esté listo.' },
+  { ic: '📊', t: 'Ventas y visitas', d: 'Ves cuánto vendiste, cuánto te queda neto, cuántas visitas tuvo cada álbum y cuáles venden más.' },
+  { ic: '📦', t: 'Historial de álbumes', d: 'Cuando un álbum termina lo cerrás: queda en tu historial con 10 fotos de muestra y libera el lugar para el próximo.' },
   { ic: '🔔', t: 'Aviso de cada venta', d: 'Te llega una notificación al celular cada vez que alguien compra.' },
   { ic: '🕒', t: 'Fácil de encontrar', d: 'Filtro por horario, favoritas y sub-álbumes: el que busca su foto la encuentra rápido y compra más.' },
   { ic: '👥', t: 'Seguidores', d: 'La gente puede seguirte y activar el aviso de un evento: cuando subís las fotos, les llega la notificación.' },
@@ -50,17 +56,6 @@ export async function renderPhotographerLanding(app) {
     { id: 'empresa', name: 'Empresas · para equipos de fotógrafos', price: sp('empresa').price, year: sp('empresa').year, cta: 'Quiero este plan', wide: true,
       first: sp('empresa').first > sp('empresa').price ? sp('empresa').first : 0, items: planFeatures('empresa', st) },
   ];
-  const planCard = (p, i) => `
-        <div class="lp-plan ${p.hot ? 'hot' : ''} ${p.wide ? 'wide' : ''} reveal" style="--d:${i * 120}ms">
-          ${p.hot ? '<span class="lp-tag">Más elegido</span>' : ''}
-          <h3>${esc(p.name)}</h3>
-          <div class="lp-price">${p.price ? `${fmtMoney(p.price)}<small>/mes</small>` : '$0'}</div>
-          ${p.first ? `<p class="muted small">Primer mes ${fmtMoney(p.first)} (incluye el dominio)</p>` : ''}
-          ${p.year ? `<p class="muted small">o ${fmtMoney(p.year)}/año (2 meses gratis)</p>` : ''}
-          <ul>${p.items.map(t => t === TRANSFER_FEATURE ? `<li class="plan-hl">🏦 <strong>${esc(t)}</strong></li>` : `<li>${esc(t)}</li>`).join('')}</ul>
-          <a class="btn ${p.hot ? 'primary' : ''} lp-plan-cta" href="panel.html?plan=${p.id}">${esc(p.cta)}</a>
-        </div>`;
-
   app.innerHTML = `
   <div class="lp">
     <nav class="lp-quick reveal">
@@ -120,9 +115,9 @@ export async function renderPhotographerLanding(app) {
     <section id="planes" class="lp-sec">
       <h2 class="reveal">Planes</h2>
       ${promo ? `<div class="lp-promo reveal">🎉 <strong>Promo de lanzamiento: comisión del ${esc(String(promo.fee).replace('.', ','))}% en todos los planes</strong> hasta el ${esc(promoDate)}. Registrate ahora y vendé pagando menos.</div>` : ''}
-      <div class="lp-plans four">${plans.map(planCard).join('')}
-      </div>
-      <p class="muted small lp-note reveal">A la comisión de cada plan se suma la de Mercado Pago, que depende del plazo de cobro que elijas en tu cuenta de MP. En todos los planes elegís quién paga la comisión de Quiero Mis Fotos: la absorbés vos o se le suma al comprador como costo de servicio. Los planes pagos se cobran por Mercado Pago y los cancelás cuando quieras.</p>
+      <div class="reveal">${periodToggleHtml()}
+      ${plansCompareHtml(st, { cta: id => `<a class="btn sm ${id === 'web' ? 'primary' : ''}" href="panel.html?plan=${id}">${id === 'free' ? 'Empezar gratis' : 'Quiero este plan'}</a>` })}</div>
+      <p class="muted small lp-note reveal">* A la comisión de cada plan se suma la de Mercado Pago, que depende del plazo de cobro que elijas en tu cuenta de MP. En todos los planes elegís quién paga la tasa de servicio (la comisión de Quiero Mis Fotos más la de Mercado Pago): la absorbés vos, mitad y mitad, o la paga toda el comprador. Los planes pagos se cobran por Mercado Pago y los cancelás cuando quieras.</p>
     </section>
 
     <section id="cuanto-te-queda" class="lp-sec">
@@ -153,7 +148,9 @@ export async function renderPhotographerLanding(app) {
       <details class="reveal"><summary>¿Cuándo cobro?</summary><p>Cada venta se paga con Mercado Pago y entra directo a tu cuenta. El plazo de acreditación lo elegís vos en Mercado Pago (al instante o más adelante, con menos comisión de MP).</p></details>
       ${trPlans.length ? `<details class="reveal"><summary>¿Puedo cobrar por transferencia?</summary><p>Sí, en ${trPlans.join(', ')}. Tus clientes te transfieren a tu alias de Mercado Pago y la venta se acredita sola: <strong>no pagás la comisión de Mercado Pago</strong>. La comisión de Quiero Mis Fotos se acumula y la pagás aparte por transferencia.</p></details>` : ''}
       <details class="reveal"><summary>¿Las fotos pierden calidad?</summary><p>No. El comprador descarga la foto en alta resolución y sin marca de agua. Las muestras de la galería son livianas y llevan la marca para que nadie se las lleve sin pagar.</p></details>
-      <details class="reveal"><summary>¿Cuánto tiempo quedan las fotos?</summary><p>Cada álbum se vende entre ${planSpec('free', st).days} y ${planSpec('webdomain', st).days} días, según tu plan, desde que subís la primera foto. Si querés seguir vendiendo, lo extendés desde el panel.</p></details>
+      <details class="reveal"><summary>¿Cuánto tiempo quedan las fotos?</summary><p>Cada álbum se vende entre ${planSpec('free', st).days} y ${planSpec('webdomain', st).days} días, según tu plan, desde que subís la primera foto. Si querés seguir vendiendo, lo extendés desde el panel. Cuando termina, el álbum queda en tu historial con 10 fotos de muestra.</p></details>
+      <details class="reveal"><summary>¿Quién paga la tasa de servicio?</summary><p>Lo elegís vos en cada álbum: la absorbés toda, se reparte mitad y mitad con el comprador, o la paga toda el comprador. La tasa incluye la comisión de Quiero Mis Fotos y la de Mercado Pago.</p></details>
+      <details class="reveal"><summary>¿Me pueden robar las fotos?</summary><p>Las muestras van con tu marca de agua en varios puntos, una malla fina y un código por foto, y se muestran chicas (800 px). Si alguien intenta guardarlas, le aparece un aviso de derechos con el botón para comprarla. Nadie puede bajar el original sin pagar.</p></details>
       <details class="reveal"><summary>¿Puedo subir desde el celular?</summary><p>Sí. La marca de agua se aplica en tu dispositivo y la subida se retoma sola si se corta la conexión.</p></details>
       <details class="reveal"><summary>¿Y si en el evento hay más fotógrafos?</summary><p>Pueden estar todos en el mismo evento: cada uno con su álbum, sus precios y sus ventas.</p></details>
     </section>
@@ -191,6 +188,10 @@ export async function renderPhotographerLanding(app) {
   };
   $$('.lp-calc input, .lp-calc select', app).forEach(el => el.addEventListener('input', calc));
   calc();
+  $$('[data-period]', app).forEach(b => b.onclick = () => {
+    $$('[data-period]', app).forEach(x => x.classList.toggle('on', x === b));
+    app.querySelector('.plans-wrap').dataset.period = b.dataset.period;
+  });
   $$('[data-scroll]', app).forEach(a => a.onclick = e => { e.preventDefault(); document.getElementById('como-funciona')?.scrollIntoView({ behavior: 'smooth' }); });
   $$('[data-goto]', app).forEach(a => a.onclick = e => { e.preventDefault(); document.getElementById(a.dataset.goto)?.scrollIntoView({ behavior: 'smooth' }); });
   // Aparición al hacer scroll.
