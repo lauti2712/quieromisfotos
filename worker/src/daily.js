@@ -3,6 +3,7 @@
 import { adminGet, adminSet, serviceToken } from './admin.js';
 import { decodeFields } from './firebase.js';
 import { accessToken } from './admin.js';
+import { subscriptionCharges } from './weekly.js';
 
 const ADMIN_EMAIL = 'lautarom87@gmail.com';
 const root = env => `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents`;
@@ -17,7 +18,7 @@ async function run(env, collectionId, fields, { where, allDescendants = false } 
     body: JSON.stringify({ structuredQuery: { from: [{ collectionId, allDescendants }], select: { fields: fields.map(fieldPath => ({ fieldPath })) }, ...(where ? { where } : {}) } }),
   });
   if (!res.ok) throw new Error(`Firestore ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  return (await res.json()).filter(r => r.document).map(r => decodeFields(r.document.fields || {}));
+  return (await res.json()).filter(r => r.document).map(r => ({ id: r.document.name.split('/').pop(), ...decodeFields(r.document.fields || {}) }));
 }
 const ms = v => (v instanceof Date ? v.getTime() : v ? Date.parse(v) || 0 : 0);
 const money = n => '$' + Math.round(n).toLocaleString('es-AR').replace(/,/g, '.');
@@ -31,9 +32,9 @@ async function adminUid(env) {
 }
 
 export async function dailySummary(env, now = Date.now()) {
-  // Día de hoy en Argentina (UTC-3).
+  // Las últimas 24 horas (de 23 a 23, hora Argentina): así no se pierde lo que entra entre las 23 y la medianoche.
   const art = new Date(now - 3 * 3600e3);
-  const from = Date.UTC(art.getUTCFullYear(), art.getUTCMonth(), art.getUTCDate()) + 3 * 3600e3, to = from + 86400e3;
+  const to = Math.floor(now / 3600e3) * 3600e3, from = to - 86400e3;
   const day = art.toISOString().slice(0, 10);
   const key = `adminStats/daily-${day}`;
   if (await adminGet(env, key)) return false; // ya se mandó
@@ -42,6 +43,10 @@ export async function dailySummary(env, now = Date.now()) {
     run(env, 'sets', ['createdAt'], { allDescendants: true }), // colección de grupo: sin índice por fecha, se filtra acá
     run(env, 'orders', ['status', 'total', 'platformFee', 'count'], { where: range('paidAt', from, to) }),
   ]);
+  // Cobros de suscripciones de fotógrafos (se consultan a Mercado Pago): es lo que hay que pasar a la reserva.
+  const subs = await run(env, 'subscriptions', ['preapprovalId', 'status', 'lastPaidAt', 'plan']).catch(() => []);
+  const { charges, partial } = await subscriptionCharges(env, subs, from, to).catch(() => ({ charges: [], partial: true }));
+  const subTotal = charges.reduce((a, c) => a + c.amount, 0);
   const photogs = users.filter(u => u.role === 'photographer' && !u.demo).length;
   const albums = sets.filter(s => { const t = ms(s.createdAt); return t >= from && t < to; }).length;
   const paid = orders.filter(o => o.status === 'approved');
@@ -49,14 +54,15 @@ export async function dailySummary(env, now = Date.now()) {
   const fee = paid.reduce((a, o) => a + (Number(o.platformFee) || 0), 0);
   const photos = paid.reduce((a, o) => a + (Number(o.count) || 0), 0);
   const body = `📸 ${photogs} fotógrafo${photogs === 1 ? '' : 's'} nuevo${photogs === 1 ? '' : 's'} · 📁 ${albums} álbum${albums === 1 ? '' : 'es'} nuevo${albums === 1 ? '' : 's'}\n`
-    + `🛒 ${paid.length} venta${paid.length === 1 ? '' : 's'} (${photos} foto${photos === 1 ? '' : 's'}) por ${money(gmv)} · 💰 tu comisión: ${money(fee)}`;
+    + `🛒 ${paid.length} venta${paid.length === 1 ? '' : 's'} (${photos} foto${photos === 1 ? '' : 's'}) por ${money(gmv)} · 💰 tu comisión: ${money(fee)}\n`
+    + `🔁 Suscripciones: ${money(subTotal)} (${charges.length} cobro${charges.length === 1 ? '' : 's'})${partial ? ' ⚠️ puede faltar alguno' : ''}${subTotal ? ' → pasalo a la reserva' : ''}`;
   const uid = await adminUid(env);
   if (!uid) throw new Error('No se encontró la cuenta del superadmin');
   const site = env.PANEL_URL || 'https://quieromisfotos.com.ar/panel.html';
   await adminSet(env, `pushQueue/daily_${day}`, {
-    title: `📊 Resumen de hoy en QMF`, body, link: `${site}#/admin`, uids: [uid], createdAt: new Date(), cta: 'Ir al panel',
+    title: '📊 Resumen de hoy en QMF (últimas 24 hs)', body, link: `${site}#/admin`, uids: [uid], createdAt: new Date(), cta: 'Ir al panel',
     foot: 'Resumen diario de Quiero Mis Fotos (solo para el superadmin).',
   });
-  await adminSet(env, key, { sentAt: new Date(), photogs, albums, sales: paid.length, photos, gmv, fee });
+  await adminSet(env, key, { sentAt: new Date(), photogs, albums, sales: paid.length, photos, gmv, fee, subTotal, subCharges: charges.length });
   return true;
 }

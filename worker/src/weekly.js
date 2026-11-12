@@ -104,7 +104,7 @@ export async function authActivity(env, uids) {
 
 // Cobros de suscripciones entre `from` y `to`: Firestore solo guarda el último cobro de cada una, así que se le pregunta
 // a Mercado Pago por las activas y por las que cobraron hace poco (una consulta por suscripción, con tope).
-async function subscriptionCharges(env, subs, from, to) {
+export async function subscriptionCharges(env, subs, from, to) {
   if (!env.MP_ACCESS_TOKEN) return { charges: [], partial: true };
   const cands = subs.filter(x => x.preapprovalId && (x.status === 'authorized' || (x.lastPaidAt?.getTime?.() || 0) >= from))
     .sort((a, b) => (b.lastPaidAt?.getTime?.() || 0) - (a.lastPaidAt?.getTime?.() || 0));
