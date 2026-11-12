@@ -74,6 +74,9 @@ export async function renderOrder(app, orderId, query) {
     first = false;
     draw(app, o);
   }, err => {
+    // Corte pasajero con el pedido ya en pantalla (ej. Chrome de iPhone corta las consultas al arrancar una descarga):
+    // se deja lo que se ve y la próxima consulta lo actualiza.
+    if (!first) return;
     // Sin permiso: el link es de otra cuenta (o se pasó la dirección sin la llave del pedido).
     if (/permission|permiso/i.test(String(err?.code || err?.message || ''))) {
       app.innerHTML = `<div class="empty"><h2>No podemos mostrarte esta compra</h2>
