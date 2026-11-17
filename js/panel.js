@@ -2759,6 +2759,9 @@ async function viewAdminEvents() {
 
 // ================================================================ superadmin: historial de compras
 // Una fila por compra: cliente, álbum, fotógrafo, fotos, forma de pago, estado, descargas. Filtros, totales y CSV.
+// Comisión en %: la del plan (sobre el precio de las fotos) y la que queda sobre el total cobrado.
+const pctTxt = n => `${(Math.round(n * 10) / 10).toString().replace('.', ',')}%`;
+const feePcts = o => (o.platformFee > 0 && o.subtotal > 0 && o.total > 0 ? ` (plan ${pctTxt(o.platformFee / o.subtotal * 100)} · real ${pctTxt(o.platformFee / o.total * 100)})` : '');
 const PURCHASE_STATUS = { approved: ['Pagada', 'ok'], pending: ['Pendiente', 'warn'], rejected: ['Rechazada', 'danger'], expired: ['Vencida', 'danger'], refunded: ['Reembolsada', ''] };
 let purF = { range: 30, ph: '', pay: '', st: 'approved', q: '' };
 // Cobros de suscripciones (planes de fotógrafos): se piden una vez por visita a Compras (el Worker consulta Mercado Pago).
@@ -2830,7 +2833,7 @@ async function viewAdminPurchases() {
             <td><strong>${esc(o.buyerName || '—')}</strong>${o.buyerGuest ? ' <span class="pill">Invitado</span>' : ''}<br><span class="muted small">${esc(o.buyerEmail)}</span>${o.buyerWa ? `<br><a class="small" target="_blank" rel="noopener" href="${esc(waLink(o.buyerWa))}">💬 ${esc(o.buyerWa)}</a>` : ''}</td>
             <td>${esc(o.eventName || '')}<br><span class="muted small">📷 ${esc(o.photographerName || '')}</span></td>
             <td>${o.count || 0}${(o.lines || []).some(x => x.label && x.label !== 'Foto suelta') ? ' <span class="muted small">pack</span>' : ''}</td>
-            <td>${fmtMoney(o.total)}<br><span class="muted small">com. ${fmtMoney(o.platformFee || 0)}</span></td>
+            <td>${fmtMoney(o.total)}<br><span class="muted small">com. ${fmtMoney(o.platformFee || 0)}${feePcts(o)}</span></td>
             <td>${o.pay === 'transfer' ? '🏦 Transferencia' : '💳 Mercado Pago'}</td>
             <td><span class="pill ${c}">${l}</span></td>
             <td class="small">${o.status === 'approved' ? (o.downloads ? `${o.downloads}<br><span class="muted">${esc(when(ms(o.lastDownloadAt)))}</span>` : '<span class="muted">—</span>') : ''}</td>
