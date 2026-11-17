@@ -86,7 +86,7 @@ export function drawWatermark(ctx, w, h, wm, logo = null, seed = null) {
       ctx.save();
       ctx.rotate(ang);
       ctx.strokeStyle = col;
-      ctx.globalAlpha = 0.1 + 0.08 * k;
+      ctx.globalAlpha = 0.06 + 0.048 * k; // 40% más tenue que la primera versión: se lee mejor (dorsales, caras)
       ctx.lineWidth = lw;
       ctx.beginPath();
       const off = rnd() * gap;

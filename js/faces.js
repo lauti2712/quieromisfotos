@@ -44,13 +44,21 @@ function toInput(src) {
 }
 
 // Todas las caras de una foto que se ven lo suficientemente grandes para reconocerlas (en px del lado menor de la cara).
+// Devuelve { f: [huellas], b: [[cx, cy, w, h]…] }: b es dónde está cada cara (centro y tamaño, en milésimas de la foto),
+// para poder tocarla en el visor. Mismo orden en las dos listas.
 export async function photoFaces(source, { minSize = 36, max = 15 } = {}) {
   const api = await loadFaceApi();
-  const det = await api.detectAllFaces(toInput(source), new api.TinyFaceDetectorOptions({ inputSize: 608, scoreThreshold: 0.45 }))
+  const input = toInput(source);
+  const W = input.naturalWidth || input.width, H = input.naturalHeight || input.height;
+  const det = await api.detectAllFaces(input, new api.TinyFaceDetectorOptions({ inputSize: 608, scoreThreshold: 0.45 }))
     .withFaceLandmarks(true).withFaceDescriptors();
-  return det.filter(d => Math.min(d.detection.box.width, d.detection.box.height) >= minSize)
-    .sort((a, b) => b.detection.box.height - a.detection.box.height).slice(0, max)
-    .map(d => packDescriptor(d.descriptor));
+  const list = det.filter(d => Math.min(d.detection.box.width, d.detection.box.height) >= minSize)
+    .sort((a, b) => b.detection.box.height - a.detection.box.height).slice(0, max);
+  const k = (n, of) => Math.max(0, Math.min(1000, Math.round((n / of) * 1000)));
+  return {
+    f: list.map(d => packDescriptor(d.descriptor)),
+    b: list.map(({ detection: { box: x } }) => [k(x.x + x.width / 2, W), k(x.y + x.height / 2, H), k(x.width, W), k(x.height, H)]),
+  };
 }
 
 // La cara de la selfie: la más grande. null si no encontró ninguna.

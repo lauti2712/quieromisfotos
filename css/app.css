@@ -907,3 +907,13 @@ dialog.protect-dlg { padding: 0; max-width: min(420px, calc(100vw - 32px)); }
 .lv-card figure { margin: 0; display: grid; gap: 2px; }
 .lv-card img { width: 100%; aspect-ratio: 3/2; object-fit: cover; border-radius: 8px; -webkit-user-drag: none; }
 .lv-card figcaption { font-size: .75rem; color: var(--muted, #888); }
+
+/* Visor: caras que se pueden tocar para buscar a esa persona en el álbum */
+.lightbox .lb-layer { position: absolute; pointer-events: none; z-index: 3; }
+.lightbox .lb-face { position: absolute; pointer-events: auto; border: 2px solid #fff; border-radius: 50%; background: rgba(255, 90, 31, .18);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, .35), 0 0 0 9999px rgba(0, 0, 0, 0); cursor: pointer; padding: 0; min-width: 28px; min-height: 28px;
+  animation: lbFace 1.6s ease-in-out infinite; transform: translate(-50%, -50%); }
+.lightbox .lb-face:hover, .lightbox .lb-face:focus-visible { background: rgba(255, 90, 31, .35); outline: none; border-color: var(--accent); }
+.lightbox .lb-face.busy { animation: none; background: rgba(255, 90, 31, .5); }
+@keyframes lbFace { 50% { box-shadow: 0 0 0 2px rgba(0, 0, 0, .35), 0 0 0 6px rgba(255, 255, 255, .25); } }
+@media (prefers-reduced-motion: reduce) { .lightbox .lb-face { animation: none; } }

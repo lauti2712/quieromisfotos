@@ -10,6 +10,7 @@
 //   DELETE /photo/{eid}/{pid}          X-Upload-Token                         (versión anterior del panel) borra los archivos
 //   PUT    /bibs/{eid}/{pid}           X-Upload-Token  (jpeg sin marca)       lee los dorsales con IA -> { bibs }
 //   POST   /faces/{eid}[/mine|/match]  búsqueda por selfie (faces.js)
+//   GET|POST /faces/{eid}/boxes|tap     tocar una cara en el visor (faces.js)
 //   POST   /events/{eid}/close         Bearer   cerrar álbum: borra originales, quedan 10 de muestra (samples.js)
 //   POST   /events/{eid}/remove        Bearer   eliminar del historial un álbum cerrado o vacío (samples.js)
 //   GET|POST /faces/me[/delete]        Bearer   cara guardada del comprador para avisarle (faces.js)
@@ -55,7 +56,8 @@ import { connectUrl, callback, disconnect, mpAccount } from './mp.js';
 import { checkout, webhook, syncOrder, retryCheckout, downloadLinks, download, reviewOriginal, guestOrder, orderLink } from './orders.js';
 import { createTag } from './tags.js';
 import { scanBibsRequest } from './bibs.js';
-import { addFaces, myFaces, matchFaces, myFace } from './faces.js';
+import { dailySummary } from './daily.js';
+import { addFaces, myFaces, matchFaces, myFace, faceBoxes, tapFace } from './faces.js';
 import { commitPhoto, deletePhotos, orderDownloadUntil, pubKeysOf, suffixOf } from './photos.js';
 import { closeAlbum, forceDeleteAlbum, removeAlbum } from './samples.js';
 import { incomeRequest } from './income.js';
@@ -84,6 +86,7 @@ const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
 const SESSION_TTL = 2 * 3600;
 const BACKUP_CRON = '0 7 * * 1'; // lunes 04:00 (Argentina)
 const PUSH_CRON = '*/5 * * * *'; // cola de avisos a seguidores
+const DAILY_CRON = '0 2 * * *'; // 23:00 (Argentina): resumen del día al superadmin
 const NOTIFY_AT_PHOTOS = 20; // aviso a seguidores cuando el álbum llega a esta cantidad de fotos
 
 export default {
@@ -111,6 +114,7 @@ export default {
   // Crons: diario (uso de R2, retención, limpieza), semanal (respaldo) y cada 5 minutos (avisos, suscripciones y, los lunes a las 6, el resumen semanal).
   async scheduled(event, env, ctx) {
     if (event.cron === BACKUP_CRON) { ctx.waitUntil(runBackup(env)); return; }
+    if (event.cron === DAILY_CRON) { ctx.waitUntil(dailySummary(env).catch(e => console.error('resumen diario', e))); return; }
     // Cada 5 minutos: avisos a seguidores y suscripciones (de a pocas). Una tarea por vez para no pasar el límite de pedidos.
     if (event.cron === PUSH_CRON) {
       // Lunes 06:00 (Argentina): resumen semanal. Ese tic no manda avisos (quedan para el siguiente) para no pasar el límite de pedidos.
@@ -169,6 +173,8 @@ async function route(req, env, ctx) {
     if (m === 'POST' && parts.length === 2) return addFaces(req, env, await session(req, env), parts[1]);
     if (m === 'GET' && parts[2] === 'mine') return myFaces(req, env, await session(req, env), parts[1]);
     if (m === 'POST' && parts[2] === 'match') return matchFaces(req, env, ctx, parts[1]);
+    if (m === 'GET' && parts[2] === 'boxes') return faceBoxes(req, env, ctx, parts[1]);
+    if (m === 'POST' && parts[2] === 'tap') return tapFace(req, env, parts[1]);
   }
   if (m === 'PUT' && parts[0] === 'bibs' && parts.length === 3 && ID_RE.test(parts[1]) && ID_RE.test(parts[2])) {
     return scanBibsRequest(req, env, await session(req, env), parts[1], parts[2]);

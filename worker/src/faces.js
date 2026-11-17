@@ -5,6 +5,11 @@
 //   POST /faces/{eid}          X-Upload-Token  {items: [{p, f: [huella…]}]}  -> agrega al índice (un archivo por quien sube)
 //   GET  /faces/{eid}/mine     X-Upload-Token                               -> ids ya indexados (para preparar fotos viejas)
 //   POST /faces/{eid}/match    público, con límite por persona              {d: [128 números]} -> { photos: [{p, d}] }
+//   GET  /faces/{eid}/boxes      público                                     -> { boxes: {foto: [[cx, cy, w, h]…]} } (en milésimas de la foto)
+//   POST /faces/{eid}/tap        público                                     {p, i} -> { photos: [{p, d}] }  (la cara i de la foto p)
+// Tocar una cara: el comprador toca una cara en el visor y ve las fotos del álbum donde aparece esa persona. Solo se publica
+// dónde está cada cara (un rectángulo), nunca la huella; la comparación la hace el servidor con la huella que ya tiene.
+// La apaga el fotógrafo por álbum (sets.faceTap === false). Al lado de cada índice: {by}.boxes.json (mismo prefijo: se borra con él).
 // Cara guardada del comprador (opcional, con su consentimiento): avisarle cuando aparece en fotos nuevas.
 // Una sola huella por cuenta, en R2 privado (buyers/index.json). Al subir fotos (addFaces) se compara con las guardadas.
 //   GET  /faces/me             Bearer   -> { saved, at }
@@ -21,6 +26,9 @@ const SEARCHES_PER_HOUR = 20;
 const SCALE = 400;
 
 const keyOf = (eid, owner, by) => `faces/${eid}/${owner}/${by}.json`;
+const boxesKeyOf = (eid, owner, by) => `faces/${eid}/${owner}/${by}.boxes.json`;
+const isBoxes = k => k.endsWith('.boxes.json');
+const BOX_RE = b => Array.isArray(b) && b.length === 4 && b.every(x => Number.isInteger(x) && x >= 0 && x <= 1000);
 async function readIndex(env, key) {
   const obj = await env.PRIVATE.get(key);
   return obj ? obj.json().catch(() => ({ items: {} })) : { items: {} };
@@ -30,13 +38,21 @@ export async function addFaces(req, env, s, eid) {
   if (s.eid !== eid || s.role !== 'member') throw httpError(403, 'Token no válido para este evento');
   const { items } = await req.json().catch(() => ({}));
   if (!Array.isArray(items) || !items.length || items.length > 50) throw httpError(400, 'Pedido inválido');
-  const key = keyOf(eid, s.uid, s.by || s.uid);
-  const idx = await readIndex(env, key);
+  const key = keyOf(eid, s.uid, s.by || s.uid), bkey = boxesKeyOf(eid, s.uid, s.by || s.uid);
+  const [idx, bidx] = await Promise.all([readIndex(env, key), readIndex(env, bkey)]);
   for (const it of items) {
     if (!ID_RE.test(it?.p || '') || !Array.isArray(it.f)) continue;
-    idx.items[it.p] = it.f.filter(f => typeof f === 'string' && B64_RE.test(f)).slice(0, MAX_FACES_PER_PHOTO);
+    // Huella y lugar de cada cara van en el mismo orden; si el lugar no vino bien, la cara no se puede tocar (la selfie sí la encuentra).
+    const ok = it.f.map((f, i) => [f, Array.isArray(it.b) ? it.b[i] : null]).filter(([f]) => typeof f === 'string' && B64_RE.test(f)).slice(0, MAX_FACES_PER_PHOTO);
+    idx.items[it.p] = ok.map(([f]) => f);
+    if (ok.length && ok.every(([, b]) => BOX_RE(b))) bidx.items[it.p] = ok.map(([, b]) => b);
+    else delete bidx.items[it.p];
   }
-  await env.PRIVATE.put(key, JSON.stringify(idx), { httpMetadata: { contentType: 'application/json' } });
+  await Promise.all([
+    env.PRIVATE.put(key, JSON.stringify(idx), { httpMetadata: { contentType: 'application/json' } }),
+    env.PRIVATE.put(bkey, JSON.stringify(bidx), { httpMetadata: { contentType: 'application/json' } }),
+  ]);
+  await caches.default.delete(boxesCacheKey(eid)).catch(() => {});
   // La galería muestra el botón de selfie cuando el álbum ya tiene fotos procesadas.
   const n = Object.keys(idx.items).length;
   await adminCommit(env, [{ update: `events/${eid}/sets/${s.uid}`, data: { facesPhotos: n, facesAt: new Date() }, mask: ['facesPhotos', 'facesAt'] }]).catch(() => {});
@@ -46,8 +62,9 @@ export async function addFaces(req, env, s, eid) {
 
 export async function myFaces(req, env, s, eid) {
   if (s.eid !== eid || s.role !== 'member') throw httpError(403, 'Token no válido para este evento');
-  const idx = await readIndex(env, keyOf(eid, s.uid, s.by || s.uid));
-  return json({ ids: Object.keys(idx.items) });
+  const [idx, bidx] = await Promise.all([readIndex(env, keyOf(eid, s.uid, s.by || s.uid)), readIndex(env, boxesKeyOf(eid, s.uid, s.by || s.uid))]);
+  // boxed: fotos que además tienen guardado dónde está cada cara (se pueden tocar en el visor).
+  return json({ ids: Object.keys(idx.items), boxed: Object.keys(bidx.items) });
 }
 
 const unpack = b64 => {
@@ -66,15 +83,28 @@ export async function matchFaces(req, env, ctx, eid) {
 
   const { d } = await req.json().catch(() => ({}));
   if (!Array.isArray(d) || d.length !== 128 || !d.every(x => Number.isFinite(x) && Math.abs(x) < 2)) throw httpError(400, 'Pedido inválido');
+  const { files } = await searchable(env, eid);
+  return json({ photos: await bestMatches(env, files, d), searched: files.length > 0 });
+}
+
+// Índices del evento donde se puede buscar: evento publicado, búsqueda por caras encendida y álbum con la selfie activada.
+async function searchable(env, eid) {
   const [ev, st] = await adminGetMany(env, [`events/${eid}`, 'settings/platform']);
   if (!ev || ev.status !== 'published') throw httpError(404, 'El evento no está disponible');
-  if (st?.selfieEnabled === false) throw httpError(404, 'La búsqueda por selfie no está disponible');
-  // Solo los álbumes con la búsqueda por selfie activada.
+  if (st?.selfieEnabled === false) throw httpError(404, 'La búsqueda por caras no está disponible');
   const uids = ev.photographerUids || [];
   const sets = uids.length ? await adminGetMany(env, uids.map(u => `events/${eid}/sets/${u}`)) : [];
   const on = new Set(uids.filter((u, i) => sets[i] && sets[i].selfie !== false));
+  const tap = new Set(uids.filter((u, i) => sets[i] && sets[i].selfie !== false && sets[i].faceTap !== false));
   const listed = await env.PRIVATE.list({ prefix: `faces/${eid}/`, limit: 1000 });
-  const files = listed.objects.filter(o => on.has(o.key.split('/')[2]));
+  return {
+    files: listed.objects.filter(o => !isBoxes(o.key) && on.has(o.key.split('/')[2])),
+    boxFiles: listed.objects.filter(o => isBoxes(o.key) && tap.has(o.key.split('/')[2])),
+    tap,
+  };
+}
+
+async function bestMatches(env, files, d) {
   const best = new Map();
   for (const f of files) {
     const idx = await readIndex(env, f.key);
@@ -88,8 +118,37 @@ export async function matchFaces(req, env, ctx, eid) {
       }
     }
   }
-  const photos = [...best.entries()].sort((a, b) => a[1] - b[1]).slice(0, MAX_RESULTS).map(([p, dist]) => ({ p, d: Math.round(dist * 1000) / 1000 }));
-  return json({ photos, searched: files.length > 0 });
+  return [...best.entries()].sort((a, b) => a[1] - b[1]).slice(0, MAX_RESULTS).map(([p, dist]) => ({ p, d: Math.round(dist * 1000) / 1000 }));
+}
+
+// ---------------------------------------------------------------- tocar una cara en el visor
+const boxesCacheKey = eid => new Request(`https://qmf-faces.internal/boxes/${eid}`);
+
+export async function faceBoxes(req, env, ctx, eid) {
+  const ck = boxesCacheKey(eid);
+  const hit = await caches.default.match(ck);
+  if (hit) return new Response(hit.body, hit);
+  const { boxFiles } = await searchable(env, eid);
+  const boxes = {};
+  for (const f of boxFiles) Object.assign(boxes, (await readIndex(env, f.key)).items || {});
+  const res = json({ boxes });
+  res.headers.set('Cache-Control', 'public, max-age=300');
+  ctx.waitUntil(caches.default.put(ck, res.clone()));
+  return res;
+}
+
+export async function tapFace(req, env, eid) {
+  const { p, i } = await req.json().catch(() => ({}));
+  if (!ID_RE.test(p || '') || !Number.isInteger(i) || i < 0 || i >= MAX_FACES_PER_PHOTO) throw httpError(400, 'Pedido inválido');
+  const { files, tap } = await searchable(env, eid);
+  // La huella de esa cara: del índice del álbum de la foto (si el fotógrafo dejó activado tocar caras).
+  let d = null;
+  for (const f of files.filter(o => tap.has(o.key.split('/')[2]))) {
+    const s = (await readIndex(env, f.key)).items?.[p]?.[i];
+    if (s) { d = Array.from(unpack(s)); break; }
+  }
+  if (!d) throw httpError(404, 'No encontramos esa cara. Probá con otra.');
+  return json({ photos: await bestMatches(env, files, d) });
 }
 
 // ---------------------------------------------------------------- cara guardada del comprador

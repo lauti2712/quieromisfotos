@@ -73,13 +73,14 @@ export async function mailTest(req, env, claims) {
 // el envío real queda registrado en broadcasts/{key} y no se puede repetir.
 //   POST /admin/mail/news {test?}
 const NEWS = {
-  key: 'novedades-2026-11-video-portada-selfie',
-  subject: '4 novedades para vender más tus fotos 📸',
+  key: 'novedades-2026-11-caras-marca-tasa',
+  subject: 'Tocá una cara y aparecen todas sus fotos, y más novedades 📸',
   items: [
-    ['🎬 Video para historias, listo para compartir', 'En cada álbum, en "Compartir", se arma solo un video corto con tus mejores fotos y el link al álbum. Lo descargás y lo subís a historias de Instagram o al estado de WhatsApp. Ahí mismo tenés el texto listo para el grupo, el código QR y un cartel para imprimir y dejar en la cancha.'],
-    ['🖼️ Elegí la portada de tu evento', 'La portada es lo primero que se ve en el link y en la lista de eventos. Ahora podés elegir una de tus fotos (sin marca de agua) o subir una imagen, y encuadrarla como quieras. Si no elegís ninguna, ponemos una de tus fotos automáticamente. Además, en cada evento ahora aparece tu nombre como fotógrafo.'],
-    ['🤳 Búsqueda por selfie', 'Tus clientes se sacan una selfie y ven solo las fotos donde aparecen, sin recorrer cientos de fotos. Así se encuentran más rápido y compran más. Las fotos nuevas se preparan solas al subirlas. Si tenés álbumes que subiste antes, entrá al álbum y tocá <strong>"Prepararlas ahora"</strong>.'],
-    ['💡 Tip: poné un precio especial a las fotos que valen más', 'Una foto del equipo completo la compra una sola persona y la comparte con todo el plantel. Ponele un precio más alto que al resto: en tu álbum elegí esas fotos y tocá <strong>💲 Precio</strong>. Las fotos con precio especial se cobran aparte y no entran en los packs.'],
+    ['👆 Tocá una cara y aparecen todas sus fotos', 'En la foto ampliada, tu cliente toca la cara de alguien y ve todas las fotos del evento donde aparece esa persona: el papá encuentra a su hijo en segundos y compra más. Se prepara sola al subir. Para álbumes que subiste antes, entrá al álbum y tocá <strong>"Prepararlas ahora"</strong>. Si es un evento con chicos (escolar, infantil), te recomendamos apagarla en la configuración de ese álbum.'],
+    ['🛡️ Marca de agua más fuerte y a tu gusto', 'Ahora va tu nombre o tu logo en 3 a 5 sellos, una malla fina y un sello sobre la persona que complican mucho borrarla con IA, y un código en cada foto. Si alguien intenta guardar una foto, le aparece un aviso con el botón para comprarla. Elegí tu logo y la intensidad en <strong>⚙️ Precios y marca</strong>, y el nivel de protección en cada álbum.'],
+    ['💸 Vos elegís quién paga la tasa de servicio', 'En los precios de cada álbum elegí si la tasa (nuestra comisión más la de Mercado Pago) la pagás vos, mitad y mitad, o el comprador.'],
+    ['📅 Publicá cuando quieras', 'Al crear un álbum elegí: publicarlo ahora, apenas termine la subida, en una fecha y hora, o dejarlo como borrador. Arriba de cada álbum tenés <strong>🚀 Publicar ahora</strong> y <strong>📅 Programar</strong>.'],
+    ['📦 Cerrá el álbum y mirá sus visitas', 'Cuando terminás de vender, cerrá el álbum: liberás el lugar y queda en tu historial con 10 fotos de muestra. Además, al lado del nombre de cada álbum ves cuánta gente lo visitó.'],
   ],
 };
 const newsHtml = (env, name) => mailLayout({

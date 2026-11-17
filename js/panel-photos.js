@@ -280,7 +280,7 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
   }
   let up;
   if (activeUploader?.busy() && activeUploader.eventId === ev.id && (activeUploader.team || '') === team) { up = activeUploader; up.setHandlers(handlers); }
-  else up = activeUploader = createUploader({ eventId: ev.id, uid, team, wm, logo, optimize: settings.optimizeOriginals !== false, bibs: bibs && settings.bibsEnabled !== false, faces: settings.selfieEnabled !== false && set.selfie !== false, protect: protectOf(settings, set.protectLevel), ...handlers });
+  else up = activeUploader = createUploader({ eventId: ev.id, uid, team, wm: bibs && settings.bibsEnabled !== false ? { ...wm, mesh: false } : wm, logo, optimize: settings.optimizeOriginals !== false, bibs: bibs && settings.bibsEnabled !== false, faces: settings.selfieEnabled !== false && set.selfie !== false, protect: protectOf(settings, set.protectLevel), ...handlers });
   let drawT;
   const scheduleDraw = () => { clearTimeout(drawT); drawT = setTimeout(() => document.body.contains(box) && draw(), 400); };
 

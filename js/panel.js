@@ -630,14 +630,13 @@ function drawTabbar(key) {
 }
 
 // Novedades para los fotógrafos en Inicio, hasta que la cierra (por dispositivo) o vence.
-const NEWS = { id: '2026-11-tasa-marca-cierre', until: '2026-12-15', items: [
-  ['🛒', 'Te compran sin crear cuenta', 'Pagan con Mercado Pago y descargan al instante. Menos trabas, más ventas.'],
+const NEWS = { id: '2026-11-caras-marca-tasa', until: '2026-12-31', items: [
+  ['👆', 'Tocá una cara y aparecen todas sus fotos', 'En la foto ampliada, el comprador toca la cara de alguien y ve todas las fotos del evento donde aparece. Se apaga por álbum, en la configuración del álbum (apagalo en eventos con chicos). Para álbumes viejos, tocá <strong>Prepararlas ahora</strong>.'],
+  ['🛡️', 'Marca de agua más fuerte y a tu gusto', 'Tu nombre o tu logo en 3 a 5 sellos, una malla fina y un sello sobre la persona que complican borrarla con IA, y un código por foto. Elegí logo e intensidad en <strong>⚙️ Precios y marca</strong> y el nivel de protección en cada álbum.'],
   ['💸', 'Vos elegís quién paga la tasa de servicio', 'La pagás vos, mitad y mitad, o el comprador. Lo elegís en <strong>Precios</strong> de cada álbum.'],
-  ['🛡️', 'Marca de agua nueva', 'Con tu nombre o logo y un código por foto. Si alguien intenta guardar una foto, le aparece un aviso para comprarla.'],
-  ['📦', 'Cerrá un álbum cuando termines de vender', 'Liberás el lugar para otro y queda en tu historial con 10 fotos de muestra. Arriba de cada álbum: extender plazo o cerrar.'],
-  ['📅', 'Programá cuándo se publica', 'Al crear un álbum elegí: ahora, al terminar de subir las fotos, en una fecha y hora, o borrador.'],
-  ['👁️', 'Visitas de cada álbum', 'Mirá cuánta gente entró a cada álbum, en <strong>Mis álbumes</strong> y en cada álbum.'],
-  ['🔢', 'Dorsales', 'La lectura de dorsales con IA suma 1% de comisión en los álbumes donde la uses.'],
+  ['📅', 'Programá cuándo se publica', 'Ahora, al terminar de subir las fotos, en una fecha y hora, o borrador. Arriba de cada álbum tenés <strong>🚀 Publicar ahora</strong> y <strong>📅 Programar</strong>.'],
+  ['📦', 'Cerrá un álbum cuando termines de vender', 'Liberás el lugar para otro y queda en tu historial con 10 fotos de muestra.'],
+  ['👁️', 'Visitas de cada álbum', 'Mirá cuánta gente entró a cada álbum, al lado del nombre y en <strong>Mis álbumes</strong>.'],
 ] };
 function newsCardHtml() {
   let seen = false;
@@ -2240,11 +2239,14 @@ function renderSetEditor(ev, set, reload) {
       <p class="muted small" style="margin:0">🔗 Link directo para cada corredor (cambiá el número al final): <code style="word-break:break-all">${esc(`${location.origin}/e/${ev.id}/?s=1&dorsal=123`)}</code></p>`}
       ${S.settings.selfieEnabled === false ? '' : `<label class="check"><input type="checkbox" id="st-selfie" ${set.selfie !== false ? 'checked' : ''}> 🤳 Búsqueda por selfie</label>
       <p class="muted small" style="margin:0">Cada uno se saca una selfie y ve las fotos donde aparece. Las caras se procesan en tu dispositivo al subir y solo se guarda una huella numérica (nunca imágenes de caras).</p>
+      <label class="check" id="st-facetap-l" ${set.selfie === false ? 'hidden' : ''}><input type="checkbox" id="st-facetap" ${set.faceTap !== false ? 'checked' : ''}> 👆 Tocar una cara para ver todas las fotos de esa persona</label>
+      <p class="muted small" id="st-facetap-h" style="margin:0" ${set.selfie === false ? 'hidden' : ''}>En la foto ampliada, el comprador toca la cara de alguien y ve las fotos de este evento donde aparece. <strong>Apagalo en eventos con chicos</strong> (escolares, infantiles), así nadie puede buscar a otra persona.</p>
       <div id="st-selfie-status"></div>`}
       <div class="row end"><button class="btn primary" type="submit">Guardar</button></div>
      </div>
     </form>`;
-  if (S.settings.selfieEnabled !== false && set.selfie !== false && (set.photoCount || 0) > 0) drawSelfieStatus(ev);
+  if (S.settings.selfieEnabled !== false && set.selfie !== false && (set.photoCount || 0) > 0) drawSelfieStatus(ev, set);
+  $('#st-selfie')?.addEventListener('change', e => { $('#st-facetap-l').hidden = $('#st-facetap-h').hidden = !e.target.checked; });
   $('#st-protect').onchange = e => { $('#st-protect-hint').textContent = levelOf({ protectLevel: e.target.value }).hint; };
   mountLevelExamples($('#st-protect-ex'), { settings: S.settings, profile: S.profile, select: $('#st-protect') });
   mountPhotos($('#set-photos'), { ev, set, uid: S.user.uid, profile: S.profile, settings: S.settings, bibs: bibsOn(set, ev, S.tax) })
@@ -2316,6 +2318,7 @@ function renderSetEditor(ev, set, reload) {
         protectLevel: $('#st-protect').value,
         ...($('#st-bibs') ? { detectBibs: $('#st-bibs').checked } : {}),
         ...($('#st-selfie') ? { selfie: $('#st-selfie').checked } : {}),
+        ...($('#st-facetap') ? { faceTap: $('#st-facetap').checked } : {}),
         updatedAt: serverTimestamp(),
       });
       // Precio, packs y comisión pasan a ser los predeterminados de sus próximos álbumes (los puede cambiar en cada uno).
@@ -2331,13 +2334,14 @@ function renderSetEditor(ev, set, reload) {
 
 // Búsqueda por selfie: cuántas fotos ya tienen las caras procesadas y botón para preparar las que faltan
 // (fotos subidas antes de activarla o si se cerró la página antes de terminar). Usa las muestras (ya subidas).
-async function drawSelfieStatus(ev) {
+async function drawSelfieStatus(ev, set = {}) {
   const box = $('#st-selfie-status');
   if (!box) return;
   try {
     const s = await uploadSession(ev.id);
     const r = await fetch(`${API_BASE}/faces/${ev.id}/mine`, { headers: { 'X-Upload-Token': s.token } }).then(x => x.json());
-    const done = new Set(r.ids || []);
+    // Con "tocar una cara" activado, también se preparan las que tienen huella pero no el lugar de cada cara (subidas antes).
+    const done = new Set(set.faceTap === false ? r.ids || [] : r.boxed || []);
     const snap = await getDocs(query(collection(db, 'photos'), where('eventId', '==', ev.id), where('photographerUid', '==', S.user.uid), where('hidden', '==', false), limit(5000)));
     const todo = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => !done.has(p.id) && (!p.uploadedBy || p.uploadedBy === S.user.uid));
     if (!todo.length) { box.innerHTML = `<p class="small" style="margin:0">✅ Las ${done.size} fotos ya están listas para la búsqueda por selfie.</p>`; return; }
@@ -2356,13 +2360,13 @@ async function drawSelfieStatus(ev) {
             const img = new Image(); img.crossOrigin = 'anonymous';
             img.src = `${API_BASE}/public/${new URL(p.previewUrl).pathname.replace(/^\//, '')}`;
             await img.decode();
-            batch.push({ p: p.id, f: await photoFaces(img) });
+            batch.push({ p: p.id, ...(await photoFaces(img)) });
           } catch (err) { console.warn('caras', err); }
           if (batch.length >= 20) await flush();
         }
         await flush();
         toast('Listo: ya se pueden buscar con una selfie');
-        drawSelfieStatus(ev);
+        drawSelfieStatus(ev, set);
       } catch (err) { e.target.disabled = false; toast(errMsg(err), 'error'); }
     };
   } catch (err) { box.innerHTML = ''; console.warn('selfie', err); }
@@ -3533,7 +3537,7 @@ async function viewAdminConfig() {
       <button class="btn" id="a-weekly">Enviármelo ahora</button>
     </div>
     <div class="card row" style="justify-content:space-between">
-      <div><strong>📣 Novedades a los fotógrafos</strong><br><span class="muted small">Video para historias, portada, búsqueda por selfie y precio especial. Primero mandátelo de prueba; el envío a todos se hace una sola vez.</span></div>
+      <div><strong>📣 Novedades a los fotógrafos</strong><br><span class="muted small">Tocar una cara, marca de agua nueva, tasa de servicio, publicación programada, cierre de álbum y visitas. Primero mandátelo de prueba; el envío a todos se hace una sola vez.</span></div>
       <button class="btn" id="a-news-test">Enviarme la prueba</button>
       <button class="btn primary" id="a-news">Enviar a todos</button>
     </div>

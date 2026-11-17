@@ -114,6 +114,23 @@ async function matchForPhotographer(env, uid, orders) {
     await approve(env, o, { paymentId: p.id, paidAt: new Date(p.date_approved || p.date_created), manual: 'sin-centavos' });
     n++;
   }
+  // Tercera vuelta: leyó los centavos como pesos (pedido de $16.000,64 y transfirió $16.064).
+  const asPesos = o => (Math.round(Number(o.total) || 0) + (cents(o.transferAmount || 0) - Math.round(Number(o.total) || 0) * 100)) * 100;
+  for (const o of orders) {
+    const fresh = await adminGet(env, `orders/${o.id}`).catch(() => null);
+    if (!fresh || fresh.status !== 'pending') continue;
+    const want = asPesos(o);
+    // Si ese monto también podría ser de otro pedido pendiente (exacto, sin centavos o igual), lo confirma el fotógrafo.
+    if (orders.some(x => x !== o && [asPesos(x), cents(x.transferAmount || 0), Math.round(Number(x.total) || 0) * 100].includes(want))) continue;
+    const created = (o.createdAt?.getTime?.() || 0) - 2 * 60_000;
+    const p = payments.find(x => !taken.has(x.id) && cents(Number(x.transaction_amount) || 0) === want && new Date(x.date_created).getTime() >= created);
+    if (!p) continue;
+    const dup = await adminQuery(env, 'orders', { filters: [['mpPaymentId', '==', String(p.id)]], limit: 1 });
+    taken.add(p.id);
+    if (dup.length) continue;
+    await approve(env, o, { paymentId: p.id, paidAt: new Date(p.date_approved || p.date_created), manual: 'centavos-como-pesos' });
+    n++;
+  }
   return n;
 }
 

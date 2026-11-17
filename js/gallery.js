@@ -51,6 +51,14 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
   const hasBibs = withPhotos.some(p => (sets.get(p.uid)?.bibPhotos || 0) > 0);
   // Búsqueda por selfie: algún álbum a la venta con la opción activada (la apaga el fotógrafo o el superadmin).
   const selfieOn = !ev.demo && withPhotos.some(p => sets.get(p.uid)?.selfie !== false && (sets.get(p.uid)?.facesPhotos || 0) > 0 && setForSale(sets.get(p.uid)));
+  // Tocar una cara en el visor: álbumes con la selfie y "tocar una cara" activados. Los lugares de las caras se piden una vez.
+  const tapOn = !ev.demo && withPhotos.some(p => { const s = sets.get(p.uid); return s?.selfie !== false && s?.faceTap !== false && (s?.facesPhotos || 0) > 0 && setForSale(s); });
+  let faceBoxes = null, faceBoxesLoading = null, viewerH = null;
+  const loadFaceBoxes = () => {
+    if (!tapOn || faceBoxes || faceBoxesLoading) return;
+    faceBoxesLoading = fetch(`${API_BASE}/faces/${ev.id}/boxes`).then(r => (r.ok ? r.json() : { boxes: {} })).catch(() => ({ boxes: {} }))
+      .then(r => { faceBoxes = r.boxes || {}; window.dispatchEvent(new Event('qmf-viewer-redraw')); });
+  };
   const cleanBib = v => { const n = (String(v || '').match(/\d{1,6}/) || [''])[0]; return n ? String(parseInt(n, 10)) : ''; };
   // Link con dorsal (#/evento/{id}?dorsal=123): abre directo con la búsqueda hecha.
   if (hasBibs && cleanBib(initialBib) && cleanBib(initialBib) !== '0') state.bib = cleanBib(initialBib);
@@ -173,8 +181,10 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
       const list = state.selfie;
       state.photos = list; state.done = true;
       $('#g-grid', box).innerHTML = list.length
-        ? `<div class="g-bib-found"><span>🤳 Encontramos <strong>${list.length}</strong> foto${list.length === 1 ? '' : 's'} donde parecés estar (de la más parecida a la menos)</span><button type="button" class="btn sm" id="g-selfie-x">Ver todas</button></div>${list.map((p, i) => itemHtml(p, i)).join('')}`
-        : `<div class="empty" style="grid-column:1/-1">No encontramos fotos tuyas con esa selfie.<br>Puede que no estés de frente en ninguna: probá con otra selfie con buena luz, o buscá por horario.<br><button type="button" class="btn sm" id="g-selfie-x" style="margin-top:8px">Ver todas</button></div>`;
+        ? `<div class="g-bib-found"><span>${state.faceFrom ? `👆 Encontramos <strong>${list.length}</strong> foto${list.length === 1 ? '' : 's'} de esa persona` : `🤳 Encontramos <strong>${list.length}</strong> foto${list.length === 1 ? '' : 's'} donde parecés estar`} (de la más parecida a la menos)</span><button type="button" class="btn sm" id="g-selfie-x">Ver todas</button></div>${list.map((p, i) => itemHtml(p, i)).join('')}`
+        : state.faceFrom
+          ? `<div class="empty" style="grid-column:1/-1">No encontramos más fotos de esa persona.<br><button type="button" class="btn sm" id="g-selfie-x" style="margin-top:8px">Ver todas</button></div>`
+          : `<div class="empty" style="grid-column:1/-1">No encontramos fotos tuyas con esa selfie.<br>Puede que no estés de frente en ninguna: probá con otra selfie con buena luz, o buscá por horario.<br><button type="button" class="btn sm" id="g-selfie-x" style="margin-top:8px">Ver todas</button></div>`;
       $('#g-selfie-x', box).onclick = () => { state.selfie = null; reset(); };
       $('#g-more', box).innerHTML = state.selfieD ? `<div class="notice row" id="g-face-save" style="justify-content:space-between;margin-top:12px"><span>🔔 ¿Querés que te avisemos cuando aparezcas en fotos nuevas de cualquier evento?</span><button type="button" class="btn sm primary">Avisarme</button></div>` : '';
       $('#g-face-save button', box)?.addEventListener('click', () => saveMyFace(state.selfieD));
@@ -484,7 +494,9 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
   let seenIdx = -1;
   function openGalleryViewer(index) {
     seenIdx = -1;
-    openViewer({
+    state.faceMode = false;
+    loadFaceBoxes();
+    viewerH = openViewer({
       index,
       src: i => state.photos[i].previewUrl,
       thumb: i => state.photos[i].thumbUrl,
@@ -497,7 +509,43 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
       onIndex: i => { if (i >= state.photos.length - 5) loadMore(); if (i !== seenIdx) { seenIdx = i; trackPhotoView(ev.id, state.photos[i]?.photographerUid); } },
       footer: (i, el, rerender) => viewerFooter(state.photos[i], el, rerender),
       onProtect: i => protectDialog(state.photos[i]),
+      layer: tapOn ? (i, el) => drawFaces(state.photos[i], el) : undefined,
     });
+  }
+
+  // Caras tocables sobre la foto ampliada (con el botón 👆 activado).
+  const facesOf = p => (p && faceBoxes?.[p.id]) || [];
+  function drawFaces(p, el) {
+    if (!state.faceMode) return;
+    facesOf(p).forEach(([cx, cy, w, h], k) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'lb-face';
+      b.setAttribute('aria-label', `Buscar las fotos de esta persona (${k + 1})`);
+      Object.assign(b.style, { left: `${cx / 10}%`, top: `${cy / 10}%`, width: `${(w / 10) * 1.35}%`, height: `${(h / 10) * 1.35}%` });
+      // Que el toque no abra la lupa ni cambie de foto.
+      for (const t of ['touchstart', 'touchend', 'mousedown', 'contextmenu']) b.addEventListener(t, e => e.stopPropagation(), { passive: true });
+      b.onclick = e => { e.stopPropagation(); searchFace(p, k, b); };
+      el.appendChild(b);
+    });
+  }
+  async function searchFace(p, k, btn) {
+    if (btn.classList.contains('busy')) return;
+    btn.classList.add('busy');
+    try {
+      const res = await fetch(`${API_BASE}/faces/${ev.id}/tap`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ p: p.id, i: k }) });
+      const r = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(r.error || 'No se pudo buscar. Probá de nuevo.');
+      const docs = await Promise.all((r.photos || []).map(x => getDoc(doc(db, 'photos', x.p)).then(s => (s.exists() ? { id: s.id, ...s.data() } : null)).catch(() => null)));
+      state.selfie = docs.filter(x => x && !x.hidden && x.eventId === ev.id && byUid.has(x.photographerUid));
+      state.selfieD = null;
+      state.faceFrom = true;
+      Object.assign(state, { fav: false, bib: '', hour: 0 });
+      viewerH?.close();
+      reset();
+      // Al cerrar el visor (atrás del historial) el navegador vuelve a poner el scroll: se baja a los resultados después.
+      setTimeout(() => $('#g-grid', box)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 350);
+    } catch (err) { btn.classList.remove('busy'); toast(errMsg(err), 'error'); }
   }
 
   // Foto suelta (link compartido de una foto).
@@ -527,6 +575,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
       <span class="row">
         <button class="btn sm" id="lb-fav" title="Favorita">${fav ? '♥' : '♡'}</button>
         <button class="btn sm" id="lb-share" title="Compartir esta foto">🔗</button>
+        ${facesOf(p).length ? `<button class="btn sm ${state.faceMode ? 'primary' : ''}" id="lb-faces" title="Tocá una cara y te mostramos todas las fotos de esa persona">👆 ${state.faceMode ? 'Tocá una cara' : 'Buscar a alguien'}</button>` : ''}
         ${canReview(p) ? '<button class="btn sm" id="lb-orig" title="Descargar el original para revisar la calidad (solo vos lo ves)">⬇️ Original</button>' : ''}
         <a class="btn sm" href="#/carrito">${cart.count() ? `🛒 ${cart.count()} · ${fmtMoney(cartSummary().total)}` : 'Ver carrito'}</a>
         ${forSale(p.photographerUid)
@@ -536,6 +585,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
       ${forSale(p.photographerUid) && cartSummary().tip ? `<span class="lb-note lb-tip">${esc(cartSummary().tip)}</span>` : ''}`;
     $('#lb-add', el)?.addEventListener('click', () => { toggleCart(p); rerender(); });
     $('#lb-fav', el).onclick = () => { toggleFav(p); rerender(); };
+    $('#lb-faces', el)?.addEventListener('click', () => { state.faceMode = !state.faceMode; rerender(); });
     $('#lb-orig', el)?.addEventListener('click', async e => {
       e.target.disabled = true;
       try {
@@ -603,6 +653,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
       const docs = await Promise.all((r.photos || []).map(x => getDoc(doc(db, 'photos', x.p)).then(s => (s.exists() ? { id: s.id, ...s.data() } : null)).catch(() => null)));
       state.selfie = docs.filter(p => p && !p.hidden && p.eventId === ev.id && byUid.has(p.photographerUid));
       state.selfieD = Array.from(d);
+      state.faceFrom = false;
       Object.assign(state, { fav: false, bib: '', hour: 0 });
       reset();
       $('#g-grid', box).scrollIntoView({ behavior: 'smooth', block: 'start' });
