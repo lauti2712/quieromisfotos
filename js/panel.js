@@ -2759,9 +2759,9 @@ async function viewAdminEvents() {
 
 // ================================================================ superadmin: historial de compras
 // Una fila por compra: cliente, álbum, fotógrafo, fotos, forma de pago, estado, descargas. Filtros, totales y CSV.
-// Comisión en %: la del plan (sobre el precio de las fotos) y la que queda sobre el total cobrado.
+// Comisión en %: lo que me queda sobre el total cobrado.
 const pctTxt = n => `${(Math.round(n * 10) / 10).toString().replace('.', ',')}%`;
-const feePcts = o => (o.platformFee > 0 && o.subtotal > 0 && o.total > 0 ? ` (plan ${pctTxt(o.platformFee / o.subtotal * 100)} · real ${pctTxt(o.platformFee / o.total * 100)})` : '');
+const feePcts = o => (o.platformFee > 0 && o.subtotal > 0 && o.total > 0 ? ` (${pctTxt(o.platformFee / o.total * 100)})` : '');
 const PURCHASE_STATUS = { approved: ['Pagada', 'ok'], pending: ['Pendiente', 'warn'], rejected: ['Rechazada', 'danger'], expired: ['Vencida', 'danger'], refunded: ['Reembolsada', ''] };
 let purF = { range: 30, ph: '', pay: '', st: 'approved', q: '' };
 // Cobros de suscripciones (planes de fotógrafos): se piden una vez por visita a Compras (el Worker consulta Mercado Pago).
