@@ -6,7 +6,8 @@ import { requireUser } from './firebase.js';
 import { mpFetch, panelUrl } from './mp.js';
 import { json, httpError } from './http.js';
 import { notifySuper } from './push.js';
-import { planSpec } from '../../js/plans-core.js';
+import { planSpec, PERIODS } from '../../js/plans-core.js';
+const monthsOf = period => PERIODS[period]?.months || 1;
 
 // Premium cobra más el primer pago para cubrir el registro del dominio.
 const PLANS = { lite: { label: 'Profesional Lite', priceKey: 'litePrice' },
@@ -20,22 +21,22 @@ export async function subscribe(req, env) {
   const claims = await requireUser(req, env);
   const { plan, payerEmail, period = 'month' } = await req.json().catch(() => ({}));
   if (!PLANS[plan]) throw httpError(400, 'Plan inválido');
-  if (!['month', 'year'].includes(period)) throw httpError(400, 'Período inválido');
+  if (!PERIODS[period]) throw httpError(400, 'Período inválido');
   const email = String(payerEmail || claims.email || '').trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw httpError(400, 'Ingresá el email de tu cuenta de Mercado Pago');
   const [user, settings] = await Promise.all([adminGet(env, `users/${claims.sub}`), adminGet(env, 'settings/platform')]);
   if (!user || user.role !== 'photographer') throw httpError(403, 'Solo fotógrafos');
   const spec = planSpec(plan, settings || {});
-  const yearly = period === 'year';
-  if (yearly && !(spec.year > 0)) throw httpError(400, 'Este plan no tiene abono anual');
+  const months = monthsOf(period);
+  if (period !== 'month' && !(spec[PERIODS[period].key] > 0)) throw httpError(400, `Este plan no tiene abono ${PERIODS[period].label.toLowerCase()}`);
   // Abono del período (tabla de Plataforma).
-  const amount = yearly ? spec.year : spec.price;
+  const amount = spec[PERIODS[period].key];
   if (!(amount > 0)) throw httpError(409, 'Precio del plan no configurado');
   // Premium: el primer cobro suma el registro del dominio (primer mes − mensual). MP no admite un primer cobro distinto:
   // la suscripción arranca con ese monto y, cuando se cobra, syncSubscription la baja al abono normal.
   const domainExtra = PLANS[plan].firstKey ? Math.max(0, (spec.first || 0) - spec.price) : 0;
   // Empresas: los lugares extra que ya pagaba siguen en el débito.
-  const seatAmount = plan === 'empresa' ? Math.max(0, user.teamPaidSeats || 0) * (spec.seatPrice || 0) * (yearly ? 12 : 1) : 0;
+  const seatAmount = plan === 'empresa' ? Math.max(0, user.teamPaidSeats || 0) * (spec.seatPrice || 0) * months : 0;
   const first = amount + domainExtra + seatAmount;
 
   const fromStaging = req.headers.get('Origin') === 'https://prueba.quieromisfotos.com.ar';
@@ -43,10 +44,10 @@ export async function subscribe(req, env) {
   const pre = await mpFetch(env.MP_ACCESS_TOKEN, '/preapproval', {
     method: 'POST',
     body: JSON.stringify({
-      reason: `Quiero Mis Fotos — Plan ${PLANS[plan].label}${yearly ? ' (anual)' : ''}`,
+      reason: `Quiero Mis Fotos — Plan ${PLANS[plan].label}${months > 1 ? ` (${PERIODS[period].label.toLowerCase()})` : ''}`,
       external_reference: `sub_${claims.sub}_${plan}`,
       payer_email: email,
-      auto_recurring: { frequency: yearly ? 12 : 1, frequency_type: 'months', transaction_amount: first, currency_id: 'ARS' },
+      auto_recurring: { frequency: months, frequency_type: 'months', transaction_amount: first, currency_id: 'ARS' },
       back_url: back,
       status: 'pending',
     }),
@@ -96,7 +97,7 @@ export async function syncSubscription(env, uid) {
     // Cubierto hasta un período después del último cobro. Si todavía no se cobró nunca, unos días desde el alta
     // (una sola vez: si el primer cobro no entra, el plan vence y no se renueva solo).
     const startedAt = sub.createdAt?.getTime?.() || Date.now();
-    const paidUntil = last ? last + (sub.period === 'year' ? 366 : 31) * DAY + GRACE : startedAt + GRACE;
+    const paidUntil = last ? last + (sub.period === 'year' ? 366 : sub.period === 'quarter' ? 92 : 31) * DAY + GRACE : startedAt + GRACE;
     // Al pasar de la prueba gratis a un plan pago, se respeta lo que quedaba de prueba.
     const until = user?.plan === sub.plan || user?.trial ? Math.max(current, paidUntil) : paidUntil;
     if (user && !user.courtesy && (user.plan !== sub.plan || until !== current || user.trial)) await adminUpdate(env, `users/${uid}`, { plan: sub.plan, proUntil: new Date(until), trial: false });
@@ -110,7 +111,7 @@ export async function syncSubscription(env, uid) {
       const amt = Math.round(pre.summarized?.last_charged_amount || sub.amount || 0);
       await notifySuper(env, 'membership', {
         title: `⭐ Pago de membresía: $${amt.toLocaleString('es-AR')}`,
-        body: `${user?.displayName || 'Un fotógrafo'} · plan ${PLANS[sub.plan]?.label || sub.plan}${sub.period === 'year' ? ' (anual)' : ''}`,
+        body: `${user?.displayName || 'Un fotógrafo'} · plan ${PLANS[sub.plan]?.label || sub.plan}${monthsOf(sub.period) > 1 ? ` (${PERIODS[sub.period].label.toLowerCase()})` : ''}`,
         link: `${env.PANEL_URL || 'https://quieromisfotos.com.ar/panel.html'}#/admin/fotografos`,
       });
     }
@@ -199,7 +200,7 @@ export async function changeSeats(req, env) {
   if (next > 50) throw httpError(409, 'Escribinos para equipos de más de 50 fotógrafos');
   const seats = spec.team + (user.teamExtraSeats || 0) + next;
   if ((team?.members || []).length > seats) throw httpError(409, 'Primero sacá a un fotógrafo del equipo para liberar el lugar');
-  const seatAmount = next * spec.seatPrice * (sub.period === 'year' ? 12 : 1);
+  const seatAmount = next * spec.seatPrice * monthsOf(sub.period);
   // Mientras no se cobró el primer pago (más caro por el dominio), el débito sigue en ese monto + los lugares.
   const baseFirst = (sub.firstAmount || sub.amount) - (sub.seatAmount || 0);
   const amount = (sub.needsAdjust ? baseFirst : sub.amount) + seatAmount;

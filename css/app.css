@@ -842,7 +842,7 @@ dialog.protect-dlg { padding: 0; max-width: min(420px, calc(100vw - 32px)); }
 
 /* Planes: tabla comparativa (compu) y tarjetas deslizables (celular), con selector mensual / anual. */
 .plan-period { display: flex; gap: 8px; margin: 4px 0 12px; }
-.plans-wrap[data-period="month"] .pc-y, .plans-wrap[data-period="year"] .pc-m { display: none; }
+.plans-wrap:not([data-period="year"]) .pc-y, .plans-wrap:not([data-period="quarter"]) .pc-q, .plans-wrap:not([data-period="month"]) .pc-m { display: none; }
 .plan-compare { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .88rem; table-layout: fixed; }
 .plan-compare th, .plan-compare td { padding: 9px 8px; border-bottom: 1px solid var(--border); text-align: center; vertical-align: middle; }
 .plan-compare thead th { vertical-align: top; border-bottom: 2px solid var(--border); }

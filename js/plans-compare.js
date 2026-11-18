@@ -51,7 +51,7 @@ export function plansCompareHtml(st, { current = '', cta = () => '' } = {}) {
     const p = planSpec(id, st);
     const first = ['webdomain', 'empresa'].includes(id) && p.first > p.price ? p.first : 0;
     return `<div class="pc-name">${esc(PLAN_LABELS[id])}${id === 'web' ? ' <span class="pill accent pc-rec">Recomendado</span>' : ''}</div>
-      <div class="pc-price">${id === 'free' ? '<span>Gratis</span>' : `<span class="pc-m">${money(p.price)}<small>/mes</small></span><span class="pc-y">${p.year ? `${money(p.year)}<small>/año</small>` : `${money(p.price)}<small>/mes</small>`}</span>`}</div>
+      <div class="pc-price">${id === 'free' ? '<span>Gratis</span>' : `<span class="pc-m">${money(p.price)}<small>/mes</small></span><span class="pc-q">${p.quarter ? `${money(p.quarter)}<small>/3 meses</small>` : `${money(p.price)}<small>/mes</small>`}</span><span class="pc-y">${p.year ? `${money(p.year)}<small>/año</small>` : `${money(p.price)}<small>/mes</small>`}</span>`}</div>
       ${first ? `<div class="muted small">Primer mes ${money(first)} (incluye el dominio)</div>` : ''}
       <div class="pc-cta">${cta(id)}</div>`;
   };
@@ -66,8 +66,10 @@ export function plansCompareHtml(st, { current = '', cta = () => '' } = {}) {
   </div>`;
 }
 
-// Botones Mensual / Anual (data-period) que cambian el precio que se muestra.
-export const periodToggleHtml = () => `<div class="plan-period" role="group" aria-label="Forma de pago">
+// Botones Mensual / Trimestral / Anual (data-period) que cambian el precio que se muestra.
+// Trimestral solo si algún plan tiene precio por 3 meses (Superadmin → Planes).
+export const periodToggleHtml = st => `<div class="plan-period" role="group" aria-label="Forma de pago">
       <button type="button" class="chip on" data-period="month">Mensual</button>
+      ${PLAN_IDS.some(id => planSpec(id, st).quarter > 0) ? '<button type="button" class="chip" data-period="quarter">Trimestral</button>' : ''}
       <button type="button" class="chip" data-period="year">Anual <span class="muted small">· 2 meses gratis</span></button>
     </div>`;

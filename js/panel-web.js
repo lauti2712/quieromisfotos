@@ -68,10 +68,10 @@ export async function viewWeb(view, { uid, profile, settings }) {
   view.innerHTML = `
     <h1>Planes y mi web</h1>
     <p class="muted">Con el plan Profesional vendés sin límite de álbumes, pagás menos comisión y tenés tu propia web con tus fotos, servicios y contacto.</p>
-    ${periodToggleHtml()}
+    ${periodToggleHtml(settings)}
     ${plansCompareHtml(settings, plan)}
     <p class="muted small" style="margin:6px 0 0">* A la comisión de la plataforma se suma la de Mercado Pago, que depende del plazo de cobro que elijas en tu cuenta de MP. Los planes se debitan con Mercado Pago y los cancelás cuando quieras.</p>
-    ${plan !== 'free' ? `<p class="muted small">${profile.courtesy ? '🎁 Tenés este plan de cortesía, sin costo y sin vencimiento' : `${profile.trial ? '🎁 Estás usando la prueba gratis, hasta' : 'Tu plan está activo hasta'} el ${esc(fmtTs(profile.proUntil))}`}${subActive ? ` y se renueva solo ${sub.period === 'year' ? 'cada año' : 'cada mes'} con Mercado Pago` : profile.trial ? '. Suscribite antes para no perder tu web' : ''}.
+    ${plan !== 'free' ? `<p class="muted small">${profile.courtesy ? '🎁 Tenés este plan de cortesía, sin costo y sin vencimiento' : `${profile.trial ? '🎁 Estás usando la prueba gratis, hasta' : 'Tu plan está activo hasta'} el ${esc(fmtTs(profile.proUntil))}`}${subActive ? ` y se renueva solo ${sub.period === 'year' ? 'cada año' : sub.period === 'quarter' ? 'cada 3 meses' : 'cada mes'} con Mercado Pago` : profile.trial ? '. Suscribite antes para no perder tu web' : ''}.
       ${subActive ? '<button class="btn sm ghost" id="sub-cancel">Cancelar suscripción</button>' : ''}</p>` : ''}
     ${sub?.status === 'pending' ? `<div class="notice">Tu suscripción al plan <strong>${esc(PLANS[sub.plan]?.label)}</strong> está esperando la confirmación de Mercado Pago.</div>` : ''}
     ${sub?.pending?.plan ? `<div class="notice">Tu cambio al plan <strong>${esc(PLANS[sub.pending.plan]?.label)}</strong> está esperando la confirmación de Mercado Pago. Mientras tanto sigue tu plan actual; si no lo confirmás en 3 días, se descarta.</div>` : ''}
@@ -94,11 +94,13 @@ export async function viewWeb(view, { uid, profile, settings }) {
     dlg.innerHTML = `
       <div class="dlg-head"><h2>Plan ${esc(PLANS[want].label)}</h2><button class="btn ghost sm" data-close>✕</button></div>
       <div class="dlg-body stack">
-        ${planSpec(want, settings).year ? `<div class="stack" style="gap:8px">
+        ${planSpec(want, settings).year || planSpec(want, settings).quarter ? `<div class="stack" style="gap:8px">
           <label class="check card" style="margin:0;padding:12px"><input type="radio" name="sub-period" value="month" checked>
             <span><strong>Mensual: ${price(want)}</strong>${first(want) ? `<br><span class="muted small">Primer mes ${fmtMoney(first(want))} (incluye el registro de tu dominio)</span>` : ''}</span></label>
-          <label class="check card" style="margin:0;padding:12px"><input type="radio" name="sub-period" value="year">
-            <span><strong>Anual: ${fmtMoney(planSpec(want, settings).year)}/año</strong> · 2 meses gratis${first(want) ? `<br><span class="muted small">El primer pago suma ${fmtMoney(first(want) - planSpec(want, settings).price)} del registro del dominio</span>` : ''}</span></label>
+          ${(q => (q ? `<label class="check card" style="margin:0;padding:12px"><input type="radio" name="sub-period" value="quarter">
+            <span><strong>Trimestral: ${fmtMoney(q)} cada 3 meses</strong>${q < planSpec(want, settings).price * 3 ? ` · ahorrás ${fmtMoney(planSpec(want, settings).price * 3 - q)}` : ''}${first(want) ? `<br><span class="muted small">El primer pago suma ${fmtMoney(first(want) - planSpec(want, settings).price)} del registro del dominio</span>` : ''}</span></label>` : ''))(planSpec(want, settings).quarter)}
+          ${planSpec(want, settings).year ? `<label class="check card" style="margin:0;padding:12px"><input type="radio" name="sub-period" value="year">
+            <span><strong>Anual: ${fmtMoney(planSpec(want, settings).year)}/año</strong> · 2 meses gratis${first(want) ? `<br><span class="muted small">El primer pago suma ${fmtMoney(first(want) - planSpec(want, settings).price)} del registro del dominio</span>` : ''}</span></label>` : ''}
         </div>` : `<p style="margin:0">${first(want) ? `<strong>${fmtMoney(first(want))} el primer mes</strong> (incluye el registro de tu dominio) y después <strong>${price(want)}</strong>` : `<strong>${price(want)}</strong>`}</p>`}
         <p class="muted small" style="margin:0">Se debita automáticamente con Mercado Pago. Lo cancelás cuando quieras desde acá y el plan sigue hasta el final del período pagado.</p>
         <label class="field">Email de tu cuenta de Mercado Pago<input type="email" id="sub-email" value="${esc(auth.currentUser?.email || '')}" required>

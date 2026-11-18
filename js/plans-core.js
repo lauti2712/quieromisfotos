@@ -4,6 +4,8 @@
 //   fee: comisión % · portfolio: fotos · albumPhotos: tope de fotos por álbum · days: días de venta · stats: nivel de estadísticas (1-4)
 //   web: web propia · domain: dominio propio · team: colaboradores incluidos (pueden subir a los álbumes de la cuenta)
 export const PAID_PLANS = ['lite', 'web', 'webdomain', 'empresa'];
+// Períodos de pago de la suscripción: meses que cubre cada cobro y campo de precio en planSpec.
+export const PERIODS = { month: { months: 1, key: 'price', label: 'Mensual' }, quarter: { months: 3, key: 'quarter', label: 'Trimestral' }, year: { months: 12, key: 'year', label: 'Anual' } };
 
 export function planOf(user, now = Date.now()) {
   const t = user?.proUntil?.toMillis?.() ?? user?.proUntil?.getTime?.() ?? 0;
@@ -33,7 +35,9 @@ const TOTAL_PHOTOS = { free: 300, lite: 1500, web: 4000, webdomain: 9000, empres
 function basePlanSpec(planId, st) {
   st = st || {};
   const id = PLAN_PREFIX[planId] ? planId : 'free', px = PLAN_PREFIX[id];
-  const lim = { totalPhotos: Number(st[`${px}TotalPhotos`] ?? TOTAL_PHOTOS[id]) || 0, albums: Number(st[`${px}Albums`] ?? (id === 'free' ? 1 : 0)) || 0 };
+  const lim = { totalPhotos: Number(st[`${px}TotalPhotos`] ?? TOTAL_PHOTOS[id]) || 0, albums: Number(st[`${px}Albums`] ?? (id === 'free' ? 1 : 0)) || 0,
+    // Abono trimestral (3 meses juntos): 0 = no se ofrece.
+    quarter: id === 'free' ? 0 : Number(st[`${px}QuarterPrice`]) || 0 };
   return { ...planSpecRaw(planId, st), ...lim };
 }
 function planSpecRaw(planId, st) {
