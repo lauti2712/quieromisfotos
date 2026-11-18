@@ -49,7 +49,8 @@
 import { activatePhotographer, verifyAccount } from './approval.js';
 import { verifyIdToken, getDocAsUser, requireUser } from './firebase.js';
 import { adminGet, adminGetMany, adminQuery } from './admin.js';
-import { isFree, albumPhotoLimit, setActive, activeAlbumLimit } from './plans.js';
+import { isFree, setActive, activeAlbumLimit } from './plans.js';
+import { albumLimitFor, fullMsg } from './quota.js';
 import { signToken, verifyToken } from './tokens.js';
 import { json, httpError, apiUrl } from './http.js';
 import { connectUrl, callback, disconnect, mpAccount } from './mp.js';
@@ -286,17 +287,16 @@ async function uploadSession(req, env) {
       owner = team;
     } else if ((ev.photographerUids || []).includes(uid)) {
       role = 'member';
-      // Plan Gratis: un solo álbum activo a la vez (con fotos y originales guardados).
-      if (!isSuper && isFree(user)) {
-        // Gratis: 1 álbum activo a la vez, más los álbumes de prueba que haya dado el superadmin.
-        const max = activeAlbumLimit(user, await adminGet(env, 'settings/platform').catch(() => null) || {});
+      // Álbumes activos a la vez (con fotos y originales guardados), según el plan (Plataforma), más los de prueba.
+      const max = isSuper ? Infinity : activeAlbumLimit(user, await adminGet(env, 'settings/platform').catch(() => null) || {});
+      if (Number.isFinite(max)) {
         const evs = await adminQuery(env, 'events', { filters: [['photographerUids', 'array-contains', uid]], limit: 300 });
         const others = evs.filter(e => e.id !== eid);
         const sets = others.length ? await adminGetMany(env, others.map(e => `events/${e.id}/sets/${uid}`)) : [];
         const busy = others.filter((e, i) => setActive(sets[i]));
         if (busy.length >= max) throw httpError(403, max > 1
-          ? `Llegaste a tus ${max} álbumes activos (incluye los de prueba). Pasate al plan Profesional o esperá a que venza alguno.`
-          : `Con el plan Gratis podés tener 1 álbum activo a la vez y ya tenés "${busy[0].name}". Pasate al plan Profesional o esperá a que venza.`);
+          ? `Llegaste a tus ${max} álbumes activos a la vez. Pasate a un plan con más álbumes o esperá a que venza alguno.`
+          : `Tu plan permite 1 álbum activo a la vez y ya tenés "${busy[0].name}". Pasate a un plan con más álbumes o esperá a que venza.`);
       }
     } else if (isSuper || ev.createdBy === uid) role = 'editor';
     else throw httpError(403, 'No participás en este evento');
@@ -332,12 +332,8 @@ async function uploadPhotoPart(req, env, kind, eid, pid, ctx) {
   // Tope de fotos del álbum (según el plan + packs comprados): se controla al empezar cada foto.
   if (kind === 'preview') {
     const [set, st, user] = await adminGetMany(env, [`events/${eid}/sets/${s.uid}`, 'settings/platform', `users/${s.uid}`]);
-    const maxPhotos = albumPhotoLimit(set, st, user);
-    if (maxPhotos > 0 && set && (set.photoCount || 0) >= maxPhotos) {
-      throw httpError(402, isFree(user)
-        ? `Tu álbum llegó al tope de ${maxPhotos} fotos del plan Gratis. Pasate a un plan pago para seguir subiendo.`
-        : `El álbum llegó a su tope de ${maxPhotos} fotos. Sumá más fotos con un pack para seguir subiendo.`);
-    }
+    const maxPhotos = set ? await albumLimitFor(env, s.uid, eid, set, st, user) : 0;
+    if (maxPhotos > 0 && (set.photoCount || 0) >= maxPhotos) throw httpError(402, fullMsg(maxPhotos, isFree(user)));
     // Avisar a los seguidores del evento y del fotógrafo cuando el álbum ya tiene fotos.
     if (set && !set.followersNotifiedAt && (set.photoCount || 0) >= NOTIFY_AT_PHOTOS) {
       ctx.waitUntil(notifyFollowersOnce(env, eid, s.uid).catch(e => console.error('seguidores', e)));

@@ -5,7 +5,8 @@
 //   POST /photos/{eid}/delete      X-Upload-Token  {ids: [...]} (hasta 100)
 //        -> borra las fotos; las que tienen una venta con descarga vigente solo se ocultan.
 import { adminGet, adminGetMany, adminQuery, adminCommit } from './admin.js';
-import { albumPhotoLimit, rulesFor, isFree } from './plans.js';
+import { rulesFor, isFree } from './plans.js';
+import { albumLimitFor, fullMsg } from './quota.js';
 import { json, httpError } from './http.js';
 
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
@@ -40,12 +41,8 @@ export async function commitPhoto(req, env, s, eid, pid, publicBase) {
     return json({ ok: true, already: true, expiresAt: set?.expiresAt?.getTime?.() || null });
   }
   if (!set) throw httpError(409, 'Guardá primero los datos de tu álbum en este evento');
-  const max = albumPhotoLimit(set, st || {}, user);
-  if (max > 0 && (set.photoCount || 0) >= max) {
-    throw httpError(402, isFree(user)
-      ? `Tu álbum llegó al tope de ${max} fotos del plan Gratis. Pasate a un plan pago para seguir subiendo.`
-      : `El álbum llegó a su tope de ${max} fotos. Sumá más fotos con un pack para seguir subiendo.`);
-  }
+  const max = await albumLimitFor(env, s.uid, eid, set, st, user);
+  if (max > 0 && (set.photoCount || 0) >= max) throw httpError(402, fullMsg(max, isFree(user)));
 
   const subs = (set.subalbums || []).map(x => x.id);
   const subalbumId = subs.includes(b.subalbumId) ? b.subalbumId : '';
