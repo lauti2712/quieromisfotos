@@ -38,7 +38,14 @@ function basePlanSpec(planId, st) {
   const lim = { totalPhotos: Number(st[`${px}TotalPhotos`] ?? TOTAL_PHOTOS[id]) || 0, albums: Number(st[`${px}Albums`] ?? (id === 'free' ? 1 : 0)) || 0,
     // Abono trimestral (3 meses juntos): 0 = no se ofrece.
     quarter: id === 'free' ? 0 : Number(st[`${px}QuarterPrice`]) || 0 };
-  return { ...planSpecRaw(planId, st), ...lim };
+  const raw = planSpecRaw(planId, st);
+  // Planes con dominio: adicional que se cobra una sola vez en el primer pago (sea mensual, trimestral o anual).
+  // {prefijo}SetupPrice; si no está, sale del viejo "primer mes" (first − mensual). first = mensual + adicional.
+  if (raw.first != null) {
+    const setup = Math.max(0, Number(st[`${px}SetupPrice`] ?? (raw.first - raw.price)) || 0);
+    Object.assign(raw, { setup, first: raw.price + setup });
+  }
+  return { ...raw, ...lim };
 }
 function planSpecRaw(planId, st) {
   const base = st.retentionDays ?? 14;

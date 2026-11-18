@@ -49,10 +49,10 @@ export function plansCompareHtml(st, { current = '', cta = () => '' } = {}) {
   const rows = planRows(st);
   const head = id => {
     const p = planSpec(id, st);
-    const first = ['webdomain', 'empresa'].includes(id) && p.first > p.price ? p.first : 0;
+    const setup = ['webdomain', 'empresa'].includes(id) ? p.setup || 0 : 0;
     return `<div class="pc-name">${esc(PLAN_LABELS[id])}${id === 'web' ? ' <span class="pill accent pc-rec">Recomendado</span>' : ''}</div>
       <div class="pc-price">${id === 'free' ? '<span>Gratis</span>' : `<span class="pc-m">${money(p.price)}<small>/mes</small></span><span class="pc-q">${p.quarter ? `${money(p.quarter)}<small>/3 meses</small>` : `${money(p.price)}<small>/mes</small>`}</span><span class="pc-y">${p.year ? `${money(p.year)}<small>/año</small>` : `${money(p.price)}<small>/mes</small>`}</span>`}</div>
-      ${first ? `<div class="muted small">Primer mes ${money(first)} (incluye el dominio)</div>` : ''}
+      ${setup ? `<div class="muted small">+${money(setup)} una sola vez, en el primer pago (registro del dominio)</div>` : ''}
       <div class="pc-cta">${cta(id)}</div>`;
   };
   const cls = id => `${id === current ? 'pc-cur' : ''} ${id === 'web' ? 'pc-hl' : ''}`;

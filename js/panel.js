@@ -3454,9 +3454,9 @@ const PLAN_KEYS = {
   free: { fee: 'freeFeePercent', portfolio: 'freePortfolioLimit', totalPhotos: 'freeTotalPhotos', albums: 'freeAlbums', days: 'freeRetentionDays' },
   lite: { price: 'litePrice', year: 'liteYearPrice', quarter: 'liteQuarterPrice', fee: 'liteFeePercent', portfolio: 'litePortfolioLimit', totalPhotos: 'liteTotalPhotos', albums: 'liteAlbums', days: 'liteRetentionDays', featured: 'liteFeatured' },
   web: { price: 'webPrice', year: 'webYearPrice', quarter: 'webQuarterPrice', fee: 'webFeePercent', portfolio: 'webPortfolioLimit', totalPhotos: 'webTotalPhotos', albums: 'webAlbums', days: 'webRetentionDays', featured: 'webFeatured' },
-  webdomain: { price: 'webDomainPrice', first: 'webDomainFirstPrice', year: 'webDomainYearPrice', quarter: 'webDomainQuarterPrice', fee: 'webDomainFeePercent', portfolio: 'webDomainPortfolioLimit',
+  webdomain: { price: 'webDomainPrice', setup: 'webDomainSetupPrice', year: 'webDomainYearPrice', quarter: 'webDomainQuarterPrice', fee: 'webDomainFeePercent', portfolio: 'webDomainPortfolioLimit',
     totalPhotos: 'webDomainTotalPhotos', albums: 'webDomainAlbums', days: 'webDomainRetentionDays', featured: 'webDomainFeatured' },
-  empresa: { price: 'empresaPrice', first: 'empresaFirstPrice', year: 'empresaYearPrice', quarter: 'empresaQuarterPrice', fee: 'empresaFeePercent', portfolio: 'empresaPortfolioLimit',
+  empresa: { price: 'empresaPrice', setup: 'empresaSetupPrice', year: 'empresaYearPrice', quarter: 'empresaQuarterPrice', fee: 'empresaFeePercent', portfolio: 'empresaPortfolioLimit',
     totalPhotos: 'empresaTotalPhotos', albums: 'empresaAlbums', days: 'empresaRetentionDays', featured: 'empresaFeatured', team: 'empresaSeats', seatPrice: 'empresaSeatPrice' },
 };
 function readPlanCfg() {
@@ -3679,7 +3679,7 @@ async function viewAdminPlans() {
             const num = (k, v, step = 1) => `<input type="number" data-k="${k}" min="0" step="${step}" value="${v ?? ''}">`;
             return `<tr data-plan="${id}"><td><strong>${label}</strong>${id === 'free' ? '' : id === 'web' ? '<br><span class="muted small">con web</span>' : id === 'webdomain' ? '<br><span class="muted small">web + dominio</span>' : id === 'empresa' ? `<br><span class="muted small">web + dominio + equipo</span><span class="hint">Colaboradores incluidos</span>${num('team', p.team)}<span class="hint">Lugar extra ($/mes)</span>${num('seatPrice', p.seatPrice)}` : ''}</td>
               <td>${id === 'free' ? '—' : `<span class="hint">Mensual</span>${num('price', p.price)}
-                ${PLANS[id]?.domain ? `<span class="hint">Primer mes</span>${num('first', p.first)}` : ''}
+                ${PLANS[id]?.domain ? `<span class="hint">Adicional del primer pago (dominio, una sola vez)</span>${num('setup', p.setup)}` : ''}
                 <span class="hint">Trimestral (0 = no se ofrece)</span>${num('quarter', p.quarter)}
                 <span class="hint">Anual</span>${num('year', p.year)}`}</td>
               <td>${num('fee', p.baseFee ?? p.fee, 0.1)}</td>
