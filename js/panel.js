@@ -2377,6 +2377,7 @@ let photogTab = 'pending';
 let photogPlan = '';          // filtro por plan: '' | free | lite | pro | … | courtesy
 const photogOpen = new Set(); // fichas con "Ver más" abierto
 let photogQ = '';             // buscador por nombre o ciudad
+let photogSort = '';          // orden: '' (más nuevos) | amount (más vendido en pesos) | sold (más fotos vendidas)
 let photogSeen = { at: 0, map: {} }; // último ingreso (Firebase Auth, vía Worker), se refresca cada 5 minutos
 const agoText = ms => {
   if (!ms) return 'nunca ingresó';
@@ -2396,6 +2397,8 @@ async function viewAdminPhotographers() {
     <div class="tabs">${tabs.map(([k, l]) => `<button class="chip ${photogTab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>
     <div class="tabs" style="margin-top:-4px">${[['', 'Todos los planes'], ['free', 'Gratis'], ...Object.entries(PLANS).filter(([k]) => k !== 'free').map(([k, v]) => [k, v.label]), ['courtesy', '🎁 Cortesía']]
       .map(([k, l]) => `<button class="chip ${photogPlan === k ? 'on' : ''}" data-pfilter="${k}">${esc(l)}</button>`).join('')}</div>
+    <div class="tabs" style="margin-top:-4px">${[['', '🆕 Más nuevos'], ['amount', '💰 Más vendido ($)'], ['sold', '📸 Más fotos vendidas']]
+      .map(([k, l]) => `<button class="chip ${photogSort === k ? 'on' : ''}" data-psort="${k}">${l}</button>`).join('')}</div>
     <input type="search" id="ph-q" placeholder="🔎 Buscar por nombre o ciudad" value="${esc(photogQ)}" style="margin:4px 0 12px">
     <div class="card" id="pl"><div class="spinner"></div></div>`;
   // Buscador: filtra las fichas ya cargadas (sin volver a pedir datos).
@@ -2409,6 +2412,7 @@ async function viewAdminPhotographers() {
   $('#ph-q').oninput = e => { photogQ = e.target.value; applyQ(); };
   $$('[data-tab]').forEach(b => b.onclick = () => { photogTab = b.dataset.tab; viewAdminPhotographers(); });
   $$('[data-pfilter]').forEach(b => b.onclick = () => { photogPlan = b.dataset.pfilter; viewAdminPhotographers(); });
+  $$('[data-psort]').forEach(b => b.onclick = () => { photogSort = b.dataset.psort; viewAdminPhotographers(); });
   $('#ap-toggle').onclick = async () => {
     const autoApprove = manual;
     if (autoApprove && !confirm('¿Desactivar la aprobación? Los fotógrafos nuevos van a quedar aprobados solos y pueden publicar y vender enseguida. Los que ya están pendientes se aprueban la próxima vez que entren.')) return;
@@ -2435,6 +2439,8 @@ async function viewAdminPhotographers() {
   const soldBy = new Map(), liveBy = new Map(), amountBy = new Map();
   for (const d of paidSnap?.docs || []) { const x = d.data(); amountBy.set(x.photographerUid, (amountBy.get(x.photographerUid) || 0) + (Number(x.total) || 0)); }
   for (const d of salesSnap?.docs || []) { const x = d.data(); soldBy.set(x.photographerUid, (soldBy.get(x.photographerUid) || 0) + (x.soldPhotos || 0)); }
+  const by = photogSort === 'amount' ? amountBy : photogSort === 'sold' ? soldBy : null;
+  if (by) users.sort((a, b) => (by.get(b.uid) || 0) - (by.get(a.uid) || 0));
   for (const d of setsSnap?.docs || []) { const x = d.data(); if (!setActive(x)) continue; const l = liveBy.get(d.id) || { albums: 0, photos: 0 }; l.albums++; l.photos += x.photoCount || 0; liveBy.set(d.id, l); }
   const privs = await Promise.all(users.map(u => getDoc(doc(db, 'userPrivate', u.uid)).then(s => s.data() || {}).catch(() => ({}))));
   const reqs = await Promise.all(users.map(u => getDoc(doc(db, 'planRequests', u.uid)).then(s => s.data() || null).catch(() => null)));
