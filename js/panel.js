@@ -436,6 +436,7 @@ function navItems() {
     { href: '#/admin/etiquetas', label: '🏷️ Etiquetas' },
     { href: '#/admin/almacenamiento', label: '💾 Almacenamiento' },
     { href: '#/admin/costos', label: '🧾 Costos' },
+    { href: '#/admin/planes', label: '⭐ Planes' },
     { href: '#/admin/config', label: '⚙️ Plataforma' },
     { group: 'Mi cuenta' },
     { href: '#/perfil', label: '👤 Perfil' },
@@ -578,6 +579,7 @@ function route() {
     if (b === 'config') return run(viewAdminConfig);
     if (b === 'almacenamiento') return run(viewAdminStorage);
     if (b === 'costos') return run(viewAdminCosts);
+    if (b === 'planes') return run(viewAdminPlans);
     if (b === 'metricas') return run(viewAdminMetrics);
     if (b === 'clientes') return run(viewAdminCustomers);
     if (b === 'compras') return run(viewAdminPurchases);
@@ -2797,7 +2799,7 @@ function drawPlanPays(from, q) {
     ${list.length ? `<div class="table-wrap"><table class="list">
       <tr><th>Fotógrafo</th><th>Fecha</th><th>Plan</th><th>Cobro</th><th>Monto</th></tr>
       ${list.map(p => `<tr><td><strong>${esc(p.name || '—')}</strong></td><td class="small">${esc(new Date(p.at).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }))}</td>
-        <td>${esc(PLANS[p.plan]?.label || p.plan || '—')}${p.period === 'year' ? ' <span class="muted small">anual</span>' : ''}</td>
+        <td>${esc(PLANS[p.plan]?.label || p.plan || '—')}${p.period === 'year' ? ' <span class="muted small">anual</span>' : p.period === 'quarter' ? ' <span class="muted small">trimestral</span>' : ''}</td>
         <td>${p.first ? '<span class="pill ok">🆕 Primer cobro</span>' : '<span class="pill">🔁 Renovación</span>'}</td><td>${fmtMoney(p.amount)}</td></tr>`).join('')}
     </table></div>` : '<p class="muted small" style="margin:0">No hay cobros de suscripciones con estos filtros.</p>'}
   </div>`;
@@ -3450,11 +3452,11 @@ async function viewAdminTags() {
 // Tabla de condiciones por plan (Plataforma) -> campos de settings/platform.
 const PLAN_KEYS = {
   free: { fee: 'freeFeePercent', portfolio: 'freePortfolioLimit', totalPhotos: 'freeTotalPhotos', albums: 'freeAlbums', days: 'freeRetentionDays' },
-  lite: { price: 'litePrice', year: 'liteYearPrice', fee: 'liteFeePercent', portfolio: 'litePortfolioLimit', totalPhotos: 'liteTotalPhotos', albums: 'liteAlbums', days: 'liteRetentionDays', featured: 'liteFeatured' },
-  web: { price: 'webPrice', year: 'webYearPrice', fee: 'webFeePercent', portfolio: 'webPortfolioLimit', totalPhotos: 'webTotalPhotos', albums: 'webAlbums', days: 'webRetentionDays', featured: 'webFeatured' },
-  webdomain: { price: 'webDomainPrice', first: 'webDomainFirstPrice', year: 'webDomainYearPrice', fee: 'webDomainFeePercent', portfolio: 'webDomainPortfolioLimit',
+  lite: { price: 'litePrice', year: 'liteYearPrice', quarter: 'liteQuarterPrice', fee: 'liteFeePercent', portfolio: 'litePortfolioLimit', totalPhotos: 'liteTotalPhotos', albums: 'liteAlbums', days: 'liteRetentionDays', featured: 'liteFeatured' },
+  web: { price: 'webPrice', year: 'webYearPrice', quarter: 'webQuarterPrice', fee: 'webFeePercent', portfolio: 'webPortfolioLimit', totalPhotos: 'webTotalPhotos', albums: 'webAlbums', days: 'webRetentionDays', featured: 'webFeatured' },
+  webdomain: { price: 'webDomainPrice', setup: 'webDomainSetupPrice', year: 'webDomainYearPrice', quarter: 'webDomainQuarterPrice', fee: 'webDomainFeePercent', portfolio: 'webDomainPortfolioLimit',
     totalPhotos: 'webDomainTotalPhotos', albums: 'webDomainAlbums', days: 'webDomainRetentionDays', featured: 'webDomainFeatured' },
-  empresa: { price: 'empresaPrice', first: 'empresaFirstPrice', year: 'empresaYearPrice', fee: 'empresaFeePercent', portfolio: 'empresaPortfolioLimit',
+  empresa: { price: 'empresaPrice', setup: 'empresaSetupPrice', year: 'empresaYearPrice', quarter: 'empresaQuarterPrice', fee: 'empresaFeePercent', portfolio: 'empresaPortfolioLimit',
     totalPhotos: 'empresaTotalPhotos', albums: 'empresaAlbums', days: 'empresaRetentionDays', featured: 'empresaFeatured', team: 'empresaSeats', seatPrice: 'empresaSeatPrice' },
 };
 function readPlanCfg() {
@@ -3570,7 +3572,6 @@ async function viewAdminConfig() {
       <button class="btn primary" id="a-news">Enviar a todos</button>
     </div>
     <div class="card stack" id="a-push"></div>
-    <div class="card stack" id="a-transfer"></div>
     <form id="acf">
       <div class="card stack">
         <h2 style="margin:0">Sitio público</h2>
@@ -3592,36 +3593,6 @@ async function viewAdminConfig() {
         </div>
       </div>
       <div class="card stack">
-        <h2>Planes</h2>
-        <p class="muted small" style="margin:0">Fotos en total: cupo de la cuenta entre todos sus álbumes (cuentan hasta que se borran los originales). Álbumes: activos a la vez. 0 = sin tope. Los planes pagos pueden comprar packs de fotos (en Almacenamiento); Gratis no.</p>
-        <div class="table-wrap"><table class="list plan-cfg">
-          <tr><th>Plan</th><th>Precio</th><th>Comisión %</th><th>Portfolio</th><th>Fotos en total</th><th>Álbumes</th><th>Días de venta</th><th>Destacado</th></tr>
-          ${[['free', 'Gratis'], ['lite', 'Profesional Lite'], ['web', 'Profesional'], ['webdomain', 'Profesional Premium'], ['empresa', 'Empresas']].map(([id, label]) => {
-            const p = planSpec(id, st);
-            const num = (k, v, step = 1) => `<input type="number" data-k="${k}" min="0" step="${step}" value="${v ?? ''}">`;
-            return `<tr data-plan="${id}"><td><strong>${label}</strong>${id === 'free' ? '' : id === 'web' ? '<br><span class="muted small">con web</span>' : id === 'webdomain' ? '<br><span class="muted small">web + dominio</span>' : id === 'empresa' ? `<br><span class="muted small">web + dominio + equipo</span><span class="hint">Colaboradores incluidos</span>${num('team', p.team)}<span class="hint">Lugar extra ($/mes)</span>${num('seatPrice', p.seatPrice)}` : ''}</td>
-              <td>${id === 'free' ? '—' : `<span class="hint">Mensual</span>${num('price', p.price)}
-                ${PLANS[id]?.domain ? `<span class="hint">Primer mes</span>${num('first', p.first)}` : ''}
-                <span class="hint">Anual</span>${num('year', p.year)}`}</td>
-              <td>${num('fee', p.baseFee ?? p.fee, 0.1)}</td>
-              <td>${num('portfolio', p.portfolio)}</td>
-              <td>${num('totalPhotos', p.totalPhotos, 100)}</td>
-              <td>${num('albums', p.albums)}</td>
-              <td>${num('days', p.days)}</td>
-              <td>${id === 'free' ? '—' : `<input type="checkbox" data-k="featured" ${p.featured ? 'checked' : ''}>`}</td></tr>`;
-          }).join('')}
-        </table></div>
-        <div class="row" style="align-items:flex-end;gap:10px">
-          <label class="field" style="max-width:200px">Promo: comisión % para todos<input type="number" id="a-promo-fee" min="0" step="0.1" value="${esc(String('promoFee' in st ? st.promoFee : 3))}"></label>
-          <label class="field" style="max-width:200px">hasta el (inclusive)<input type="date" id="a-promo-until" value="${esc('promoUntil' in st ? st.promoUntil || '' : '2026-11-15')}"></label>
-          <span class="hint" style="flex:1">Mientras dure, se cobra esta comisión en todos los planes (si es menor que la del plan) y se muestra en Soy fotógrafo. 0 = sin promo.</span>
-        </div>
-        <label class="field" style="max-width:320px">Prueba gratis de Profesional para fotógrafos nuevos (días)<input type="number" id="a-trial" min="0" max="90" step="1" value="${st.trialDays ?? 30}">
-          <span class="hint">Se da al aprobar al fotógrafo, una sola vez. 0 = sin prueba. Rige con los planes nuevos.</span></label>
-        <div class="row"><button type="button" class="btn sm" id="a-mpacc">💳 Ver la cuenta que cobra los planes</button><span class="small" id="a-mpacc-out"></span></div>
-        </div>
-      </div>
-      <div class="card stack">
         <h2>Planes de extensión de retención</h2>
         <p class="muted small" style="margin:0">El fotógrafo los paga para mantener sus originales disponibles por más tiempo.</p>
         <div id="a-plans" class="stack"></div>
@@ -3629,17 +3600,6 @@ async function viewAdminConfig() {
       </div>
       <div class="row end" style="margin-top:14px"><button class="btn primary">Guardar</button></div>
     </form>`;
-  // Cuenta de Mercado Pago con la que la plataforma cobra suscripciones y extensiones (tiene que ser la real).
-  $('#a-mpacc').onclick = async e => {
-    e.target.disabled = true;
-    try {
-      const r = await apiPost('/admin/mp/whoami');
-      $('#a-mpacc-out').innerHTML = !r.configured ? '❌ No hay token cargado'
-        : r.test ? `⚠️ <strong>Cuenta de PRUEBA</strong> (${esc(r.nickname)} · #${esc(r.id)}): con esta cuenta los pagos reales fallan. Cargá el Access Token de producción de tu cuenta real.`
-        : `✅ Cuenta real: ${esc(r.nickname)} · #${esc(r.id)}${r.email ? ` · ${esc(r.email)}` : ''}`;
-    } catch (err) { $('#a-mpacc-out').textContent = errMsg(err); }
-    e.target.disabled = false;
-  };
   const draw = () => {
     $('#a-plans').innerHTML = plans.length ? plans.map((p, i) => `
       <div class="row">
@@ -3653,7 +3613,6 @@ async function viewAdminConfig() {
   };
   draw();
   drawSuperPush();
-  drawAdminTransfer();
   $('#a-mailtest').onclick = async e => {
     e.target.disabled = true;
     try { const r = await apiPost('/admin/mail/test'); toast(`Mail enviado a ${r.to}. Revisá la bandeja (y Spam).`); }
@@ -3690,8 +3649,7 @@ async function viewAdminConfig() {
     if (clean.some(p => !p.label || !(p.days > 0) || !(p.price > 0))) return toast('Cada plan necesita nombre, días y precio.', 'error');
     try {
       await setDoc(doc(db, 'settings', 'platform'), {
-        showDirectory: $('#a-dir').checked, trialDays: Math.round(Number($('#a-trial').value) || 0), ...readPlanCfg(),
-        promoFee: Number($('#a-promo-fee').value) || 0, promoUntil: $('#a-promo-until').value || '',
+        showDirectory: $('#a-dir').checked,
         retentionDays: Math.round(Number($('#a-ret').value)),
         extensionPlans: clean,
         mpFeePlans: $$('#a-mp [data-mp]').map(i => ({ id: i.dataset.mp, label: i.dataset.label, percent: Math.round(Number(i.value) * 100) / 100 })),
@@ -3700,6 +3658,75 @@ async function viewAdminConfig() {
       S.settings = await loadSettings(true);
       toast('Configuración guardada');
     } catch (err) { toast(errMsg(err), 'error'); }
+  };
+}
+
+// ================================================================ superadmin: planes
+// Precios y condiciones de cada plan, promo, prueba gratis y cobro por transferencia (todo en settings/platform).
+async function viewAdminPlans() {
+  S.settings = await loadSettings(true);
+  const st = S.settings;
+  $('#view').innerHTML = `
+    <h1>Planes</h1>
+    <form id="apf" class="stack">
+      <div class="card stack">
+        <h2>Planes</h2>
+        <p class="muted small" style="margin:0">Fotos en total: cupo de la cuenta entre todos sus álbumes (cuentan hasta que se borran los originales). Álbumes: activos a la vez. 0 = sin tope. Los planes pagos pueden comprar packs de fotos (en Almacenamiento); Gratis no.</p>
+        <div class="table-wrap"><table class="list plan-cfg">
+          <tr><th>Plan</th><th>Precio</th><th>Comisión %</th><th>Portfolio</th><th>Fotos en total</th><th>Álbumes</th><th>Días de venta</th><th>Destacado</th></tr>
+          ${[['free', 'Gratis'], ['lite', 'Profesional Lite'], ['web', 'Profesional'], ['webdomain', 'Profesional Premium'], ['empresa', 'Empresas']].map(([id, label]) => {
+            const p = planSpec(id, st);
+            const num = (k, v, step = 1) => `<input type="number" data-k="${k}" min="0" step="${step}" value="${v ?? ''}">`;
+            return `<tr data-plan="${id}"><td><strong>${label}</strong>${id === 'free' ? '' : id === 'web' ? '<br><span class="muted small">con web</span>' : id === 'webdomain' ? '<br><span class="muted small">web + dominio</span>' : id === 'empresa' ? `<br><span class="muted small">web + dominio + equipo</span><span class="hint">Colaboradores incluidos</span>${num('team', p.team)}<span class="hint">Lugar extra ($/mes)</span>${num('seatPrice', p.seatPrice)}` : ''}</td>
+              <td>${id === 'free' ? '—' : `<span class="hint">Mensual</span>${num('price', p.price)}
+                ${PLANS[id]?.domain ? `<span class="hint">Adicional del primer pago (dominio, una sola vez)</span>${num('setup', p.setup)}` : ''}
+                <span class="hint">Trimestral (0 = no se ofrece)</span>${num('quarter', p.quarter)}
+                <span class="hint">Anual</span>${num('year', p.year)}`}</td>
+              <td>${num('fee', p.baseFee ?? p.fee, 0.1)}</td>
+              <td>${num('portfolio', p.portfolio)}</td>
+              <td>${num('totalPhotos', p.totalPhotos, 100)}</td>
+              <td>${num('albums', p.albums)}</td>
+              <td>${num('days', p.days)}</td>
+              <td>${id === 'free' ? '—' : `<input type="checkbox" data-k="featured" ${p.featured ? 'checked' : ''}>`}</td></tr>`;
+          }).join('')}
+        </table></div>
+        <div class="row" style="align-items:flex-end;gap:10px">
+          <label class="field" style="max-width:200px">Promo: comisión % para todos<input type="number" id="a-promo-fee" min="0" step="0.1" value="${esc(String('promoFee' in st ? st.promoFee : 3))}"></label>
+          <label class="field" style="max-width:200px">hasta el (inclusive)<input type="date" id="a-promo-until" value="${esc('promoUntil' in st ? st.promoUntil || '' : '2026-11-15')}"></label>
+          <span class="hint" style="flex:1">Mientras dure, se cobra esta comisión en todos los planes (si es menor que la del plan) y se muestra en Soy fotógrafo. 0 = sin promo.</span>
+        </div>
+        <label class="field" style="max-width:320px">Prueba gratis de Profesional para fotógrafos nuevos (días)<input type="number" id="a-trial" min="0" max="90" step="1" value="${st.trialDays ?? 30}">
+          <span class="hint">Se da al aprobar al fotógrafo, una sola vez. 0 = sin prueba. Rige con los planes nuevos.</span></label>
+        <div class="row"><button type="button" class="btn sm" id="a-mpacc">💳 Ver la cuenta que cobra los planes</button><span class="small" id="a-mpacc-out"></span></div>
+        </div>
+      <div class="row end"><button class="btn primary">Guardar planes</button></div>
+    </form>
+    <div class="card stack" id="a-transfer"></div>`;
+  // Cuenta de Mercado Pago con la que la plataforma cobra suscripciones y extensiones (tiene que ser la real).
+  $('#a-mpacc').onclick = async e => {
+    e.target.disabled = true;
+    try {
+      const r = await apiPost('/admin/mp/whoami');
+      $('#a-mpacc-out').innerHTML = !r.configured ? '❌ No hay token cargado'
+        : r.test ? `⚠️ <strong>Cuenta de PRUEBA</strong> (${esc(r.nickname)} · #${esc(r.id)}): con esta cuenta los pagos reales fallan. Cargá el Access Token de producción de tu cuenta real.`
+        : `✅ Cuenta real: ${esc(r.nickname)} · #${esc(r.id)}${r.email ? ` · ${esc(r.email)}` : ''}`;
+    } catch (err) { $('#a-mpacc-out').textContent = errMsg(err); }
+    e.target.disabled = false;
+  };
+  drawAdminTransfer();
+  $('#apf').onsubmit = async e => {
+    e.preventDefault();
+    const b = e.submitter; if (b) b.disabled = true;
+    try {
+      await setDoc(doc(db, 'settings', 'platform'), {
+        ...readPlanCfg(), trialDays: Math.round(Number($('#a-trial').value) || 0),
+        promoFee: Number($('#a-promo-fee').value) || 0, promoUntil: $('#a-promo-until').value || '',
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      S.settings = await loadSettings(true);
+      toast('Planes guardados');
+    } catch (err) { toast(errMsg(err), 'error'); }
+    if (b) b.disabled = false;
   };
 }
 

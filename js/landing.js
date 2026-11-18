@@ -115,7 +115,7 @@ export async function renderPhotographerLanding(app) {
     <section id="planes" class="lp-sec">
       <h2 class="reveal">Planes</h2>
       ${promo ? `<div class="lp-promo reveal">🎉 <strong>Promo de lanzamiento: comisión del ${esc(String(promo.fee).replace('.', ','))}% en todos los planes</strong> hasta el ${esc(promoDate)}. Registrate ahora y vendé pagando menos.</div>` : ''}
-      <div class="reveal">${periodToggleHtml()}
+      <div class="reveal">${periodToggleHtml(st)}
       ${plansCompareHtml(st, { cta: id => `<a class="btn sm ${id === 'web' ? 'primary' : ''}" href="panel.html?plan=${id}">${id === 'free' ? 'Empezar gratis' : 'Quiero este plan'}</a>` })}</div>
       <p class="muted small lp-note reveal">* A la comisión de cada plan se suma la de Mercado Pago, que depende del plazo de cobro que elijas en tu cuenta de MP. En todos los planes elegís quién paga la tasa de servicio (la comisión de Quiero Mis Fotos más la de Mercado Pago): la absorbés vos, mitad y mitad, o la paga toda el comprador. Los planes pagos se cobran por Mercado Pago y los cancelás cuando quieras.</p>
     </section>

@@ -364,7 +364,7 @@ STEPS = [('📸', 'Subís las fotos', 'Desde la compu o el celular, de a cientos
 # Comparativa de planes: la misma tabla que el panel y el sitio (js/plans-compare.js), con los valores de Plataforma.
 cmp_js = ("import { plansCompareHtml, periodToggleHtml } from './js/plans-compare.js';"
           "const st = JSON.parse(process.argv[1]);"
-          "process.stdout.write(periodToggleHtml() + plansCompareHtml(st, { cta: id => `<a class=\"btn sm ${id === 'web' ? 'primary' : ''}\" href=\"/panel.html?plan=${id}\">${id === 'free' ? 'Empezar gratis' : 'Quiero este plan'}</a>` }));")
+          "process.stdout.write(periodToggleHtml(st) + plansCompareHtml(st, { cta: id => `<a class=\"btn sm ${id === 'web' ? 'primary' : ''}\" href=\"/panel.html?plan=${id}\">${id === 'free' ? 'Empezar gratis' : 'Quiero este plan'}</a>` }));")
 plans_cmp = subprocess.check_output(['node', '--input-type=module', '-e', cmp_js, json.dumps(st, default=str)], cwd=ROOT).decode()
 period_js = ('<script>document.querySelectorAll("[data-period]").forEach(function(b){b.onclick=function(){'
              'document.querySelectorAll("[data-period]").forEach(function(x){x.classList.toggle("on",x===b)});'
