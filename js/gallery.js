@@ -10,7 +10,7 @@ import { favs } from './favs.js';
 import { shareLink, eventUrl } from './share.js';
 import { trackPhotoView, trackCartAdd } from './stats.js';
 import { API_BASE, apiPost } from './api.js';
-import { currentUser, requireLogin } from './account.js';
+import { currentUser, guestUser, requireLogin } from './account.js';
 
 const PAGE = 60;
 
@@ -45,6 +45,7 @@ function showHowTo(phs, evName = '') {
 
 export function mountGallery(box, { ev, photographers, sets, initialUid = '', initialPhoto = '', initialBib = '', onFirstPhoto }) {
   const byUid = new Map(photographers.map(p => [p.uid, p]));
+  const owned = new Set(); // fotos de este álbum que ya compró (ver loadOwned)
   const withPhotos = photographers.filter(p => (sets.get(p.uid)?.photoCount || 0) > 0);
   const state = { uid: '', sub: '', hour: 0, fav: false, bib: '', photos: [], cursor: null, done: false, loading: false };
   // Búsqueda por dorsal: aparece si algún fotógrafo tiene fotos con dorsales leídos.
@@ -279,10 +280,22 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
   $('#g-grid', box).classList.toggle('cols3', cols === 3);
   drawTools();
 
+  // Fotos de este álbum que el comprador ya pagó (con su cuenta o como invitado en este dispositivo): se marcan
+  // en la cuadrícula y se avisa antes de volver a agregarlas al carrito.
+  const loadOwned = async () => {
+    const uids = [currentUser()?.uid, guestUser()?.uid].filter(Boolean);
+    const snaps = await Promise.all(uids.map(u => getDocs(query(collection(db, 'orders'), where('buyerUid', '==', u), where('eventId', '==', ev.id), limit(50))).catch(() => null)));
+    snaps.forEach(sn => (sn?.docs || []).forEach(d => { const o = d.data(); if (o.status === 'approved') (o.items || []).forEach(x => owned.add(x.photoId)); }));
+    if (owned.size && document.body.contains(box)) syncCartMarks();
+  };
+  loadOwned();
+  window.addEventListener('account:change', () => document.body.contains(box) && loadOwned());
+
   function itemHtml(p, i) {
     return `<div class="g-item ${cart.has(p.id) ? 'in-cart' : ''}" data-i="${i}" data-id="${p.id}" role="button" tabindex="0" aria-label="Ver foto">
       <img src="${esc(p.thumbUrl)}" alt="" loading="lazy" decoding="async" draggable="false">
       ${p.price > 0 ? `<span class="g-tag">${fmtMoney(p.price)}</span>` : ''}
+      ${owned.has(p.id) ? '<span class="g-owned">✓ Ya la compraste</span>' : ''}
       <button class="g-fav ${favs.has(p.id) ? 'on' : ''}" data-favi="${i}" aria-label="Favorita">${favs.has(p.id) ? '♥' : '♡'}</button>
       ${forSale(p.photographerUid) ? `<button class="g-add" data-add="${i}" aria-label="Agregar al carrito">${cart.has(p.id) ? '✓' : '+'}</button>` : ''}
     </div>`;
@@ -396,6 +409,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
 
   function toggleCart(p) {
     if (!p) return;
+    if (!cart.has(p.id) && owned.has(p.id) && !confirm('Ya compraste esta foto: la tenés en Mis compras para descargarla cuando quieras. ¿La querés comprar de nuevo igual?')) return;
     const added = cart.toggle(p);
     if (added) trackCartAdd(ev.id, p.photographerUid);
     if (!state.pick) toast(added ? 'Foto agregada al carrito' : 'Foto quitada del carrito'); // eligiendo varias, alcanza con la barra
@@ -446,6 +460,7 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
   function syncCartMarks() {
     syncCartBar();
     $$('.g-item', box).forEach(el => {
+      if (owned.has(el.dataset.id) && !el.querySelector('.g-owned')) el.querySelector('img')?.insertAdjacentHTML('afterend', '<span class="g-owned">✓ Ya la compraste</span>');
       const inCart = cart.has(el.dataset.id);
       el.classList.toggle('in-cart', inCart);
       const btn = el.querySelector('.g-add');
