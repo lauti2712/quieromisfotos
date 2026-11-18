@@ -21,7 +21,7 @@ export function uploadsInProgress() {
 }
 
 // team: modo colaborador del plan Empresas (uid = la empresa, me = el colaborador): sube al álbum de la empresa y ve solo sus fotos.
-export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs = false, team = '', me = '' }) {
+export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs = false, team = '', me = '', others = () => [] }) {
   const subs = (set.subalbums || []).slice().sort((a, b) => a.order - b.order);
   const subName = id => subs.find(s => s.id === id)?.name || 'Sin sub-álbum';
   const subOptions = (sel = '') => `<option value="">Sin sub-álbum</option>${subs.map(s => `<option value="${s.id}" ${s.id === sel ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}`;
@@ -336,11 +336,11 @@ export async function mountPhotos(box, { ev, set, uid, profile, settings, bibs =
     let fresh = uploadedKeys ? files.filter(f => !uploadedKeys.has(fileKey(f))) : files;
     const dups = files.length - fresh.length; // ya subidas antes
     // Tope de fotos del álbum (planes nuevos): se suben solo las que entran.
-    const max = albumPhotoLimit(set, settings, profile);
+    const max = albumPhotoLimit(set, settings, profile, others());
     if (max) {
       const room = Math.max(0, max - (set.photoCount || 0) - up.summary().active);
       if (fresh.length > room) {
-        toast(room ? `Tu álbum admite ${room} foto${room === 1 ? '' : 's'} más (tope ${max}). Se suben las primeras ${room}.` : `El álbum llegó a su tope de ${max} fotos.`, 'error');
+        toast(room ? `Te queda lugar para ${room} foto${room === 1 ? '' : 's'} más en el cupo de tu plan. Se suben las primeras ${room}.` : 'Llegaste al tope de fotos de tu plan entre todos tus álbumes.', 'error');
         fresh = fresh.slice(0, room);
         if (!room) { window.onqmfAlbumFull?.(); return; }
       }

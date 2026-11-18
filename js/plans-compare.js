@@ -22,8 +22,8 @@ export function planRows(st) {
   const bib = Number(st?.bibFeePercent ?? BIB_FEE_PERCENT) || 0;
   return [
     ['Comisión por venta*', v(id => fee(id))],
-    ['Álbumes', v(id => (paid(id) ? 'Ilimitados' : '1 a la vez'))],
-    ['Fotos por álbum', v((id, p) => `${Number(p.albumPhotos).toLocaleString('es-AR')}${paid(id) ? ' <span class="muted small">(ampliable)</span>' : ''}`)],
+    ['Álbumes activos', v((id, p) => (p.albums > 0 ? `${p.albums} a la vez` : 'Ilimitados'))],
+    ['Fotos en total (entre todos tus álbumes)', v((id, p) => (p.totalPhotos > 0 ? `${Number(p.totalPhotos).toLocaleString('es-AR')}${paid(id) ? ' <span class="muted small">(ampliable)</span>' : ''}` : 'Sin tope'))],
     ['Días de venta por álbum', v((id, p) => `${p.days} días`)],
     ['Elegís quién paga la tasa de servicio', v(() => true)],
     ['Marca de agua y protección de tus fotos', v(() => true)],

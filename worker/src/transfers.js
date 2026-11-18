@@ -12,7 +12,7 @@
 import { adminGet, adminGetMany, adminSet, adminQuery, adminCommit } from './admin.js';
 import { requireUser } from './firebase.js';
 import { sellerToken, mpFetch } from './mp.js';
-import { planOf } from './plans.js';
+import { transferPlanOk } from './plans.js';
 import { notifyUser, notifySuper } from './push.js';
 import { json, httpError } from './http.js';
 import { commitOrderUpdate, downloadUntil } from './orders.js';
@@ -25,7 +25,7 @@ const money = n => `$${Number(n || 0).toLocaleString('es-AR', { minimumFractionD
 
 export function transferAllowed(ph, st) {
   return !!(ph?.transferOn && String(ph.transferAlias || '').trim() && !ph.transferBlocked
-    && (st?.transfer?.plans || []).includes(planOf(ph)));
+    && transferPlanOk(ph, st));
 }
 
 // Pedido por transferencia (lo llama checkout después de validar fotos y precios).

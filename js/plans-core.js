@@ -26,8 +26,17 @@ export function planSpec(planId, st, now = Date.now()) {
   return promo && promo.fee < p.fee ? { ...p, baseFee: p.fee, fee: promo.fee, promoUntil: promo.until } : { ...p, baseFee: p.fee };
 }
 
+// Cupo de fotos de la cuenta (todas las fotos con original guardado, entre todos los álbumes) y álbumes activos a la vez
+// (0 = sin tope). Se editan en Plataforma: {prefijo}TotalPhotos y {prefijo}Albums.
+const PLAN_PREFIX = { free: 'free', lite: 'lite', web: 'web', webdomain: 'webDomain', empresa: 'empresa' };
+const TOTAL_PHOTOS = { free: 300, lite: 1500, web: 4000, webdomain: 9000, empresa: 25000 };
 function basePlanSpec(planId, st) {
   st = st || {};
+  const id = PLAN_PREFIX[planId] ? planId : 'free', px = PLAN_PREFIX[id];
+  const lim = { totalPhotos: Number(st[`${px}TotalPhotos`] ?? TOTAL_PHOTOS[id]) || 0, albums: Number(st[`${px}Albums`] ?? (id === 'free' ? 1 : 0)) || 0 };
+  return { ...planSpecRaw(planId, st), ...lim };
+}
+function planSpecRaw(planId, st) {
   const base = st.retentionDays ?? 14;
   switch (planId) {
     case 'lite': return { price: st.litePrice ?? 4900, year: st.liteYearPrice ?? 49000, fee: st.liteFeePercent ?? 5, portfolio: st.litePortfolioLimit ?? 30,
@@ -42,7 +51,7 @@ function basePlanSpec(planId, st) {
       featured: !!(st.empresaFeatured ?? true), stats: 4, profileCustom: true, shortLinks: true, web: true, domain: true, priority: true,
       team: st.empresaSeats ?? 5, seatPrice: st.empresaSeatPrice ?? 3000 };
     default: return { price: 0, fee: st.freeFeePercent ?? 7, portfolio: st.freePortfolioLimit ?? 12, albumPhotos: st.freeAlbumPhotos ?? 300,
-      days: st.freeRetentionDays ?? base, featured: false, stats: 1, albums: 1 };
+      days: st.freeRetentionDays ?? base, featured: false, stats: 1 };
   }
 }
 
@@ -60,8 +69,8 @@ export function photoBonusOf(user, now = Date.now()) {
   return b && b.photos > 0 && until > now ? { photos: b.photos, until } : null;
 }
 export function activeAlbumLimit(user, st, now = Date.now()) {
-  if (planOf(user, now) !== 'free') return Infinity;
-  return (planSpec('free', st, now).albums || 1) + (albumBonusOf(user, now)?.count || 0);
+  const n = planSpec(planOf(user, now), st, now).albums;
+  return n > 0 ? n + (albumBonusOf(user, now)?.count || 0) : Infinity;
 }
 
 // Lo que rige hoy para un fotógrafo, según su plan vigente.
@@ -70,11 +79,22 @@ export function rulesFor(user, st = {}) {
   return { plan, ...planSpec(plan, st) };
 }
 
-// Tope de fotos del álbum (0 = sin tope). El plan Gratis no suma packs comprados.
-export function albumPhotoLimit(set, st, user) {
+// Cupo de fotos de la cuenta: cuentan las fotos de todos sus álbumes mientras exista el original (al borrarse, se libera).
+// Los packs de fotos extra (sets.extraPhotos, no en Gratis) suman mientras exista el álbum donde se compraron.
+// sets: los sets de la cuenta (cualquier orden; los nulos se ignoran). max 0 = sin tope.
+export function photoQuota(user, st, sets) {
   const r = rulesFor(user, st);
-  if (!(r.albumPhotos > 0)) return 0;
-  return r.albumPhotos + (r.plan === 'free' ? 0 : (set?.extraPhotos || 0)) + (photoBonusOf(user)?.photos || 0);
+  const live = (sets || []).filter(s => s && !s.originalsDeleted);
+  const used = live.reduce((a, s) => a + (s.photoCount || 0), 0);
+  if (!(r.totalPhotos > 0)) return { max: 0, used };
+  const extra = r.plan === 'free' ? 0 : live.reduce((a, s) => a + (s.extraPhotos || 0), 0);
+  return { max: r.totalPhotos + extra + (photoBonusOf(user)?.photos || 0), used };
+}
+// Cuántas fotos puede tener este álbum (0 = sin tope): las que ya tiene + lo que queda libre del cupo de la cuenta.
+// others: los demás sets de la cuenta (sin este).
+export function albumPhotoLimit(set, st, user, others = []) {
+  const q = photoQuota(user, st, [set, ...others]);
+  return q.max ? (set?.photoCount || 0) + Math.max(0, q.max - q.used) : 0;
 }
 
 // Colaboradores que puede tener la cuenta (0 si su plan no es Empresas).
@@ -86,6 +106,9 @@ export function teamSeats(user, st) {
 
 // Beneficio destacado de los planes con cobro por transferencia (se muestra resaltado en las tarjetas de planes).
 export const TRANSFER_FEATURE = 'Cobrá por transferencia a tu Mercado Pago y ahorrate la comisión de MP';
+// Cobro por transferencia habilitado para su plan (Plataforma) o conservado de antes (users.transferKeep, lo pone el
+// superadmin al sacarle la opción a un plan: los que ya la usaban la mantienen).
+export const transferPlanOk = (user, st) => (st?.transfer?.plans || []).includes(planOf(user)) || !!user?.transferKeep;
 
 // Qué incluye cada plan: mismo texto en "Soy fotógrafo", en el panel y en la página estática para Google.
 export function planFeatures(id, st) {
@@ -94,12 +117,13 @@ export function planFeatures(id, st) {
   const fee = p.promoUntil
     ? `Comisión ${pct(p.fee)}% por venta hasta el ${p.promoUntil.slice(8, 10)}/${p.promoUntil.slice(5, 7)} (después ${pct(p.baseFee)}%) + la de Mercado Pago`
     : `Comisión ${pct(p.fee)}% por venta + la de Mercado Pago`;
-  const gb = `${p.albumPhotos.toLocaleString('es-AR')} fotos por álbum`;
+  const gb = p.totalPhotos > 0 ? `${p.totalPhotos.toLocaleString('es-AR')} fotos en total` : 'Fotos sin tope';
+  const albums = p.albums > 0 ? `${p.albums} álbum${p.albums === 1 ? '' : 'es'} activo${p.albums === 1 ? '' : 's'} a la vez` : 'Álbumes ilimitados';
   const days = `Cada álbum se vende ${p.days} días`;
   // Cobro por transferencia: solo en los planes elegidos en Plataforma.
   const tr = (st?.transfer?.plans || []).includes(id) ? [TRANSFER_FEATURE] : [];
-  if (id === 'free') return ['Vendé tus fotos en eventos', '1 álbum activo a la vez', `Hasta ${gb}`, days, `Portfolio de ${p.portfolio} fotos`, 'Estadísticas básicas', fee];
-  if (id === 'lite') return ['Álbumes ilimitados', `${gb} (ampliable)`, days, `Portfolio de ${p.portfolio} fotos`, 'Estadísticas por evento', 'Foto de portada en tu perfil',
+  if (id === 'free') return ['Vendé tus fotos en eventos', albums, `Hasta ${gb}`, days, `Portfolio de ${p.portfolio} fotos`, 'Estadísticas básicas', fee];
+  if (id === 'lite') return [albums, `${gb} (ampliable)`, days, `Portfolio de ${p.portfolio} fotos`, 'Estadísticas por evento', 'Foto de portada en tu perfil',
     ...(p.featured ? ['Destacado en el directorio'] : []), ...tr, fee];
   if (id === 'web') return ['Todo lo de Lite', `${gb} (ampliable)`, days, `Portfolio de ${p.portfolio} fotos`, 'Tu web: tunombre.quieromisfotos.com.ar',
     'Fotos de tu web sin marca de agua', 'Links cortos para tus eventos', 'Estadísticas completas', ...(p.featured ? ['Destacado en el directorio'] : []), ...tr, fee];
