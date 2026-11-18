@@ -71,5 +71,5 @@ export function plansCompareHtml(st, { current = '', cta = () => '' } = {}) {
 export const periodToggleHtml = st => `<div class="plan-period" role="group" aria-label="Forma de pago">
       <button type="button" class="chip on" data-period="month">Mensual</button>
       ${PLAN_IDS.some(id => planSpec(id, st).quarter > 0) ? '<button type="button" class="chip" data-period="quarter">Trimestral</button>' : ''}
-      <button type="button" class="chip" data-period="year">Anual <span class="muted small">· 2 meses gratis</span></button>
+      ${PLAN_IDS.some(id => planSpec(id, st).year > 0) ? '<button type="button" class="chip" data-period="year">Anual <span class="muted small">· 2 meses gratis</span></button>' : ''}
     </div>`;
