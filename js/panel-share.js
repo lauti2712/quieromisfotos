@@ -235,3 +235,6 @@ export async function storyVideo({ ev, photos, displayName, link, onProgress }) 
   const blob = new Blob(chunks, { type: type.split(';')[0] });
   return { blob, ext: type.startsWith('video/mp4') ? 'mp4' : 'webm' };
 }
+
+// Para otras pantallas (superadmin → Instagram).
+export { loadImg, viaApi, cover, wrap, download, toBlob, slug, FONT, ORANGE, INK };

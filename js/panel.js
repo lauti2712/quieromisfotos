@@ -28,6 +28,7 @@ import { initRefresh } from './refresh.js';
 import { pushAvailable, pushOn, pushBlocked, enablePush, disablePush, isIos, isStandalone, listenForeground } from './push.js';
 import { shareLink, eventUrl } from './share.js';
 import { mountShareCard } from './panel-share.js';
+import { viewAdminInstagram } from './panel-instagram.js';
 import { mountProtectCard, mountLevelExamples } from './panel-protect.js';
 import { PROTECT_LEVELS, levelOf } from './protect.js';
 import { cropImage } from './cropper.js';
@@ -433,6 +434,7 @@ function navItems() {
     { href: '#/admin/compras', label: '🧾 Compras' },
     { href: '#/admin/clientes', label: '👤 Clientes' },
     { href: '#/admin/eventos', label: '🏟️ Eventos' },
+    { href: '#/admin/instagram', label: '📣 Instagram' },
     { href: '#/admin/etiquetas', label: '🏷️ Etiquetas' },
     { href: '#/admin/almacenamiento', label: '💾 Almacenamiento' },
     { href: '#/admin/costos', label: '🧾 Costos' },
@@ -547,11 +549,72 @@ async function drawAlerts() {
   ];
   box.innerHTML = list.length ? `<div class="notice danger stack" style="max-width:1200px;margin:12px auto 0">
     <strong>⚠️ ${list.length} alerta${list.length > 1 ? 's' : ''} para revisar</strong>
-    ${list.map(a => `<div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px"><span class="small">${esc(fmtTs(a.createdAt))} · ${esc(a.text)}</span><button class="btn sm" data-alert="${esc(a.id)}" data-coll="${a.coll}">Resuelta</button></div>`).join('')}
+    ${list.map(a => `<div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px"><span class="small">${esc(fmtTs(a.createdAt))} · ${esc(a.text)}${a.coll === 'cancelRequests' ? `<span class="stack" style="gap:4px;margin-top:6px" data-cx="${esc(a.id)}"><span class="muted">Buscando las compras de este cliente…</span></span>` : ''}</span><button class="btn sm" data-alert="${esc(a.id)}" data-coll="${a.coll}">Resuelta</button></div>`).join('')}
   </div>` : '';
+  (cx?.docs || []).forEach(d => cancelInfo(d.data()).then(h => { const el = box.querySelector(`[data-cx="${d.id}"]`); if (el) el.innerHTML = h; },
+    e => { const el = box.querySelector(`[data-cx="${d.id}"]`); if (el) el.innerHTML = `<span class="muted">No se pudieron buscar las compras: ${esc(errMsg(e))}</span>`; }));
   $$('[data-alert]', box).forEach(b => b.onclick = async () => {
     try { await deleteDoc(doc(db, b.dataset.coll, b.dataset.alert)); drawAlerts(); } catch (e) { toast(errMsg(e), 'error'); }
   });
+}
+
+// Botón de arrepentimiento: busca las compras del cliente (por mail y por cuenta), marca las fotos que ya había comprado
+// en otro pedido, y arma los links para escribirle al comprador y al fotógrafo.
+async function cancelInfo(r) {
+  const email = String(r.email || '').trim().toLowerCase();
+  const ref = String(r.orderRef || '').trim().toLowerCase().replace(/^#/, '');
+  const qs = (coll, f, v) => (v ? getDocs(query(collection(db, coll), where(f, '==', v), limit(50))).catch(() => null) : null);
+  const [cs, p1, p2] = await Promise.all([qs('customers', 'email', email), qs('orderPrivate', 'buyerEmail', email), qs('orderPrivate', 'mpPayerEmail', email)]);
+  const uids = new Set([r.uid, ...(cs?.docs || []).map(d => d.id), ...[...(p1?.docs || []), ...(p2?.docs || [])].map(d => d.data().buyerUid)].filter(Boolean));
+  const privById = new Map([...(p1?.docs || []), ...(p2?.docs || [])].map(d => [d.id, d.data()]));
+  const orders = new Map();
+  const byUid = await Promise.all([...uids].map(u => qs('orders', 'buyerUid', u)));
+  byUid.forEach(s => (s?.docs || []).forEach(d => orders.set(d.id, { id: d.id, ...d.data() })));
+  await Promise.all([...privById.keys()].filter(id => !orders.has(id)).map(id => getDoc(doc(db, 'orders', id)).then(d => { if (d.exists()) orders.set(d.id, { id: d.id, ...d.data() }); }, () => {})));
+  // El pedido que nombró; si no lo encontramos entre las suyas, lo buscamos por código.
+  let target = ref ? [...orders.values()].find(o => o.id.toLowerCase().startsWith(ref)) : null;
+  if (ref && !target && ref.length >= 20) {
+    const d = await getDoc(doc(db, 'orders', ref)).catch(() => null);
+    if (d?.exists()) { target = { id: d.id, ...d.data() }; orders.set(d.id, target); }
+  }
+  const ms = o => o.paidAt?.toMillis?.() || o.createdAt?.toMillis?.() || 0;
+  const paid = [...orders.values()].filter(o => o.status === 'approved').sort((a, b) => ms(b) - ms(a));
+  if (!target && !ref && paid.length) target = paid[0]; // sin número de pedido: la última pagada
+  const when = o => new Date(ms(o)).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const link = o => `<a target="_blank" href="index.html#/pedido/${esc(o.id)}">${esc(o.id.slice(0, 8))}</a> · ${esc(o.eventName || '')} · ${o.count || 0} foto${o.count === 1 ? '' : 's'} · ${fmtMoney(o.total)} · ${esc(when(o))}`;
+  const out = [];
+  // Teléfono del comprador: el que dejó en su cuenta o el del login con celular.
+  const c0 = (cs?.docs || [])[0]?.data() || {};
+  const phone = c0.whatsapp || c0.phone || [...privById.values()].find(p => p.buyerPhone)?.buyerPhone || '';
+  out.push(phone ? `<span>📱 Comprador: <a target="_blank" rel="noopener" href="${esc(waLink(phone, `Hola ${r.name || ''}! Te escribimos de Quiero Mis Fotos por tu pedido de cancelación.`))}">💬 ${esc(phone)}</a></span>` : '<span class="muted">📱 El comprador no dejó celular (contestale por mail).</span>');
+  if (!target) {
+    out.push(`<span>🧾 ${ref ? `No encontramos el pedido <strong>${esc(ref)}</strong>.` : 'No indicó número de pedido.'} ${paid.length ? '' : 'No hay compras pagadas con este mail.'}</span>`);
+    if (paid.length) out.push(`<span>Compras pagadas de este cliente:</span>${paid.slice(0, 5).map(o => `<span>• ${link(o)}</span>`).join('')}`);
+    return out.join('');
+  }
+  out.push(`<span>🧾 Compra: ${link(target)} <span class="pill">${esc((PURCHASE_STATUS[target.status] || [target.status])[0])}</span></span>`);
+  const others = paid.filter(o => o.id !== target.id);
+  const tIds = new Set((target.items || []).map(x => x.photoId));
+  const rep = new Map(); // pedido anterior -> fotos repetidas
+  others.forEach(o => { const n = (o.items || []).filter(x => tIds.has(x.photoId)).map(x => x.fileName || x.photoId); if (n.length) rep.set(o.id, n); });
+  const repCount = new Set(others.flatMap(o => (o.items || []).map(x => x.photoId)).filter(id => tIds.has(id))).size;
+  out.push(others.length
+    ? `<span>Otras compras del mismo mail:</span>${others.slice(0, 5).map(o => `<span>• ${link(o)}${rep.has(o.id) ? ` — <strong>repite ${rep.get(o.id).length} foto${rep.get(o.id).length > 1 ? 's' : ''}</strong>` : ''}</span>`).join('')}`
+    : '<span>No tiene otras compras pagadas con este mail.</span>');
+  out.push(repCount
+    ? `<span>⚠️ <strong>${repCount} de ${tIds.size} foto${tIds.size > 1 ? 's' : ''}</strong> de este pedido ya las había comprado antes${repCount === tIds.size ? ' (la compra entera está repetida)' : ''}.</span>`
+    : '<span>✅ Ninguna foto de este pedido estaba en otra compra suya.</span>');
+  // WhatsApp del fotógrafo con el mensaje armado.
+  const [pu, pp] = await Promise.all([getDoc(doc(db, 'users', target.photographerUid)).catch(() => null), getDoc(doc(db, 'userPrivate', target.photographerUid)).catch(() => null)]);
+  const phWa = waOf(pu?.data() || {}, pp?.data());
+  const prev = [...rep.keys()].map(id => id.slice(0, 8));
+  const msg = `Hola ${target.photographerName || ''}! Te escribimos de Quiero Mis Fotos. Un comprador (${r.name || email}) usó el botón de arrepentimiento por el pedido ${target.id.slice(0, 8)} de "${target.eventName || ''}" (${target.count || 0} foto${target.count === 1 ? '' : 's'}, ${fmtMoney(target.total)}, pagado el ${when(target)}).${r.reason ? ` Motivo: "${r.reason}".` : ''}`
+    + (repCount ? ` Revisamos y ${repCount === tIds.size ? 'todas las fotos' : `${repCount} de las ${tIds.size} fotos`} ya las había comprado antes (pedido${prev.length > 1 ? 's' : ''} ${prev.join(', ')}), así que corresponde devolverle ${repCount === tIds.size ? 'el total' : 'lo de esas fotos'}.` : '')
+    + ` ¿Nos hacés el favor de hacer la devolución del cobro desde tu Mercado Pago? (Actividad → ese pago → Devolver dinero). Cuando lo hagas el pedido se marca solo como reembolsado. ¡Gracias!`;
+  out.push(phWa
+    ? `<span>📷 Fotógrafo: ${esc(target.photographerName || '')} — <a class="btn sm" target="_blank" rel="noopener" href="${esc(waLink(phWa, msg))}">💬 Avisarle y pedirle la devolución</a></span>`
+    : `<span class="muted">📷 ${esc(target.photographerName || 'El fotógrafo')} no tiene WhatsApp cargado.</span>`);
+  return out.join('');
 }
 
 function route() {
@@ -583,6 +646,7 @@ function route() {
     if (b === 'metricas') return run(viewAdminMetrics);
     if (b === 'clientes') return run(viewAdminCustomers);
     if (b === 'compras') return run(viewAdminPurchases);
+    if (b === 'instagram') return run(() => viewAdminInstagram(view));
     return run(viewAdminPhotographers);
   }
   // Plan Empresas: invitación, equipo de la empresa y álbumes donde sube un colaborador (también con cuenta pendiente).

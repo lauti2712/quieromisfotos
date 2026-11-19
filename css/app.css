@@ -272,6 +272,7 @@ dialog .dlg-foot { padding: 14px 18px; border-top: 1px solid var(--border); disp
 .g-add:hover { background: var(--accent); }
 .g-item.in-cart { outline: 3px solid var(--accent); outline-offset: -3px; }
 .g-item.in-cart .g-add { background: var(--accent); }
+.g-owned { position: absolute; left: 6px; top: 6px; padding: 2px 8px; border-radius: 999px; background: rgba(22,128,60,.85); color: #fff; font-size: .72rem; font-weight: 600; pointer-events: none; }
 .cart-thumbs { display: flex; gap: 6px; flex-wrap: wrap; }
 .cart-thumb { position: relative; width: 84px; aspect-ratio: 3/2; border-radius: 8px; overflow: hidden; background: var(--surface-2); }
 .cart-thumb img { width: 100%; height: 100%; object-fit: cover; }
@@ -917,3 +918,13 @@ dialog.protect-dlg { padding: 0; max-width: min(420px, calc(100vw - 32px)); }
 .lightbox .lb-face.busy { animation: none; background: rgba(255, 90, 31, .5); }
 @keyframes lbFace { 50% { box-shadow: 0 0 0 2px rgba(0, 0, 0, .35), 0 0 0 6px rgba(255, 255, 255, .25); } }
 @media (prefers-reduced-motion: reduce) { .lightbox .lb-face { animation: none; } }
+
+/* Superadmin → Instagram: elegir fotos y vista previa de las piezas */
+.ig-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; max-height: 360px; overflow-y: auto; }
+.ig-pick button { position: relative; padding: 0; border: 3px solid transparent; border-radius: 10px; overflow: hidden; background: var(--surface-2); cursor: pointer; aspect-ratio: 1; }
+.ig-pick button img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: .55; }
+.ig-pick button.on { border-color: var(--accent); }
+.ig-pick button.on img { opacity: 1; }
+.ig-prev { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; }
+.ig-prev img { height: 260px; border-radius: 10px; flex: none; }
+.ig-prev img.story { height: 260px; outline: 2px dashed var(--accent); }
