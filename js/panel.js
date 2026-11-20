@@ -2558,7 +2558,7 @@ async function viewAdminPhotographers() {
       </div>
       <div class="ph-more stack ${open ? '' : 'hidden'}" id="more-${u.uid}">
         <div><h3>Cuenta</h3>
-          <div class="muted small">${esc(privs[i].email || privs[i].phone || '')} · /${esc(u.slug || '')} · alta ${esc(fmtTs(u.createdAt))}</div>
+          <div class="muted small">${esc(privs[i].email || privs[i].phone || '')} <button class="btn sm ghost" data-chmail="${u.uid}" data-chmailold="${esc(privs[i].email || '')}" title="Si se registró con el mail mal escrito">✉️ Cambiar mail</button> · /${esc(u.slug || '')} · alta ${esc(fmtTs(u.createdAt))}</div>
           <div class="row" style="gap:6px;margin-top:6px">
             ${privs[i].provider ? `<span class="pill">${privs[i].provider === 'google' ? 'Ingresa con Google' : privs[i].provider === 'phone' ? 'Ingresa con el celular' : 'Ingresa con email y contraseña'}</span>` : ''}
             ${u.mpConnected ? '<span class="pill ok">Mercado Pago vinculado</span>' : `<span class="pill ${u.status === 'approved' ? 'danger' : ''}">Mercado Pago sin vincular</span>`}
@@ -2700,6 +2700,25 @@ async function viewAdminPhotographers() {
   });
   // Confirmación manual de la cuenta (no puede abrir el mail de confirmación).
   $$('[data-pwreset]').forEach(b => b.onclick = () => resetPasswordDialog(b.dataset.pwreset, b.dataset.pwname, b.dataset.pwwa));
+  // Cambiar el mail de la cuenta (se registró con el mail mal escrito).
+  $$('[data-chmail]').forEach(b => b.onclick = async () => {
+    const u = users.find(x => x.uid === b.dataset.chmail);
+    const nv = prompt(`Mail nuevo para ${u.displayName || 'este fotógrafo'} (ahora: ${b.dataset.chmailold || 'sin mail'}):`, b.dataset.chmailold || '');
+    if (!nv || nv.trim().toLowerCase() === (b.dataset.chmailold || '').toLowerCase()) return;
+    b.disabled = true;
+    try {
+      const r = await apiPost('/admin/users/reset', { uid: u.uid, newEmail: nv.trim() });
+      if (r.link) {
+        const wa = waOf(u, privs[users.indexOf(u)]);
+        const msg = `Hola! Ya corregimos el mail de tu cuenta de Quiero Mis Fotos: ahora es ${r.email}. Como antes entrabas con Google (con el mail anterior), elegí una contraseña con este link y después entrá con tu mail nuevo y esa contraseña: ${r.link}`;
+        openDialog('✉️ Mail cambiado', `<div class="stack"><span>La cuenta ahora es <strong>${esc(r.email)}</strong>.</span>
+          <span class="muted small">Entraba con Google (el mail viejo), así que le quitamos ese acceso. Mandale este link para que elija una contraseña y entre con el mail nuevo.</span>
+          <code style="display:block;word-break:break-all;font-size:.75rem">${esc(r.link)}</code></div>`,
+          `<button class="btn" data-close>Cerrar</button><a class="btn primary" target="_blank" rel="noopener" href="${esc(wa ? waLink(wa, msg) : 'https://wa.me/?text=' + encodeURIComponent(msg))}">💬 Mandar por WhatsApp</a>`);
+      } else toast(`Listo: ahora entra con ${r.email} y su misma contraseña`);
+      viewAdminPhotographers();
+    } catch (e) { b.disabled = false; toast(errMsg(e), 'error'); }
+  });
   $$('[data-verify]').forEach(b => b.onclick = async () => {
     const u = users.find(x => x.uid === b.dataset.verify);
     if (!confirm(`¿Confirmar la cuenta de ${u.displayName}? Va a poder publicar y vincular Mercado Pago sin abrir el mail.`)) return;

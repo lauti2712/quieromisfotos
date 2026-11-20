@@ -4,7 +4,7 @@
 //   POST /auth/link          público  {t}                           -> { token } (custom token de Firebase, un solo uso)
 // El link vale 48 h y se puede usar una sola vez (loginLinks/{jti}).
 import { requireUser } from './firebase.js';
-import { serviceToken, adminSet } from './admin.js';
+import { serviceToken, adminSet, adminUpdate } from './admin.js';
 import { b64url, signToken, verifyToken } from './tokens.js';
 import { json, httpError } from './http.js';
 import { sendMail, mailLayout } from './mail.js';
@@ -64,8 +64,9 @@ export async function useLoginLink(req, env) {
 export async function resetPasswordLink(req, env) {
   const c = await requireUser(req, env);
   if (c.email !== 'lautarom87@gmail.com' || c.email_verified !== true) throw httpError(403, 'Solo superadmin');
-  const { uid, send } = await req.json().catch(() => ({}));
+  const { uid, send, newEmail } = await req.json().catch(() => ({}));
   if (!/^[A-Za-z0-9_-]{6,128}$/.test(uid || '')) throw httpError(400, 'Pedido inválido');
+  if (newEmail) return changeEmail(env, uid, newEmail); // {uid, newEmail}: cambiar el mail de la cuenta
   const u = (await idt(env, '/accounts:lookup', { localId: [uid] })).users?.[0];
   if (!u) throw httpError(404, 'No existe esa cuenta');
   if (!u.email) throw httpError(409, 'Esta cuenta no tiene mail (compró como invitado o entra con el celular): no tiene contraseña para restablecer.');
@@ -85,4 +86,24 @@ export async function resetPasswordLink(req, env) {
     });
   }
   return json({ email: u.email, link, google, sent });
+}
+
+// Cambiar el mail de una cuenta (superadmin, vía POST /admin/users/reset {uid, newEmail}): para quien se registró con
+// el mail mal escrito. Lo cambia en Firebase Auth (queda confirmado: lo hace el superadmin) y en userPrivate. Si entraba
+// con Google, se le quita ese acceso (su Google es el mail viejo) y se devuelve un link para que elija contraseña.
+async function changeEmail(env, uid, raw) {
+  const email = String(raw || '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || email.length > 120) throw httpError(400, 'Mail inválido');
+  const u = (await idt(env, '/accounts:lookup', { localId: [uid] })).users?.[0];
+  if (!u) throw httpError(404, 'No existe esa cuenta');
+  if ((u.email || '').toLowerCase() === email) throw httpError(409, 'La cuenta ya tiene ese mail');
+  const other = (await idt(env, '/accounts:lookup', { email: [email] })).users?.[0];
+  if (other) throw httpError(409, `Ya hay otra cuenta con ${email}. Si es del mismo fotógrafo, hay que borrar esa primero.`);
+  const google = (u.providerUserInfo || []).some(p => p.providerId === 'google.com');
+  const hasPw = (u.providerUserInfo || []).some(p => p.providerId === 'password');
+  await idt(env, '/accounts:update', { localId: uid, email, emailVerified: true, ...(google ? { deleteProvider: ['google.com'] } : {}) });
+  await adminUpdate(env, `userPrivate/${uid}`, { email, emailVerified: true, emailChangedFrom: u.email || '', emailChangedAt: new Date(), ...(google ? { provider: 'password' } : {}) });
+  // Sin contraseña propia (entraba con Google): link para que elija una con el mail nuevo.
+  const link = google && !hasPw ? (await idt(env, '/accounts:sendOobCode', { requestType: 'PASSWORD_RESET', email, returnOobLink: true })).oobLink : '';
+  return json({ email, google, link, changed: true });
 }

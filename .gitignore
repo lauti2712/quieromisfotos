@@ -9,3 +9,7 @@ tests/node_modules/
 .prueba-dist/
 .tmp-test/
 Claude outputs/
+
+# Material para redes (fotos de fotógrafos: no van al repo público)
+quieromisfotos-instagram/
+marketing/
