@@ -2707,7 +2707,14 @@ async function viewAdminPhotographers() {
     if (!nv || nv.trim().toLowerCase() === (b.dataset.chmailold || '').toLowerCase()) return;
     b.disabled = true;
     try {
-      const r = await apiPost('/admin/users/reset', { uid: u.uid, newEmail: nv.trim() });
+      let r = await apiPost('/admin/users/reset', { uid: u.uid, newEmail: nv.trim() });
+      if (r.conflict) {
+        const c = r.conflict, d = t => (t ? new Date(t).toLocaleDateString('es-AR') : '—');
+        const desc = `Ya existe otra cuenta con ${nv.trim()}:\n• ${c.name || 'Sin nombre'} (${c.role}${c.status ? `, ${c.status}` : ''})\n• Creada: ${d(c.createdAt)} · Último ingreso: ${d(c.lastLoginAt)}\n• Álbumes: ${c.albums} · Compras pagadas: ${c.purchases}`;
+        if (!r.canReplace) { alert(`${desc}\n\nComo tiene álbumes o compras, no se puede borrar desde acá.`); b.disabled = false; return; }
+        if (!confirm(`${desc}\n\nEstá vacía. ¿La borramos y le pasamos el mail a ${u.displayName || 'este fotógrafo'}? No se puede deshacer.`)) { b.disabled = false; return; }
+        r = await apiPost('/admin/users/reset', { uid: u.uid, newEmail: nv.trim(), replace: true });
+      }
       if (r.link) {
         const wa = waOf(u, privs[users.indexOf(u)]);
         const msg = `Hola! Ya corregimos el mail de tu cuenta de Quiero Mis Fotos: ahora es ${r.email}. Como antes entrabas con Google (con el mail anterior), elegí una contraseña con este link y después entrá con tu mail nuevo y esa contraseña: ${r.link}`;

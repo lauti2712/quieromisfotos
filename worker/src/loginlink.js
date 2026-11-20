@@ -4,7 +4,7 @@
 //   POST /auth/link          público  {t}                           -> { token } (custom token de Firebase, un solo uso)
 // El link vale 48 h y se puede usar una sola vez (loginLinks/{jti}).
 import { requireUser } from './firebase.js';
-import { serviceToken, adminSet, adminUpdate } from './admin.js';
+import { serviceToken, adminSet, adminUpdate, adminGet, adminQuery, adminDelete } from './admin.js';
 import { b64url, signToken, verifyToken } from './tokens.js';
 import { json, httpError } from './http.js';
 import { sendMail, mailLayout } from './mail.js';
@@ -64,9 +64,9 @@ export async function useLoginLink(req, env) {
 export async function resetPasswordLink(req, env) {
   const c = await requireUser(req, env);
   if (c.email !== 'lautarom87@gmail.com' || c.email_verified !== true) throw httpError(403, 'Solo superadmin');
-  const { uid, send, newEmail } = await req.json().catch(() => ({}));
+  const { uid, send, newEmail, replace } = await req.json().catch(() => ({}));
   if (!/^[A-Za-z0-9_-]{6,128}$/.test(uid || '')) throw httpError(400, 'Pedido inválido');
-  if (newEmail) return changeEmail(env, uid, newEmail); // {uid, newEmail}: cambiar el mail de la cuenta
+  if (newEmail) return changeEmail(env, uid, newEmail, replace === true); // {uid, newEmail}: cambiar el mail de la cuenta
   const u = (await idt(env, '/accounts:lookup', { localId: [uid] })).users?.[0];
   if (!u) throw httpError(404, 'No existe esa cuenta');
   if (!u.email) throw httpError(409, 'Esta cuenta no tiene mail (compró como invitado o entra con el celular): no tiene contraseña para restablecer.');
@@ -91,14 +91,32 @@ export async function resetPasswordLink(req, env) {
 // Cambiar el mail de una cuenta (superadmin, vía POST /admin/users/reset {uid, newEmail}): para quien se registró con
 // el mail mal escrito. Lo cambia en Firebase Auth (queda confirmado: lo hace el superadmin) y en userPrivate. Si entraba
 // con Google, se le quita ese acceso (su Google es el mail viejo) y se devuelve un link para que elija contraseña.
-async function changeEmail(env, uid, raw) {
+async function changeEmail(env, uid, raw, replace = false) {
   const email = String(raw || '').trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || email.length > 120) throw httpError(400, 'Mail inválido');
   const u = (await idt(env, '/accounts:lookup', { localId: [uid] })).users?.[0];
   if (!u) throw httpError(404, 'No existe esa cuenta');
   if ((u.email || '').toLowerCase() === email) throw httpError(409, 'La cuenta ya tiene ese mail');
   const other = (await idt(env, '/accounts:lookup', { email: [email] })).users?.[0];
-  if (other) throw httpError(409, `Ya hay otra cuenta con ${email}. Si es del mismo fotógrafo, hay que borrar esa primero.`);
+  if (other) {
+    // Otra cuenta ya usa ese mail (suele ser una que se creó de nuevo con el mail bien escrito). Si está vacía
+    // (sin álbumes ni compras pagadas) se puede borrar para pasarle el mail a esta; si no, se frena.
+    const ou = other.localId;
+    const [prof, ord, evs] = await Promise.all([
+      adminGet(env, `users/${ou}`).catch(() => null),
+      adminQuery(env, 'orders', { filters: [['buyerUid', '==', ou]], limit: 50 }).catch(() => []),
+      adminQuery(env, 'events', { filters: [['photographerUids', 'array-contains', ou]], limit: 5 }).catch(() => []),
+    ]);
+    const info = { name: prof?.displayName || other.displayName || '', role: prof?.role === 'photographer' ? 'fotógrafo' : 'comprador',
+      status: prof?.status || '', albums: evs.length, purchases: ord.filter(o => o.status === 'approved').length,
+      createdAt: Number(other.createdAt) || 0, lastLoginAt: Number(other.lastLoginAt) || 0 };
+    const empty = !info.albums && !info.purchases;
+    if (!replace) return json({ conflict: info, canReplace: empty });
+    if (!empty) throw httpError(409, `La otra cuenta con ${email} tiene ${info.albums} álbum(es) y ${info.purchases} compra(s): no se borra. Revisala a mano.`);
+    await idt(env, '/accounts:delete', { localId: ou });
+    await Promise.all(['users', 'userPrivate', 'customers', 'planRequests'].map(c => adminDelete(env, `${c}/${ou}`).catch(() => {})));
+    if (prof?.slug) { const s = await adminGet(env, `slugs/${prof.slug}`).catch(() => null); if (s?.uid === ou) await adminDelete(env, `slugs/${prof.slug}`).catch(() => {}); }
+  }
   const google = (u.providerUserInfo || []).some(p => p.providerId === 'google.com');
   const hasPw = (u.providerUserInfo || []).some(p => p.providerId === 'password');
   await idt(env, '/accounts:update', { localId: uid, email, emailVerified: true, ...(google ? { deleteProvider: ['google.com'] } : {}) });
