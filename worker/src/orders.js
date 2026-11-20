@@ -112,7 +112,9 @@ async function createPreference(req, env, orderId, order, buyerEmail, attempt) {
       notification_url: `${api}/mp/webhook?o=${orderId}`,
       back_urls: { success: back, failure: back, pending: back },
       auto_return: 'approved',
-      binary_mode: true,
+      // Sin modo binario: se puede pagar en efectivo (Rapipago / Pago Fácil). El pedido queda pendiente hasta que MP
+      // acredita el pago (lo avisa el webhook) y el comprador vuelve con el link guardado (recent-orders.js) o el mail.
+      binary_mode: false,
       // En modo prueba no se manda el email: si es de una cuenta real, MP rechaza el pago por mezclar cuentas de prueba y reales.
       ...(env.MP_TEST_MODE === '1' || !buyerEmail ? {} : { payer: { email: buyerEmail } }),
       statement_descriptor: 'QUIEROMISFOTOS',

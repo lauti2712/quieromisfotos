@@ -331,6 +331,7 @@ function pendingBox(o) {
   return `<div class="card stack">
     <strong>Guardá el link de esta compra</strong>
     <span class="muted small">Así volvés a tus fotos desde cualquier celular, aunque cierres esta página. Cuando se acredite el pago, desde este mismo link las descargás.</span>
+    <span class="small">💵 <strong>Si ya pagaste en efectivo, no vuelvas a pagar:</strong> esperá a que Mercado Pago lo acredite.</span>
     <div class="row" style="gap:8px;flex-wrap:wrap">
       <button class="btn primary" id="pd-refresh">🔄 Actualizar</button>
       <button class="btn" id="pd-copy">📋 Copiar link</button>
