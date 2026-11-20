@@ -7,6 +7,7 @@ import { loadSettings, setForSale, feePercentFor, planOf, setUntil, GRACE_DAYS }
 import { mpPercentFor, bibFeeFor } from './plans-core.js';
 import { currentUser, requireLogin, buyerSession } from './account.js';
 import { apiPost } from './api.js';
+import { saveRecentOrder } from './recent-orders.js';
 
 const cache = new Map();
 function cachedGet(path) {
@@ -62,6 +63,8 @@ export async function renderCart(app) {
         eventId: g.eventId, photographerUid: g.photographerUid, photoIds: g.items.map(i => i.photoId),
         ...(transfer ? { method: 'transfer' } : {}),
       });
+      // El link del pedido queda guardado en este dispositivo: vuelve aunque cierre Mercado Pago o el pago tarde.
+      saveRecentOrder({ id: r.orderId, k: r.k, ev: g.ev?.name || '', total: r.total || 0 });
       if (r.transfer) location.hash = `#/pedido/${r.orderId}`;
       else location.href = r.initPoint;
     } catch (e) {

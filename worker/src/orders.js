@@ -71,7 +71,7 @@ export async function checkout(req, env) {
       && Date.now() - (o.mpPreferenceAt?.getTime?.() || o.createdAt?.getTime?.() || 0) < PREF_TTL - 10 * 60_000);
   if (open) {
     const pref = await mpFetch(await sellerToken(env, photographerUid), `/checkout/preferences/${open.mpPreferenceId}`);
-    return json({ orderId: open.id, initPoint: pref.init_point, reused: true });
+    return json({ orderId: open.id, initPoint: pref.init_point, reused: true, k: await orderKey(env, open.id) });
   }
   const orderId = newId();
   const order = {
@@ -86,7 +86,8 @@ export async function checkout(req, env) {
   await adminSet(env, `orderPrivate/${orderId}`, { buyerUid: claims.sub, buyerEmail: claims.email || '', ...(claims.phone_number ? { buyerPhone: claims.phone_number } : {}), buyerName: claims.name || '', createdAt: order.createdAt });
 
   const pref = await createPreference(req, env, orderId, order, claims.email, 0);
-  return json({ orderId, initPoint: pref.init_point });
+  // k: llave del pedido, para que el comprador (también sin cuenta) guarde el link y vuelva desde cualquier navegador.
+  return json({ orderId, initPoint: pref.init_point, k: await orderKey(env, orderId) });
 }
 
 const PREF_TTL = 2 * 3600_000;
@@ -388,6 +389,44 @@ export async function guestOrder(req, env, orderId) {
     createdAt: iso(order.createdAt), paidAt: iso(order.paidAt), downloadExpiresAt: iso(order.downloadExpiresAt), transferExpiresAt: iso(order.transferExpiresAt) };
   const priv = order.buyerGuest ? await adminGet(env, `orderPrivate/${orderId}`).catch(() => null) : null;
   return json({ order: o, payerEmail: priv?.mpPayerEmail || '', ...(links && order.status === 'approved' ? await linksFor(req, env, orderId, order) : {}) });
+}
+
+// POST /orders/recover {email} (público): "Pagué y no veo mis fotos". Busca las compras con ese mail (el de la cuenta
+// o el que usó en Mercado Pago) y le manda por mail los links para abrirlas sin cuenta. Nunca dice si hay o no compras
+// (no revela nada a quien no tiene acceso a ese mail). Una vez cada 10 minutos por mail.
+export async function recoverOrders(req, env) {
+  const { email: raw } = await req.json().catch(() => ({}));
+  const email = String(raw || '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || email.length > 120) throw httpError(400, 'Revisá el mail');
+  const h = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(email)))].map(x => x.toString(16).padStart(2, '0')).join('');
+  const key = `recoverRequests/${h.slice(0, 40)}`;
+  const last = await adminGet(env, key).catch(() => null);
+  if (last?.at && Date.now() - new Date(last.at).getTime() < 10 * 60_000) return json({ ok: true });
+  await adminSet(env, key, { at: new Date() });
+  const [a, b] = await Promise.all([
+    adminQuery(env, 'orderPrivate', { filters: [['mpPayerEmail', '==', email]], limit: 30 }).catch(() => []),
+    adminQuery(env, 'orderPrivate', { filters: [['buyerEmail', '==', email]], limit: 30 }).catch(() => []),
+  ]);
+  const ids = [...new Set([...a, ...b].map(x => x.id))];
+  const orders = (await Promise.all(ids.map(id => adminGet(env, `orders/${id}`).then(o => (o ? { id, ...o } : null)).catch(() => null))))
+    .filter(o => o && ['approved', 'pending'].includes(o.status))
+    .sort((x, y) => (y.createdAt?.getTime?.() || 0) - (x.createdAt?.getTime?.() || 0)).slice(0, 10);
+  if (!orders.length) return json({ ok: true });
+  const esc = x => String(x ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const rows = await Promise.all(orders.map(async o => [
+    `${esc(o.eventName || 'Fotos')} · ${o.count || 0} foto${o.count === 1 ? '' : 's'}${o.status === 'pending' ? ' (pago pendiente)' : ''}`,
+    `<a href="${await orderLinkUrl(env, o.id)}">Abrir mi compra</a>`]));
+  await sendMail(env, {
+    to: email,
+    subject: '🧾 Tus compras en Quiero Mis Fotos',
+    html: mailLayout({
+      title: 'Tus compras',
+      intro: 'Nos pediste los links de tus compras. Abrí cada una desde acá: funcionan en cualquier celular o computadora, sin cuenta.',
+      rows,
+      foot: 'Si no lo pediste vos, podés ignorar este mail.',
+    }),
+  }).catch(() => {});
+  return json({ ok: true });
 }
 
 // POST /orders/{id}/link (superadmin o el fotógrafo del pedido): link con llave para mandarle al comprador.
