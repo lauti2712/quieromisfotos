@@ -2419,11 +2419,15 @@ async function drawSelfieStatus(ev, set = {}) {
     // Con "tocar una cara" activado, también se preparan las que tienen huella pero no el lugar de cada cara (subidas antes).
     const done = new Set(set.faceTap === false ? r.ids || [] : r.boxed || []);
     const snap = await getDocs(query(collection(db, 'photos'), where('eventId', '==', ev.id), where('photographerUid', '==', S.user.uid), where('hidden', '==', false), limit(5000)));
-    const todo = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => !done.has(p.id) && (!p.uploadedBy || p.uploadedBy === S.user.uid));
-    if (!todo.length) { box.innerHTML = `<p class="small" style="margin:0">✅ Las ${done.size} fotos ya están listas para la búsqueda por selfie.</p>`; return; }
+    const mine = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => !p.uploadedBy || p.uploadedBy === S.user.uid);
+    let todo = mine.filter(p => !done.has(p.id));
+    // Volver a procesar todas: corrige caras mal detectadas (antes se tomaban cosas como una pelota) en fotos ya subidas.
+    const again = `<button type="button" class="btn sm ghost" id="sf-all" title="Corrige caras mal detectadas en fotos ya subidas">🔁 Volver a procesar todas (${mine.length})</button>`;
+    const bindAgain = () => { const b = $('#sf-all'); if (b) b.onclick = () => { if (!confirm(`¿Volver a buscar las caras de las ${mine.length} fotos? Tarda unos minutos y hay que dejar esta pantalla abierta.`)) return; todo = mine; box.innerHTML = '<div class="notice small stack" style="margin:0"><div><button type="button" class="btn sm primary" id="sf-go" hidden></button> <span class="muted" id="sf-pct"></span></div></div>'; bindGo(); $('#sf-go').click(); }; };
+    if (!todo.length) { box.innerHTML = `<p class="small" style="margin:0">✅ Las ${done.size} fotos ya están listas para la búsqueda por selfie. ${again}</p>`; bindAgain(); return; }
     box.innerHTML = `<div class="notice small stack" style="margin:0"><span>🤳 ${todo.length} foto${todo.length === 1 ? '' : 's'} todavía no ${todo.length === 1 ? 'está lista' : 'están listas'} para la búsqueda por selfie.</span>
       <div><button type="button" class="btn sm primary" id="sf-go">Prepararlas ahora</button> <span class="muted" id="sf-pct"></span></div></div>`;
-    $('#sf-go').onclick = async e => {
+    function bindGo() { $('#sf-go').onclick = async e => {
       e.target.disabled = true;
       const { photoFaces } = await import('./faces.js');
       const batch = [];
@@ -2444,7 +2448,8 @@ async function drawSelfieStatus(ev, set = {}) {
         toast('Listo: ya se pueden buscar con una selfie');
         drawSelfieStatus(ev, set);
       } catch (err) { e.target.disabled = false; toast(errMsg(err), 'error'); }
-    };
+    }; }
+    bindGo();
   } catch (err) { box.innerHTML = ''; console.warn('selfie', err); }
 }
 

@@ -50,7 +50,8 @@ export async function photoFaces(source, { minSize = 36, max = 15 } = {}) {
   const api = await loadFaceApi();
   const input = toInput(source);
   const W = input.naturalWidth || input.width, H = input.naturalHeight || input.height;
-  const det = await api.detectAllFaces(input, new api.TinyFaceDetectorOptions({ inputSize: 608, scoreThreshold: 0.45 }))
+  // 0,6: con 0,45 tomaba como cara cosas redondas con manchas (una pelota de fútbol). La selfie sigue en 0,4 (es una cara de frente).
+  const det = await api.detectAllFaces(input, new api.TinyFaceDetectorOptions({ inputSize: 608, scoreThreshold: 0.6 }))
     .withFaceLandmarks(true).withFaceDescriptors();
   const list = det.filter(d => Math.min(d.detection.box.width, d.detection.box.height) >= minSize)
     .sort((a, b) => b.detection.box.height - a.detection.box.height).slice(0, max);
