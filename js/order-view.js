@@ -4,6 +4,7 @@ import { $, $$, esc, fmtMoney, fmtTs, toast, errMsg } from './util.js';
 import { apiPost, API_BASE } from './api.js';
 import { cart } from './cart.js';
 import { currentUser, guestUser, requireLogin, guestSaveHtml, bindGuestSave } from './account.js';
+import { saveRecentOrder, markOrderSeen, recentKey } from './recent-orders.js';
 
 let unsub = null;
 let payerEmail = ''; // invitado: el email con el que pagó en Mercado Pago
@@ -33,7 +34,8 @@ export async function renderOrder(app, orderId, query) {
   unsub?.();
   app.innerHTML = '<div class="spinner"></div>';
   // Link con llave (sin cuenta, o en otro navegador que el de la compra).
-  orderKey = query.get('k') || '';
+  orderKey = query.get('k') || (!currentUser() ? recentKey(orderId) : '');
+  if (orderKey) saveRecentOrder({ id: orderId, k: orderKey });
   if (orderKey && !currentUser()) {
     const paymentId0 = query.get('payment_id') || query.get('collection_id');
     let firstLoad = true;
@@ -52,7 +54,8 @@ export async function renderOrder(app, orderId, query) {
     return load();
   }
   if (!currentUser() && !guestUser()) {
-    app.innerHTML = `<div class="empty"><h2>Ingresá para ver tu pedido</h2><button class="btn primary" id="go">Ingresar</button></div>`;
+    app.innerHTML = `<div class="empty"><h2>Ingresá para ver tu pedido</h2><button class="btn primary" id="go">Ingresar</button>
+      <p class="muted small">¿Compraste sin cuenta? <a href="#/recuperar">Te mandamos el link de tu compra por mail</a>.</p></div>`;
     $('#go').onclick = () => requireLogin().then(() => renderOrder(app, orderId, query));
     return;
   }
@@ -136,12 +139,14 @@ async function storyImage(blob, o) {
 }
 
 function draw(app, o) {
+  saveRecentOrder({ id: o.id, ev: o.eventName || '', total: o.total || 0 });
+  markOrderSeen(o.id, o.status);
   const expired = o.downloadExpiresAt && o.downloadExpiresAt.toMillis() < Date.now();
   const head = {
     approved: ['✅ ¡Pago aprobado!', 'Ya podés descargar tus fotos en alta calidad, sin marca de agua.', 'ok'],
     pending: o.payMethod === 'transfer'
       ? ['🏦 Falta tu transferencia', `Transferí el monto exacto y se acredita solo en unos minutos. Tenés tiempo hasta el ${fmtTs(o.transferExpiresAt)}.`, 'warn']
-      : ['⏳ Esperando la confirmación del pago', 'Esto suele tardar unos segundos. Esta página se actualiza sola.', 'warn'],
+      : ['⏳ Cobro pendiente', 'Con tarjeta o dinero en cuenta se confirma en segundos. Si pagaste en efectivo (Rapipago o Pago Fácil), se acredita cuando Mercado Pago registra el pago: puede tardar unas horas. Esta página se actualiza sola y te avisamos por mail.', 'warn'],
     rejected: ['❌ El pago no se aprobó', 'Podés intentar de nuevo con otro medio de pago.', 'danger'],
     expired: ['⌛ El plazo para transferir venció', 'Si ya transferiste, escribile al fotógrafo para que lo confirme. Si no, volvé a armar el pedido desde el evento.', 'danger'],
     refunded: ['↩️ Pago reembolsado', 'Este pedido fue reembolsado.', ''],
@@ -154,6 +159,7 @@ function draw(app, o) {
     <a href="#/cuenta" class="muted small" style="text-decoration:none">← Mis compras</a>
     <div class="notice ${head[2]}" style="margin-top:10px"><strong>${head[0]}</strong><br>${head[1]}</div>
     ${!currentUser() && (guestUser() || orderKey) && o.status === 'approved' ? guestSaveHtml(payerEmail) : ''}
+    ${o.status === 'pending' && o.payMethod !== 'transfer' ? pendingBox(o) : ''}
     <div class="card stack">
       <div class="row" style="justify-content:space-between;align-items:flex-start">
         <div>
@@ -184,6 +190,17 @@ function draw(app, o) {
     </div>`;
 
   bindGuestSave(app);
+  $('#pd-refresh')?.addEventListener('click', async e => {
+    const b = e.currentTarget; b.disabled = true; b.textContent = 'Consultando…';
+    try {
+      let st;
+      if (orderKey && !currentUser()) { const n = fromGuest((await guestApi(o.id)).order); st = n.status; draw(app, n); }
+      else st = (await apiPost(`/orders/${o.id}/sync`).catch(() => ({})))?.status;
+      if (st !== 'approved') toast('Todavía figura pendiente: te avisamos apenas se acredite');
+    } catch (err) { toast(errMsg(err), 'error'); }
+    b.disabled = false; b.textContent = '🔄 Actualizar';
+  });
+  $('#pd-copy')?.addEventListener('click', () => navigator.clipboard.writeText(linkOf(o)).then(() => toast('Link copiado'), () => toast('No se pudo copiar', 'error')));
   // Si el comprador guarda la cuenta desde este link (otro navegador), la compra pasa a esa cuenta.
   if (orderKey) { try { sessionStorage.setItem('qmf.orderKey', orderKey); } catch { /* nada */ } }
   $('#buyer-link')?.addEventListener('click', async e => {
@@ -298,4 +315,27 @@ function draw(app, o) {
     } catch (err) { btn.textContent = 'Reintentar'; toast(errMsg(err), 'error'); }
     btn.disabled = false;
   });
+}
+
+// Link para volver a esta compra desde cualquier navegador (con la llave, si hay).
+function linkOf(o) {
+  const k = orderKey || recentKey(o.id);
+  return `${location.origin}${location.pathname}#/pedido/${o.id}${k ? `?k=${encodeURIComponent(k)}` : ''}`;
+}
+const fromGuest = r => ({ ...r, createdAt: asTs(r.createdAt), paidAt: asTs(r.paidAt), downloadExpiresAt: asTs(r.downloadExpiresAt), transferExpiresAt: asTs(r.transferExpiresAt) });
+
+// Pago con Mercado Pago todavía sin acreditar: actualizar a mano y guardar el link de la compra.
+function pendingBox(o) {
+  const link = linkOf(o);
+  const wa = `https://wa.me/?text=${encodeURIComponent(`Mi compra de fotos de ${o.eventName || 'Quiero Mis Fotos'}: ${link}`)}`;
+  return `<div class="card stack">
+    <strong>Guardá el link de esta compra</strong>
+    <span class="muted small">Así volvés a tus fotos desde cualquier celular, aunque cierres esta página. Cuando se acredite el pago, desde este mismo link las descargás.</span>
+    <span class="small">💵 <strong>Si ya pagaste en efectivo, no vuelvas a pagar:</strong> esperá a que Mercado Pago lo acredite.</span>
+    <div class="row" style="gap:8px;flex-wrap:wrap">
+      <button class="btn primary" id="pd-refresh">🔄 Actualizar</button>
+      <button class="btn" id="pd-copy">📋 Copiar link</button>
+      <a class="btn" target="_blank" rel="noopener" href="${esc(wa)}">💬 Mandármelo por WhatsApp</a>
+    </div>
+  </div>`;
 }

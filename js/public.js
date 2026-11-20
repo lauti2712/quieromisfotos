@@ -9,6 +9,7 @@ import { initTheme } from './theme.js';
 import { loadTaxonomy, tagPills, loadSettings, isFeatured, portfolioLimit, rulesFor, GEAR_TYPES, GEAR_PLURAL, hasWeb, siteUrlOf } from './data.js';
 import { openViewer } from './viewer.js';
 import { renderCancel } from './cancel-view.js';
+import { drawRecentBar, recentOrdersHtml, renderRecover } from './recent-orders.js';
 import { mountGallery } from './gallery.js';
 import { renderCart } from './cart-view.js';
 import { renderAccount, useAccessLink } from './account.js';
@@ -54,10 +55,12 @@ function route() {
     app.innerHTML = `<div class="empty"><h2>No pudimos cargar esta página</h2><p class="muted">Revisá tu conexión y probá de nuevo.</p><button class="btn primary" id="retry-route">Reintentar</button></div>`;
     $('#retry-route').onclick = route;
   });
+  drawRecentBar(parts[0]); // compras de este dispositivo que todavía no abrió pagadas
   if (parts[0] === 'evento' && parts[1]) return run(() => renderEvent(parts[1]));
   if (parts[0] === 'f' && parts[1]) return run(() => renderProfile(parts[1]));
   if (parts[0] === 'carrito') return run(() => renderCart(app));
-  if (parts[0] === 'cuenta') return run(() => renderAccount(app));
+  if (parts[0] === 'cuenta') return run(async () => { await renderAccount(app); app.insertAdjacentHTML('beforeend', recentOrdersHtml()); });
+  if (parts[0] === 'recuperar') return run(() => renderRecover(app));
   if (parts[0] === 'acceso' && parts[1]) return run(() => useAccessLink(app, parts[1]));
   if (parts[0] === 'pedido' && parts[1]) return run(() => renderOrder(app, parts[1], parseHash().query));
   if (parts[0] === 'fotografos') return run(renderDirectory);
