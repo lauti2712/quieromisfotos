@@ -74,13 +74,14 @@ export async function render({ ev, u, photos }, box) {
   const [imgs, logo] = await Promise.all([Promise.all(photos.map(p => loadImg(viaApi(p.previewUrl)))), loadImg('assets/logo.svg', false).catch(() => null)]);
   const name = u.displayName || 'el fotógrafo', ig = igOf(u);
   const date = fmtDate(ev.date, { day: 'numeric', month: 'long' });
-  const info = { ev, name, ig, date, logo };
+  const city = String(u.zone || '').split(',')[0].trim(); // ciudad del fotógrafo (sin la provincia, para que entre)
+  const info = { ev, name, ig, date, logo, city };
   const feed = [coverPost(info, imgs.slice(0, 3)), ...imgs.map((im, i) => photoPost(info, im, i + 2, imgs.length + 2)), closingPost(info, imgs.length + 2)];
   const story = storyPost(info, imgs.slice(0, 3));
   const base = slug(ev.name);
   const files = await Promise.all(feed.map(async (c, i) => new File([await toBlob(c, 'image/jpeg', 0.92)], `${base}-${String(i + 1).padStart(2, '0')}.jpg`, { type: 'image/jpeg' })));
   const storyFile = new File([await toBlob(story, 'image/jpeg', 0.92)], `${base}-historia.jpg`, { type: 'image/jpeg' });
-  const caption = `📸 Ya están las fotos de ${ev.name} (${date}).\nFotos de ${ig ? `@${ig}` : name}.\n\nBuscá la tuya con tu dorsal o una selfie y descargá el original, sin marca de agua 👉 link en la bio\n\n#quieromisfotos #fotografiadeportiva #fotosdeportivas`;
+  const caption = `📸 Ya están las fotos de ${ev.name} (${date}).\nFotos de ${ig ? `@${ig}` : name}${city ? ` · 📍 ${city}` : ''}.\n\nBuscá la tuya con tu dorsal o una selfie y descargá el original, sin marca de agua 👉 link en la bio\n\n#quieromisfotos #fotografiadeportiva #fotosdeportivas`;
   const canShare = f => !!navigator.canShare?.({ files: f });
   box.innerHTML = `<div class="stack">
     <div class="ig-prev">${files.map(f => `<img src="${URL.createObjectURL(f)}" alt="">`).join('')}<img class="story" src="${URL.createObjectURL(storyFile)}" alt=""></div>
@@ -153,7 +154,7 @@ function lines(ctx, text, x, y, size, weight, color, maxW, maxLines = 3, lh = 1.
   ls.forEach((l, i) => ctx.fillText(l, x, y + i * size * lh));
   return ls.length * size * lh;
 }
-const credit = i => (i.ig ? `@${i.ig}` : i.name);
+const credit = i => `${i.ig ? `@${i.ig}` : i.name}${i.city ? ` · 📍 ${i.city}` : ''}`;
 
 function coverPost(i, imgs) {
   const [c, ctx] = canvas(1350);
@@ -180,7 +181,7 @@ function photoPost(i, im, n, total) {
   ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 10;
   lines(ctx, i.ev.name, 70, 1210, 40, 800, '#fff', W - 260, 1);
   ctx.restore();
-  ctx.font = `600 30px ${FONT}`; ctx.fillStyle = '#d6dae2'; ctx.fillText(`Fotos de ${credit(i)}`, 70, 1262);
+  ctx.font = `600 30px ${FONT}`; ctx.fillStyle = '#d6dae2'; ctx.fillText(`Fotos de ${credit(i)}`, 70, 1262, W - 140);
   ctx.textAlign = 'right'; ctx.font = `800 30px ${FONT}`; ctx.fillStyle = '#fff'; ctx.fillText(`${n}/${total}`, W - 70, 1262);
   return c;
 }
@@ -193,7 +194,7 @@ function closingPost(i, n) {
   y += 20;
   y += lines(ctx, 'Con tu dorsal o una selfie. El original sin marca de agua, totalmente enfocado y en alta calidad.', 80, y, 40, 500, '#d6dae2', W - 160, 4, 1.3);
   pill(ctx, 'Link en la bio · quieromisfotos.com.ar', 80, y + 50, { size: 32 });
-  ctx.font = `600 32px ${FONT}`; ctx.fillStyle = '#9aa3b2'; ctx.textAlign = 'left'; ctx.fillText(`Fotos de ${credit(i)}`, 80, 1270);
+  ctx.font = `600 32px ${FONT}`; ctx.fillStyle = '#9aa3b2'; ctx.textAlign = 'left'; ctx.fillText(`Fotos de ${credit(i)}`, 80, 1270, W - 160);
   ctx.textAlign = 'right'; ctx.font = `800 30px ${FONT}`; ctx.fillStyle = '#fff'; ctx.fillText(`${n}/${n}`, W - 80, 1270);
   return c;
 }
