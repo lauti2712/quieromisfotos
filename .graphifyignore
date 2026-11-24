@@ -1,0 +1,14 @@
+# Generados / muestras: no aportan al grafo
+demo/
+e/
+f/
+fotografos/
+fotos/
+assets/*.png
+assets/*.svg
+assets/models/
+.prueba-dist/
+.tmp-test/
+Claude outputs/
+graphify-out/
+js/vendor/
