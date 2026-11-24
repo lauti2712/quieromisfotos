@@ -145,16 +145,23 @@ export function planFeatures(id, st) {
 }
 
 // Comisión de Mercado Pago del fotógrafo (%), según el plazo de acreditación que eligió (users.mpReleasePlan).
+// Comisión de Mercado Pago por plazo de acreditación (Checkout), tal como la muestra la app de MP: SIN IVA.
+// Para cobrar y calcular netos se usa con IVA (mpWithIva). El superadmin las actualiza en Plataforma.
 export const DEFAULT_MP_FEE_PLANS = [
-  { id: '0', label: 'Al instante', percent: 7.85 },
-  { id: '10', label: 'A 10 días', percent: 5.19 },
-  { id: '18', label: 'A 18 días', percent: 4.10 },
-  { id: '35', label: 'A 35 días', percent: 2.17 },
-  { id: '70', label: 'A 70 días', percent: 0 },
+  { id: '0', label: 'Al instante', percent: 6.42 },
+  { id: '10', label: 'A 10 días', percent: 4.48 },
+  { id: '18', label: 'A 18 días', percent: 3.46 },
+  { id: '35', label: 'A 35 días', percent: 1.52 },
 ];
-export function mpPercentFor(user, settings) {
+export const IVA = 0.21;
+export const mpWithIva = percent => Math.round((Number(percent) || 0) * (1 + IVA) * 100) / 100;
+export function mpPlanFor(user, settings) {
   const plans = settings?.mpFeePlans?.length ? settings.mpFeePlans : DEFAULT_MP_FEE_PLANS;
-  return Number((plans.find(p => p.id === user?.mpReleasePlan) || plans[0])?.percent) || 0;
+  return plans.find(p => p.id === user?.mpReleasePlan) || plans[0];
+}
+// Porcentaje que se descuenta de verdad (con IVA).
+export function mpPercentFor(user, settings) {
+  return mpWithIva(mpPlanFor(user, settings)?.percent);
 }
 
 // Lectura de dorsales con IA: la plataforma cobra un % extra de comisión en los álbumes donde se usó (sets.bibScans > 0).

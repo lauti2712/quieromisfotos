@@ -1,6 +1,7 @@
 // Página "Soy fotógrafo": explica cómo funciona la plataforma para fotógrafos, con animaciones.
 import { $, $$, esc, fmtMoney } from './util.js';
 import { loadSettings, DEFAULT_SETTINGS, planSpec, rulesFor, planFeatures, TRANSFER_FEATURE, promoOf } from './data.js';
+import { mpWithIva } from './plans-core.js';
 import { sellerNet } from './pricing.js';
 import { plansCompareHtml, periodToggleHtml } from './plans-compare.js';
 
@@ -129,7 +130,7 @@ export async function renderPhotographerLanding(app) {
           <label class="field">¿Quién paga la comisión?
             <select id="lc-mode"><option value="buyer">El comprador (tasa de servicio)</option><option value="half">Mitad y mitad</option><option value="absorb">La pago toda yo</option></select></label>
           <label class="field">¿Cuándo cobrás en Mercado Pago?
-            <select id="lc-mp">${mpPlans.map(p => `<option value="${esc(String(p.percent))}">${esc(p.label)} · ${esc(String(p.percent).replace('.', ','))}%</option>`).join('')}</select></label>
+            <select id="lc-mp">${mpPlans.map(p => `<option value="${esc(String(mpWithIva(p.percent)))}">${esc(p.label)} · ${esc(String(mpWithIva(p.percent)).replace('.', ','))}% con IVA</option>`).join('')}</select></label>
           <label class="field">Plan
             <select id="lc-plan">${plans.map(p => `<option value="${esc(String(sp(p.id).fee))}">${esc(p.name)} · ${esc(String(sp(p.id).fee).replace('.', ','))}%</option>`).join('')}</select></label>
         </div>

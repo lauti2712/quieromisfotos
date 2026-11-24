@@ -64,6 +64,7 @@ import { closeAlbum, forceDeleteAlbum, removeAlbum } from './samples.js';
 import { incomeRequest } from './income.js';
 import { planPaymentsRequest } from './planpay.js';
 import { publishScheduled } from './scheduled-publish.js';
+import { onboardingCron, isOnboardingTick, reactivatePhotographer, bajaPage } from './onboarding.js';
 import { createLoginLink, useLoginLink, resetPasswordLink } from './loginlink.js';
 import { claimOrders, convertGuests } from './guests.js';
 import { statsHit } from './stats.js';
@@ -120,6 +121,8 @@ export default {
     if (event.cron === PUSH_CRON) {
       // Lunes 06:00 (Argentina): resumen semanal. Ese tic no manda avisos (quedan para el siguiente) para no pasar el límite de pedidos.
       if (isWeeklyTick(event.scheduledTime)) { ctx.waitUntil(weeklyCron(env).catch(e => console.error('resumen semanal', e))); return; }
+      // Todos los días a las 10 (Argentina): recordatorios a fotógrafos sin álbum y pausa de cuentas que no se usan.
+      if (isOnboardingTick(event.scheduledTime)) { ctx.waitUntil(onboardingCron(env).catch(e => console.error('onboarding', e))); return; }
       ctx.waitUntil(matchPendingTransfers(env).catch(e => console.error('transferencias', e)));
       ctx.waitUntil(publishScheduled(env).catch(e => console.error('publicación programada', e)));
       ctx.waitUntil(convertGuests(env).catch(e => console.error('invitados', e)));
@@ -195,6 +198,8 @@ async function route(req, env, ctx) {
   if (m === 'POST' && url.pathname === '/stats') return statsHit(req, env, ctx);
   if (m === 'POST' && url.pathname === '/team/invite') return teamInvite(req, env);
   if (m === 'POST' && url.pathname === '/photographers/activate') return activatePhotographer(req, env);
+  if (m === 'POST' && url.pathname === '/photographers/reactivate') return reactivatePhotographer(req, env);
+  if ((m === 'GET' || m === 'POST') && url.pathname === '/photographers/baja') return bajaPage(req, env);
   if (m === 'POST' && url.pathname === '/admin/users/verify') return verifyAccount(req, env);
   if (m === 'POST' && url.pathname === '/admin/users/reset') return resetPasswordLink(req, env);
   if (m === 'POST' && url.pathname === '/team/join') return teamJoin(req, env);

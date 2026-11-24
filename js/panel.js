@@ -14,7 +14,7 @@ import {
 } from './util.js';
 const waOf = (u, priv) => priv?.whatsapp || u.socials?.whatsapp || '';
 import { initTheme } from './theme.js';
-import { activeAlbumLimit, albumBonusOf, photoBonusOf, bibFeeFor, photoQuota, transferPlanOk } from './plans-core.js';
+import { activeAlbumLimit, albumBonusOf, photoBonusOf, bibFeeFor, photoQuota, transferPlanOk, mpWithIva } from './plans-core.js';
 import { loadTaxonomy, loadSettings, DEFAULT_SETTINGS, INITIAL_TAG_TYPES, ACTIVITY_TYPE, USER_TAG_TYPES, tagPills, SERVICES, isPro, mpPlanOf, GEAR_TYPES, PLANS, planOf, siteUrlOf, setUntil, setDeleteAt, GRACE_DAYS, albumPhotoLimit, feePercentFor, isFreePlan, setActive, planSpec, rulesFor, bibsOn } from './data.js';
 import { viewWeb } from './panel-web.js';
 import { sellerNet } from './pricing.js';
@@ -387,7 +387,8 @@ function renderOnboarding() {
       S.profile = (await getDoc(doc(db, 'users', u.uid))).data();
       await autoApprove();
       updateRolePill();
-      location.hash = S.isSuper ? '#/admin/fotografos' : '#/inicio';
+      // Recién registrado: a la bienvenida (si la aprobación es manual, todavía no puede crear álbumes: va al inicio).
+      location.hash = S.isSuper ? '#/admin/fotografos' : isApproved() ? '#/bienvenida' : '#/inicio';
       renderShell();
     } catch (err) { toast(errMsg(err), 'error'); }
   };
@@ -516,6 +517,23 @@ function updateSupportLink() {
 function renderShell() {
   updateSupportLink();
   if (S.profile.status === 'suspended' && !S.isSuper) {
+    // Pausada por no usarla o dada de baja desde el link de los mails (worker/src/onboarding.js): la reactiva el fotógrafo.
+    if (['inactividad', 'baja'].includes(S.profile.suspendedReason)) {
+      root.innerHTML = `<div class="container"><div class="auth-box card stack"><h1>${S.profile.suspendedReason === 'baja' ? 'Diste de baja tu cuenta' : 'Tu cuenta está pausada'}</h1>
+        <p class="muted">${S.profile.suspendedReason === 'baja' ? 'Tu perfil no se ve en el sitio y no te escribimos más.' : 'La pausamos porque no se usó (no tenía ningún álbum).'} No se borró nada: tu perfil y tu configuración siguen como los dejaste.</p>
+        <button class="btn primary" id="reactivate">Reactivar mi cuenta</button></div></div>`;
+      $('#reactivate').onclick = async e => {
+        e.target.disabled = true;
+        try {
+          await apiPost('/photographers/reactivate');
+          S.profile = (await getDoc(doc(db, 'users', S.user.uid))).data();
+          toast('🎉 Tu cuenta está activa otra vez');
+          location.hash = isApproved() ? '#/bienvenida' : '#/inicio';
+          renderShell();
+        } catch (err) { e.target.disabled = false; toast(errMsg(err), 'error'); }
+      };
+      return;
+    }
     root.innerHTML = `<div class="container"><div class="auth-box card"><h1>Cuenta suspendida</h1><p class="muted">Tu cuenta de fotógrafo está suspendida. Si creés que es un error, contactá al administrador.</p></div></div>`;
     return;
   }
@@ -654,6 +672,7 @@ function route() {
   if (a === 'equipo' && !S.isSuper) return run(() => viewTeam(view, { uid: S.user.uid, profile: S.profile, settings: S.settings }));
   if (a === 'equipos') return run(() => viewTeams(view, { uid: S.user.uid, teams: S.teams || [] }));
   if (a === 'equipo-evento' && b && parts[2]) return run(() => viewTeamEvent(view, { owner: b, eid: parts[2], uid: S.user.uid, settings: S.settings, tax: S.tax }));
+  if (a === 'bienvenida' && isApproved() && !S.isSuper) return run(viewWelcome);
   if (a === 'perfil') return run(viewProfile);
   if (a === 'config' && !S.isSuper) return run(viewConfig);
   if (a === 'mp' && !S.isSuper) return run(viewMp);
@@ -838,7 +857,7 @@ async function viewHome() {
     $('#home-dash').innerHTML = `
       <div class="stats">${block('Hoy', since(startDay.getTime()))}${block('Últimos 7 días', since(now - 7 * day))}${block('Este mes', since(startMonth.getTime()))}${block('Total', orders)}
         <div class="stat"><span class="muted small">Visitas (30 días)</span><strong>${evVisits30.toLocaleString('es-AR')}</strong><span class="muted small">a tus eventos · ${pfVisits30.toLocaleString('es-AR')} a tu perfil</span></div></div>
-      <p class="muted small" style="margin-top:0">Montos netos estimados (después de la comisión de la plataforma y de Mercado Pago, ${mp.percent}%).
+      <p class="muted small" style="margin-top:0">Montos netos estimados (después de la comisión de la plataforma y de Mercado Pago, ${mp.percent}% con IVA).
         ${pending.length ? `<br>💳 <strong>A acreditar en Mercado Pago: ${fmtMoney(sum(pending, net))}</strong> (cobrás ${mp.label.toLowerCase()}).` : ''}</p>
       <div id="home-transfer"></div>
       ${rows.length ? `<div class="card"><h2>Tus álbumes</h2><div class="table-wrap"><table class="list">
@@ -1170,7 +1189,7 @@ function breakdownHtml(amount, feeMode) {
       ${n.total > amount ? `<div class="bd-row"><span>Tu precio</span><span>${fmtMoney(amount)}</span></div><div class="bd-row muted"><span>+ Tasa de servicio (la paga el comprador)</span><span>${fmtMoney(n.total - amount)}</span></div>` : ''}
       <div class="bd-row"><span>Paga el comprador</span><span>${fmtMoney(n.total)}</span></div>
       <div class="bd-row muted"><span>Comisión Quiero Mis Fotos (${myFee()}%${feeExtra ? ` + ${feeExtra}% por dorsales` : ''})</span><span>−${fmtMoney(n.platformFee)}</span></div>
-      <div class="bd-row muted"><span>Comisión Mercado Pago (${plan.percent}% · ${esc(plan.label.toLowerCase())})</span><span>−${fmtMoney(n.mpFee)}</span></div>
+      <div class="bd-row muted"><span>Comisión Mercado Pago (${plan.percent}% con IVA · ${esc(plan.label.toLowerCase())})</span><span>−${fmtMoney(n.mpFee)}</span></div>
       <div class="bd-row total"><span>Te queda</span><span>${fmtMoney(n.net)}</span></div>
     </div>
     <p class="muted small" style="margin:0">La comisión de MP depende del plazo de acreditación que tengas configurado en tu cuenta de Mercado Pago (<a href="#/mp">cambiar</a>). Es una estimación con tarjeta de crédito.</p>`;
@@ -1286,17 +1305,40 @@ function viewConfig() {
 // ================================================================ Mercado Pago
 async function viewMp() {
   const { query: q } = parseHash();
+  let justLinked = false;
   if (q.get('mp')) {
     // Volvimos de Mercado Pago: refrescar el perfil (el Worker marcó mpConnected).
     const snap = await getDoc(doc(db, 'users', S.user.uid));
     S.profile = snap.data();
-    if (q.get('mp') === 'ok') toast('¡Mercado Pago vinculado!');
+    if (q.get('mp') === 'ok') { toast('¡Mercado Pago vinculado!'); justLinked = true; }
     else toast(q.get('m') || 'No se pudo vincular Mercado Pago', 'error');
     history.replaceState(null, '', '#/mp');
   }
   const p = S.profile;
+  const plans = S.settings.mpFeePlans?.length ? S.settings.mpFeePlans : DEFAULT_SETTINGS.mpFeePlans;
+  const pct = v => String(v).replace('.', ',');
+  const price = p.defaults?.price > 0 ? p.defaults.price : 2500;
+  const days = pl => Number(pl.id) || 0;
+  const steps = [
+    'Abajo, tocá <strong>Gestión</strong>.',
+    'Entrá a <strong>Costos y cuotas</strong>.',
+    'Pestaña <strong>Checkout</strong>. Tocá el lápiz de <strong>Otros medios de pago</strong> (y después <strong>Cuotas y acreditación</strong>, para tarjeta de crédito).',
+    'Elegí el plazo: <strong>al instante</strong> o a más días, con menos comisión.',
+  ];
   $('#view').innerHTML = `
     <h1>Mercado Pago</h1>
+    <div class="card stack">
+      <h2 style="margin:0">Cómo cobrás con Mercado Pago</h2>
+      <div class="mp-facts">
+        <div>🧾 <strong>Mercado Pago cobra su propia comisión</strong>, aparte de la de Quiero Mis Fotos (${myFee()}%). Depende de cuándo querés tener la plata.</div>
+        <div>📱 <strong>Cuándo cobrás lo elegís vos, en tu app de Mercado Pago</strong>, no acá. Más rápido = más comisión.</div>
+        <div>⏳ <strong>Hasta ese día la plata figura "a liquidar"</strong> en Mercado Pago. Es normal: no se perdió, se libera sola.</div>
+      </div>
+      <p style="margin:6px 0 0">Ejemplo con una foto de <strong>${fmtMoney(price)}</strong>: ¿cuándo querés tener la plata?</p>
+      <div class="row" id="mp-sim" style="gap:6px">${plans.map((pl, i) => `<button type="button" class="chip ${i === 0 ? 'on' : ''}" data-sim="${esc(pl.id)}">${esc(pl.label)}</button>`).join('')}</div>
+      <p class="muted" id="mp-sim-out" style="margin:0"></p>
+      <p class="muted small" style="margin:0">Son los porcentajes generales de Mercado Pago; los tuyos los ves en tu app (Costos y cuotas). Mercado Pago los muestra sin IVA: acá ya está sumado.</p>
+    </div>
     <div class="card stack">
       <div class="row"><strong>Estado:</strong> ${p.mpConnected ? '<span class="pill ok">Vinculada</span>' : '<span class="pill warn">Sin vincular</span>'}
         ${p.mpConnected && p.mpUserId ? `<span class="muted small">Cuenta MP #${esc(p.mpUserId)}</span>` : ''}</div>
@@ -1309,34 +1351,37 @@ async function viewMp() {
       <p class="muted small" style="margin:0">Te vamos a llevar a Mercado Pago para que autorices a Quiero Mis Fotos a cobrar en tu nombre. Nunca vemos tu contraseña.</p>
     </div>
     <div class="card stack" id="mp-transfer"></div>
-    <div class="card stack">
-      <h2>¿Cuánto cobrás de cada venta?</h2>
-      <p class="muted" style="margin:0">Mercado Pago cobra una comisión que depende de cuándo querés tener la plata disponible: si la querés al instante cobra más; si esperás unos días, menos. Ese plazo lo elegís vos en tu cuenta de Mercado Pago y vale para todas tus ventas online.</p>
-      <details class="mp-guide">
-        <summary><strong>📘 Cómo ver y cambiar el plazo en Mercado Pago</strong></summary>
-        <div class="stack small" style="margin-top:8px">
-          <div><strong>Desde la compu</strong> (mercadopago.com.ar)
-            <ol style="margin:4px 0 0 18px;padding:0">
-              <li>Entrá con tu cuenta, la misma que vinculaste acá.</li>
-              <li>En el menú, abrí <em>Tu negocio</em> → <em>Costos</em>.</li>
-              <li>Buscá la parte de cobros <em>online</em> (Checkout o link de pago).</li>
-              <li>Elegí el plazo: al instante o a más días, con menos comisión. Ahí mismo ves el porcentaje de cada opción.</li>
-            </ol></div>
-          <div><strong>Desde el celular</strong> (app de Mercado Pago)
-            <ol style="margin:4px 0 0 18px;padding:0">
-              <li>Tocá <em>Más</em> o tu perfil → <em>Tu negocio</em>.</li>
-              <li>Entrá a <em>Costos</em> y elegí el plazo de los cobros online.</li>
-            </ol></div>
-          <p class="muted" style="margin:0">Si no encontrás la opción, escribí <em>costos</em> en el buscador de ayuda de Mercado Pago. Mercado Pago a veces cambia los nombres de los menús.</p>
-          <p style="margin:0">✅ Cuando lo tengas, <strong>marcá abajo el mismo plazo</strong> para que tus ventas muestren lo que te queda de verdad.</p>
-        </div>
-      </details>
+    <div class="card stack" id="mp-plazo">
+      <h2 style="margin:0">Elegí cuándo cobrar, en tu app de Mercado Pago</h2>
+      <p class="muted" style="margin:0">Desde el celular, con la misma cuenta que vinculaste. Tarda un minuto y vale para las ventas nuevas.</p>
+      <div class="mp-steps">
+        ${steps.map((txt, i) => `<figure><img src="assets/instructivo-mp/paso-${i + 1}.jpg" alt="Paso ${i + 1} en la app de Mercado Pago" loading="lazy"><figcaption><span class="step-n">${i + 1}</span><span>${txt}</span></figcaption></figure>`).join('')}
+      </div>
+      <details class="mp-video"><summary>▶️ Ver el video (15 segundos)</summary>
+        <video src="assets/instructivo-mp/video.mp4" controls muted playsinline preload="none" poster="assets/instructivo-mp/paso-1.jpg"></video></details>
+      <h3 style="margin:8px 0 0">¿Qué plazo elegiste?</h3>
+      <p class="muted small" style="margin:0">Marcá el mismo que en Mercado Pago, así tus ventas muestran lo que te queda de verdad.</p>
       <div class="stack" id="mp-plans">
-        ${(S.settings.mpFeePlans || []).map(pl => `<label class="check"><input type="radio" name="mp-plan" value="${esc(pl.id)}" ${mpPlanOf(p, S.settings).id === pl.id ? 'checked' : ''}> ${esc(pl.label)} <span class="muted small">(${pl.percent}% con IVA)</span></label>`).join('')}
+        ${plans.map(pl => `<label class="check"><input type="radio" name="mp-plan" value="${esc(pl.id)}" ${mpPlanOf(p, S.settings).id === pl.id ? 'checked' : ''}> ${esc(pl.label)} <span class="muted small">(${pct(pl.percent)}% + IVA = ${pct(mpWithIva(pl.percent))}%)</span></label>`).join('')}
       </div>
       <h3>Ejemplo con tu precio por foto${p.defaults?.price ? ` (${fmtMoney(p.defaults.price)})` : ''}</h3>
       <div id="mp-net"></div>
     </div>`;
+  const sim = id => {
+    const pl = plans.find(x => x.id === id) || plans[0];
+    const fee = Math.round(price * mpWithIva(pl.percent) / 100);
+    $$('#mp-sim [data-sim]').forEach(b => b.classList.toggle('on', b.dataset.sim === pl.id));
+    $('#mp-sim-out').innerHTML = `Mercado Pago se queda <strong>${fmtMoney(fee)}</strong> (${pct(mpWithIva(pl.percent))}% con IVA) y te quedan <strong>${fmtMoney(price - fee)}</strong> antes de la comisión de Quiero Mis Fotos, ${days(pl) ? `disponibles a los ${days(pl)} días: hasta ese día figuran "a liquidar".` : 'disponibles en el momento.'}`;
+  };
+  sim(plans[0].id);
+  $('#mp-sim').addEventListener('click', e => { const b = e.target.closest('[data-sim]'); if (b) sim(b.dataset.sim); });
+  // Recién vinculada: el último paso es elegir el plazo en la app de MP (si no, aparece la sorpresa de "a liquidar").
+  if (justLinked) {
+    const dlg = openDialog('Mercado Pago vinculado', `<p>✅ Ya podés cobrar tus fotos.</p>
+      <p><strong>Último paso:</strong> elegí en tu app de Mercado Pago cuándo querés tener la plata. Si no lo revisás, puede que veas tus ventas <strong>"a liquidar"</strong> durante varios días.</p>`,
+      '<button class="btn" data-close>Después</button><button class="btn primary" id="mp-howto">Ver cómo (1 minuto)</button>');
+    $('#mp-howto', dlg).onclick = () => { dlg.close(); $('#mp-plazo')?.scrollIntoView({ behavior: 'smooth' }); };
+  }
   const drawNet = () => { $('#mp-net').innerHTML = breakdownHtml(p.defaults?.price || 0, p.defaults?.feeMode || 'absorb'); };
   drawNet();
   drawTransferCard();
@@ -1453,8 +1498,13 @@ async function viewSales() {
   }
   const STATUS = { approved: ['Pagado', 'ok'], pending: ['Pendiente', 'warn'], rejected: ['Rechazado', 'danger'], refunded: ['Reembolsado', ''], expired: ['Vencido', 'danger'] };
   const waiting = orders.filter(o => o.payMethod === 'transfer' && ['pending', 'expired'].includes(o.status));
+  // Quien vende por Mercado Pago y no tiene "al instante" (o nunca miró el plazo) ve plata "a liquidar" en su app: se explica acá.
+  const mpPlanNow = mpPlanOf(S.profile, S.settings);
+  const liquidar = paid.some(o => o.payMethod !== 'transfer') && (!S.profile.mpReleasePlan || mpPlanNow.id !== '0')
+    ? `<div class="notice row" style="justify-content:space-between;gap:8px"><span>⏳ <strong>¿Ves plata "a liquidar" en Mercado Pago?</strong> Es por el plazo de cobro que tenés elegido en tu app de Mercado Pago${S.profile.mpReleasePlan ? ` (acá marcaste: ${esc(mpPlanNow.label.toLowerCase())})` : ''}: a más días, menos comisión, pero la plata se libera después. No se perdió.</span><a class="btn sm" href="#/mp">Ver cómo cambiarlo</a></div>` : '';
   $('#view').innerHTML = `
     <h1>Ventas</h1>
+    ${liquidar}
     ${waiting.length ? `<div class="card stack"><h2 style="margin:0">🏦 Transferencias por recibir</h2>
       <p class="muted small" style="margin:0">Se acreditan solas cuando entra a tu Mercado Pago el monto exacto (con los centavos). Si te transfirieron otro monto o desde otra cuenta, confirmalo a mano.</p>
       ${waiting.map(o => `<div class="item-row"><div class="grow"><strong>$ ${Number(o.transferAmount || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</strong> · ${esc(o.eventName)} · ${o.count} foto${o.count === 1 ? '' : 's'}<br>
@@ -1483,6 +1533,49 @@ async function viewSales() {
     try { await apiPost(`/orders/${o.id}/mark-paid`); toast('Listo: el comprador ya puede descargar'); route(); }
     catch (e) { b.disabled = false; toast(errMsg(e), 'error'); }
   });
+}
+
+// Bienvenida (después del registro y desde los recordatorios): llevar al fotógrafo a tener su primer álbum con fotos
+// en la primera visita. Primero lo que se ve (álbum y fotos con marca de agua), después lo que permite cobrar.
+async function viewWelcome() {
+  const p = S.profile;
+  const snap = await getDocs(query(collection(db, 'events'), where('photographerUids', 'array-contains', S.user.uid), orderBy('date', 'desc'), limit(20)));
+  const evs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const sets = await Promise.all(evs.map(ev => getDoc(doc(db, 'events', ev.id, 'sets', S.user.uid)).then(x => x.data() || null).catch(() => null)));
+  const withPhotos = evs.find((ev, i) => (sets[i]?.photoCount || 0) > 0);
+  const first = withPhotos || evs[0];
+  // Sin fotos todavía: el primer álbum puede ser el de su próximo evento. Las fotos se suben ese día; mientras, el link
+  // ya sirve para que la gente active 🔔 y le avisemos.
+  const upcoming = !withPhotos && evs.length > 0 && evs.every(ev => ev.date > todayIso()) ? [...evs].sort((a, b) => a.date.localeCompare(b.date))[0] : null;
+  const steps = [
+    { ok: evs.length > 0, label: 'Creá tu primer álbum', hint: 'El de tu último partido, torneo o carrera: nombre, fecha y precio por foto. Tarda un minuto.<br>¿Todavía no tenés fotos? Creá el de tu <strong>próximo evento</strong>: aparece en "Próximos eventos" y la gente pide aviso para cuando las subas.',
+      btn: '<span class="row" style="gap:6px;flex:none"><button class="btn primary" id="wz-new">➕ Crear álbum</button><button class="btn" id="wz-next">📅 Mi próximo evento</button></span>' },
+    { ok: !!withPhotos, wait: !!upcoming, label: 'Subí tus fotos', hint: upcoming ? `Las subís después de <strong>${esc(upcoming.name)}</strong> (${esc(fmtDate(upcoming.date))}). Mientras, compartí el link para que la gente active 🔔.` : 'Elegilas desde el celular o la compu. La marca de agua se pone sola y los originales quedan protegidos.',
+      btn: upcoming ? `<button class="btn" id="wz-share-up">🔗 Compartir el link</button>` : first ? `<a class="btn primary" href="#/evento/${first.id}">⬆️ Subir fotos</a>` : '' },
+    { ok: !!p.mpConnected, label: 'Vinculá Mercado Pago', hint: 'Para cobrar: la plata de cada venta te llega directo a tu cuenta. Mercado Pago cobra su comisión y, en su app, elegís cuándo tenerla disponible (si no, figura "a liquidar").', btn: '<a class="btn primary" href="#/mp">💳 Vincular</a>' },
+  ];
+  const next = steps.findIndex(x => !x.ok && !x.wait);
+  const allDone = steps.every(x => x.ok);
+  const waiting = !allDone && next < 0; // solo falta subir las fotos del próximo evento
+  $('#view').innerHTML = `
+    <div class="card stack wizard" style="max-width:640px">
+      <h1 style="margin:0">${allDone ? '🎉 ¡Ya estás vendiendo!' : waiting ? '📅 ¡Listo por ahora!' : `¡Bienvenido, ${esc((p.displayName || '').split(' ')[0])}!`}</h1>
+      <p class="muted" style="margin:0">${allDone ? 'Tu álbum ya se puede comprar. Ahora compartí el link: en el grupo del equipo, en tus historias o con un QR en la cancha.' : waiting ? 'Ya está todo configurado. Después del evento subí las fotos y quedan a la venta en el momento.' : 'En 3 pasos tenés tu primer álbum a la venta. Arrancá por el primero: lo demás lo podés hacer después.'}</p>
+      <div class="meter"><span style="width:${Math.round((steps.filter(x => x.ok).length / steps.length) * 100)}%"></span></div>
+      ${steps.map((x, i) => `<div class="item-row step ${x.ok ? 'ok' : ''} ${i === next ? 'current' : ''}">
+        <span class="step-n">${x.ok ? '✓' : x.wait ? '📅' : i + 1}</span>
+        <span class="grow"><strong>${x.label}</strong>${x.ok ? '' : `<br><span class="muted small">${x.hint}</span>`}</span>
+        ${!x.ok && (i === next || x.wait) ? x.btn : ''}
+      </div>`).join('')}
+      ${withPhotos ? `<div class="row" style="gap:8px;flex-wrap:wrap">
+        <a class="btn" target="_blank" href="index.html#/evento/${withPhotos.id}">👀 Ver mi álbum como un cliente</a>
+        ${allDone ? '<button class="btn primary" id="wz-share">🔗 Compartir el link</button>' : ''}</div>` : ''}
+      <a class="muted small" href="#/inicio">${allDone ? 'Ir a mi panel' : 'Lo hago después: ir a mi panel'}</a>
+    </div>`;
+  $('#wz-new')?.addEventListener('click', () => eventDialog(null));
+  $('#wz-next')?.addEventListener('click', () => eventDialog(null, null, { upcoming: true }));
+  $('#wz-share-up')?.addEventListener('click', () => shareEvent(upcoming));
+  $('#wz-share')?.addEventListener('click', () => shareEvent(withPhotos));
 }
 
 // ＋ Subir: elegir a qué álbum (los más recientes) o crear uno nuevo.
@@ -1743,15 +1836,16 @@ function readPubMode(dlg) {
   return { mode, status: 'draft', at: null };
 }
 
-function eventDialog(ev, onSaved) {
+function eventDialog(ev, onSaved, opts = {}) {
   const isNew = !ev;
   const general = isNew ? S.isSuper : ev.kind === 'general';
   // Álbum nuevo: publicado desde el principio, así ya tiene link para compartir mientras se suben las fotos
   // (sin correo confirmado no se puede publicar: arranca en borrador).
-  ev = ev || { name: '', date: todayIso(), location: '', tagIds: [], status: needsVerify() ? 'draft' : 'published', openToJoin: general, coverUrl: '' };
+  // opts.upcoming (bienvenida, sin fotos todavía): se elige la fecha del próximo evento.
+  ev = ev || { name: '', date: opts.upcoming ? '' : todayIso(), location: '', tagIds: [], status: needsVerify() ? 'draft' : 'published', openToJoin: general, coverUrl: '' };
   const tax = S.tax;
   const sel = new Set(ev.tagIds || []);
-  const dlg = openDialog(isNew ? (general ? 'Nuevo evento general' : 'Nuevo álbum') : 'Editar evento', `
+  const dlg = openDialog(isNew ? (general ? 'Nuevo evento general' : opts.upcoming ? 'Tu próximo evento' : 'Nuevo álbum') : 'Editar evento', `
     <label class="field">Nombre<input type="text" id="ev-name" required maxlength="100" value="${esc(ev.name)}" placeholder="Ej: Torneo Apertura Sub-14 — Fecha 3"></label>
     <div class="grid2">
       <label class="field">Fecha<input type="date" id="ev-date" required value="${esc(ev.date)}">
@@ -2566,6 +2660,7 @@ async function viewAdminPhotographers() {
           <div class="muted small">${esc(privs[i].email || privs[i].phone || '')} <button class="btn sm ghost" data-chmail="${u.uid}" data-chmailold="${esc(privs[i].email || '')}" title="Si se registró con el mail mal escrito">✉️ Cambiar mail</button> · /${esc(u.slug || '')} · alta ${esc(fmtTs(u.createdAt))}</div>
           <div class="row" style="gap:6px;margin-top:6px">
             ${privs[i].provider ? `<span class="pill">${privs[i].provider === 'google' ? 'Ingresa con Google' : privs[i].provider === 'phone' ? 'Ingresa con el celular' : 'Ingresa con email y contraseña'}</span>` : ''}
+            ${u.status === 'suspended' && ['inactividad', 'baja'].includes(u.suspendedReason) ? `<span class="pill" title="La puede reactivar el propio fotógrafo desde el panel">${u.suspendedReason === 'baja' ? '👋 Se dio de baja' : '⏸️ Pausada por inactividad'}${u.suspendedAt ? ` (${esc(fmtTs(u.suspendedAt))})` : ''}</span>` : ''}
             ${u.mpConnected ? '<span class="pill ok">Mercado Pago vinculado</span>' : `<span class="pill ${u.status === 'approved' ? 'danger' : ''}">Mercado Pago sin vincular</span>`}
             ${privs[i].emailVerified ? '' : `<span class="pill warn" title="Todavía no tocó el link del mail de confirmación: no puede publicar ni vincular Mercado Pago">✉️ Correo sin confirmar</span> <button class="btn sm" data-verify="${u.uid}" title="Para quien no puede abrir el mail: lo confirmás vos">✅ Confirmar cuenta</button>`}
             ${u.site?.requestedDomain && !u.domainActive ? `<span class="pill warn">Dominio pedido: ${esc(u.site.requestedDomain)}</span>` : ''}
@@ -2837,9 +2932,12 @@ async function viewAdminPhotographers() {
   });
   $$('[data-st]').forEach(b => b.onclick = async () => {
     try {
-      const upd = { status: b.dataset.st, statusChangedAt: serverTimestamp() };
-      // Prueba gratis del plan Profesional al aprobar (una sola vez por fotógrafo, con planes nuevos).
       const u = users.find(x => x.uid === b.dataset.uid);
+      // Un cambio a mano reemplaza la pausa automática por inactividad (ya no la puede deshacer el fotógrafo) y, si sale
+      // de suspendida, el plazo de los recordatorios arranca de nuevo.
+      const upd = { status: b.dataset.st, statusChangedAt: serverTimestamp(), suspendedReason: null, suspendedAt: b.dataset.st === 'suspended' ? serverTimestamp() : null,
+        ...(u?.status === 'suspended' && b.dataset.st !== 'suspended' ? { reactivatedAt: serverTimestamp() } : {}) };
+      // Prueba gratis del plan Profesional al aprobar (una sola vez por fotógrafo, con planes nuevos).
       const trialDays = Number(S.settings.trialDays ?? 30);
       const gaveTrial = b.dataset.st === 'approved' && trialDays > 0 && u && !u.trialUsed && planOf(u) === 'free';
       if (gaveTrial) Object.assign(upd, { plan: 'web', proUntil: Timestamp.fromMillis(Date.now() + trialDays * 86400000), trial: true, trialUsed: true });
@@ -3681,10 +3779,10 @@ async function viewAdminConfig() {
       </div>
       <div class="card stack">
         <h2>Comisiones de Mercado Pago</h2>
-        <p class="muted small" style="margin:0">Se usan solo para mostrarle al fotógrafo su neto estimado. Porcentaje con IVA incluido, según el plazo de acreditación. Revisalas cuando MP cambie sus tarifas.</p>
+        <p class="muted small" style="margin:0">Cargalas <strong>tal como aparecen en la app de Mercado Pago</strong> (Gestión → Costos y cuotas → Checkout), que las muestra <strong>sin IVA</strong>: el sistema les suma el IVA (21%) para calcular. Se usan en el neto estimado del fotógrafo y en la tasa de servicio cuando la paga el comprador. Revisalas cuando MP cambie sus tarifas.</p>
         <div id="a-mp" class="stack">${(st.mpFeePlans || DEFAULT_SETTINGS.mpFeePlans).map(pl => `
           <div class="row"><span style="flex:1;min-width:120px">${esc(pl.label)}</span>
-            <input type="number" data-mp="${esc(pl.id)}" data-label="${esc(pl.label)}" value="${pl.percent}" min="0" max="30" step="0.01" style="max-width:110px"> <span class="muted small">%</span></div>`).join('')}
+            <input type="number" data-mp="${esc(pl.id)}" data-label="${esc(pl.label)}" value="${pl.percent}" min="0" max="30" step="0.01" style="max-width:110px"> <span class="muted small">% sin IVA (${String(mpWithIva(pl.percent)).replace('.', ',')}% con IVA)</span></div>`).join('')}
         </div>
       </div>
       <div class="card stack">

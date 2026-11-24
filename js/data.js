@@ -1,6 +1,6 @@
 // Lecturas compartidas (taxonomía de etiquetas, settings).
 import { db, doc, getDoc } from './fb.js';
-import { planOf as corePlanOf, planSpec as corePlanSpec, rulesFor, albumPhotoLimit } from './plans-core.js';
+import { planOf as corePlanOf, planSpec as corePlanSpec, rulesFor, albumPhotoLimit, DEFAULT_MP_FEE_PLANS, mpPlanFor, mpWithIva } from './plans-core.js';
 export { teamSeats } from './plans-core.js';
 export { albumPhotoLimit };
 export { rulesFor };
@@ -15,19 +15,14 @@ export const DEFAULT_SETTINGS = {
   showDirectory: false,
   storagePlans: [], // packs de fotos extra para un álbum (planes pagos)
   // Comisión de Mercado Pago por plazo de acreditación (tarjeta de crédito, IVA incluido). Editable por el superadmin.
-  mpFeePlans: [
-    { id: '0', label: 'Al instante', percent: 7.85 },
-    { id: '10', label: 'A 10 días', percent: 5.19 },
-    { id: '18', label: 'A 18 días', percent: 4.10 },
-    { id: '35', label: 'A 35 días', percent: 2.17 },
-    { id: '70', label: 'A 70 días', percent: 0 },
-  ],
+  mpFeePlans: DEFAULT_MP_FEE_PLANS,
 };
 
 // Plan de acreditación de MP elegido por el fotógrafo (por defecto, al instante).
+// Plazo de cobro elegido en Mercado Pago. base: % sin IVA (como lo muestra MP); percent: con IVA (lo que se descuenta).
 export function mpPlanOf(user, settings) {
-  const plans = settings.mpFeePlans?.length ? settings.mpFeePlans : DEFAULT_SETTINGS.mpFeePlans;
-  return plans.find(p => p.id === user?.mpReleasePlan) || plans[0];
+  const pl = mpPlanFor(user, settings);
+  return { ...pl, base: Number(pl.percent) || 0, percent: mpWithIva(pl.percent) };
 }
 
 // Equipo del fotógrafo (sección "Cámaras" del perfil).

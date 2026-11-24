@@ -85,17 +85,19 @@ export function mountGallery(box, { ev, photographers, sets, initialUid = '', in
 
   // Álbumes vencidos: se pueden ver, pero ya no se venden.
   // Sin Mercado Pago vinculado no se puede cobrar: se ven las fotos pero no se agregan al carrito (el ejemplo sí, para mostrar).
-  const canCharge = uid => !!ev.demo || !!byUid.get(uid)?.mpConnected;
+  // Fotógrafo con la cuenta pausada: sus fotos quedan a la vista como muestra, pero no se venden.
+  const paused = uid => !!byUid.get(uid)?.paused;
+  const canCharge = uid => !paused(uid) && (!!ev.demo || !!byUid.get(uid)?.mpConnected);
   const forSale = uid => setForSale(sets.get(uid)) && canCharge(uid);
   const isExpired = set => !!set && (set.originalsDeleted || (setUntil(set) > 0 && setUntil(set) <= Date.now()));
-  const expired = withPhotos.filter(p => isExpired(sets.get(p.uid)));
+  const expired = withPhotos.filter(p => isExpired(sets.get(p.uid)) || paused(p.uid));
   // Con fotos pero sin precio cargado: todavía no se pueden comprar (no es que vencieron).
-  const noPrice = withPhotos.filter(p => { const s = sets.get(p.uid); return s && !isExpired(s) && !(s.price > 0); });
-  const noPay = withPhotos.filter(p => setForSale(sets.get(p.uid)) && !canCharge(p.uid));
+  const noPrice = withPhotos.filter(p => { const s = sets.get(p.uid); return s && !isExpired(s) && !paused(p.uid) && !(s.price > 0); });
+  const noPay = withPhotos.filter(p => setForSale(sets.get(p.uid)) && !paused(p.uid) && !canCharge(p.uid));
   // Subida en curso: llegó una foto en los últimos 15 minutos (lo marca el Worker en el set).
   const uploading = withPhotos.filter(p => Date.now() - (sets.get(p.uid)?.lastUploadAt?.toMillis?.() || 0) < 15 * 60000);
   box.innerHTML = `
-    ${expired.length ? `<div class="notice warn stack" style="gap:8px"><span>${expired.length === withPhotos.length ? 'Las fotos de este evento' : `Las fotos de ${expired.map(p => esc(p.displayName)).join(', ')}`} ya no están a la venta en la plataforma (${expired.every(p => sets.get(p.uid)?.closedAt) ? 'el álbum se cerró' : 'venció el plazo de disponibilidad'})${expired.some(p => sets.get(p.uid)?.samplesKept) ? '. Quedan algunas fotos de muestra para que veas el trabajo' : ''}.</span>
+    ${expired.length ? `<div class="notice warn stack" style="gap:8px"><span>${expired.length === withPhotos.length ? 'Las fotos de este evento' : `Las fotos de ${expired.map(p => esc(p.displayName)).join(', ')}`} ya no están a la venta en la plataforma (${expired.every(p => paused(p.uid)) ? 'el fotógrafo pausó su cuenta' : expired.every(p => sets.get(p.uid)?.closedAt) ? 'el álbum se cerró' : 'venció el plazo de disponibilidad'})${expired.some(p => sets.get(p.uid)?.samplesKept) ? '. Quedan algunas fotos de muestra para que veas el trabajo' : ''}.</span>
       </div>` : ''}
     ${hasBibs ? `<form class="g-bib" id="g-bib" role="search">
       <label for="g-bib-in">🔢 Buscá tus fotos por número de dorsal</label>

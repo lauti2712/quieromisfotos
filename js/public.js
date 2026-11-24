@@ -212,10 +212,11 @@ async function renderEvent(id) {
     app.innerHTML = `<div class="empty"><h2>Evento no encontrado</h2><p>Puede que todavía no esté publicado.</p><a class="btn" href="#/">Volver al inicio</a></div>`;
     return;
   }
-  const [tax, photographers, setsSnap] = await Promise.all([
-    loadTaxonomy(), loadUsers(ev.photographerUids || []), getDocs(collection(db, 'events', id, 'sets')).catch(() => null),
+  const [tax, setsSnap] = await Promise.all([
+    loadTaxonomy(), getDocs(collection(db, 'events', id, 'sets')).catch(() => null),
   ]);
   const sets = new Map((setsSnap?.docs || []).map(d => [d.id, d.data()]));
+  const photographers = await loadUsers(ev.photographerUids || [], sets);
   const tags = tagPills(ev.tagIds, tax);
   document.title = `${ev.name} · Quiero Mis Fotos`;
   if (!ev.demo) trackEventView(ev.id);
@@ -232,7 +233,7 @@ async function renderEvent(id) {
         <div class="meta">
           <h1>${esc(ev.name)}</h1>
           <div>${esc(fmtDate(ev.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}${ev.location ? ` · 📍 ${esc(ev.location)}` : ''}</div>
-          ${photographers.length ? `<div class="hero-people">${photographers.map(p => `<a class="hero-person" href="#/f/${esc(p.slug)}" title="Ver perfil de ${esc(p.displayName)}">${avatarHtml(p)}<span><strong>${esc(p.displayName)}</strong>${p.zone ? `<small>${esc(p.zone)}</small>` : ''}</span></a>`).join('')}</div>` : ''}
+          ${photographers.some(p => !p.paused) ? `<div class="hero-people">${photographers.filter(p => !p.paused).map(p => `<a class="hero-person" href="#/f/${esc(p.slug)}" title="Ver perfil de ${esc(p.displayName)}">${avatarHtml(p)}<span><strong>${esc(p.displayName)}</strong>${p.zone ? `<small>${esc(p.zone)}</small>` : ''}</span></a>`).join('')}</div>` : ''}
         </div>
       </div>
     </div>
@@ -363,10 +364,16 @@ async function renderDirectory() {
   draw();
 }
 
-async function loadUsers(uids) {
+// Fotógrafos de un evento. Los que tienen la cuenta pausada (su perfil ya no es público) no se listan, pero si dejaron
+// fotos en el evento quedan como muestra, sin nombre ni link al perfil y sin venta (sets: los del evento).
+async function loadUsers(uids, sets) {
   const out = await Promise.all(uids.map(uid =>
     getDoc(doc(db, 'users', uid)).then(s => (s.exists() ? { uid, ...s.data() } : null)).catch(() => null)));
-  return out.filter(u => u && u.status === 'approved');
+  return uids.map((uid, i) => {
+    const u = out[i];
+    if (u && u.status === 'approved') return u;
+    return sets && (sets.get(uid)?.photoCount || 0) > 0 ? { uid, displayName: 'Fotógrafo', paused: true } : null;
+  }).filter(Boolean);
 }
 
 // ---------------------------------------------------------------- perfil
