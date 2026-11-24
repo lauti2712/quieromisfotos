@@ -2,11 +2,11 @@
 // Módulo puro (sin Firebase ni DOM): lo usan el panel (Planes y mi web), el sitio (#/soy-fotografo)
 // y tools/build-seo.py (la /soy-fotografo/ estática, vía node). Precios y condiciones: los de Plataforma.
 import { planSpec, BIB_FEE_PERCENT } from './plans-core.js';
+import { esc } from './text-core.js';
 
 export const PLAN_IDS = ['free', 'lite', 'web', 'webdomain', 'empresa'];
 export const PLAN_LABELS = { free: 'Gratis', lite: 'Profesional Lite', web: 'Profesional', webdomain: 'Profesional Premium', empresa: 'Empresas' };
 
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const money = n => '$' + Math.round(Number(n) || 0).toLocaleString('es-AR').replace(/,/g, '.');
 
 // Filas: [característica, valor por plan]. true = ✓, false/'' = no incluido, texto = valor.

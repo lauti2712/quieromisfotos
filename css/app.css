@@ -928,3 +928,15 @@ dialog.protect-dlg { padding: 0; max-width: min(420px, calc(100vw - 32px)); }
 .ig-prev { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; }
 .ig-prev img { height: 260px; border-radius: 10px; flex: none; }
 .ig-prev img.story { height: 260px; outline: 2px dashed var(--accent); }
+
+/* Mercado Pago: qué hay que saber + instructivo con capturas (panel → Mercado Pago) */
+.mp-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+.mp-facts > div { background: var(--surface-2); border-radius: 12px; padding: 10px 12px; font-size: .92rem; line-height: 1.45; }
+.mp-steps { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 6px; }
+.mp-steps figure { margin: 0; min-width: 0; scroll-snap-align: start; display: grid; gap: 8px; align-content: start; }
+.mp-steps img { width: 100%; aspect-ratio: 540 / 1174; object-fit: cover; object-position: top; border-radius: 14px; border: 1px solid var(--border); background: var(--surface-2); }
+.mp-steps figcaption { display: flex; gap: 8px; align-items: flex-start; font-size: .88rem; line-height: 1.4; }
+.mp-steps .step-n { width: 22px; height: 22px; font-size: .8rem; }
+@media (max-width: 640px) { .mp-steps { grid-auto-columns: 72%; } }
+.mp-video summary { cursor: pointer; font-weight: 600; }
+.mp-video video { display: block; width: min(320px, 100%); margin-top: 8px; border-radius: 14px; border: 1px solid var(--border); }

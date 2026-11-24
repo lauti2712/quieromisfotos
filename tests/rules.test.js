@@ -99,6 +99,25 @@ test('fotógrafo no puede cambiarse status/role/mpConnected', async () => {
   await assertFails(updateDoc(doc(db, 'users/ana'), { bio: 'hack' }));
 });
 
+test('la pausa por inactividad no la puede tocar el fotógrafo (ni marcarse para reactivarse solo)', async () => {
+  const db = user('pepe');
+  await assertFails(updateDoc(doc(db, 'users/pepe'), { suspendedReason: 'inactividad' }));
+  await assertFails(updateDoc(doc(db, 'users/pepe'), { reactivatedAt: new Date() }));
+  await assertFails(updateDoc(doc(db, 'users/pepe'), { suspendedAt: null }));
+  // Alta válida en todo lo demás (con su slug), pero trayendo la marca de pausa: no.
+  const db2 = user('nuevo2');
+  const b = writeBatch(db2);
+  b.set(doc(db2, 'slugs/nuevo2'), { uid: 'nuevo2' });
+  b.set(doc(db2, 'users/nuevo2'), photographer('pending', { slug: 'nuevo2', suspendedReason: 'inactividad' }));
+  await assertFails(b.commit());
+  await assertSucceeds(updateDoc(doc(as(SUPER), 'users/pepe'), { suspendedReason: null }));
+});
+
+test('los avisos de onboarding son solo del Worker', async () => {
+  await assertFails(getDoc(doc(user('pepe'), 'onboardingNudges/pepe')));
+  await assertFails(setDoc(doc(user('pepe'), 'onboardingNudges/pepe'), { warn: new Date() }));
+});
+
 test('superadmin aprueba; email sin verificar no es superadmin', async () => {
   await assertSucceeds(updateDoc(doc(as(SUPER), 'users/pepe'), { status: 'approved' }));
   await assertFails(updateDoc(doc(as(FAKE_SUPER), 'users/beto'), { status: 'suspended' }));

@@ -4,7 +4,7 @@
 import { adminGet, adminGetMany, adminSet, adminUpdate, adminIncrement } from './admin.js';
 import { requireUser } from './firebase.js';
 import { mpFetch, panelUrl } from './mp.js';
-import { setAvailableUntil } from './orders.js';
+import { setAvailableUntil } from './order-core.js';
 import { isFree } from './plans.js';
 import { json, httpError, apiUrl } from './http.js';
 

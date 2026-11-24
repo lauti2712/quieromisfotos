@@ -3,7 +3,7 @@
 //   POST /admin/login-link   Bearer (superadmin)  {phone, name?}  -> { url, created }
 //   POST /auth/link          público  {t}                           -> { token } (custom token de Firebase, un solo uso)
 // El link vale 48 h y se puede usar una sola vez (loginLinks/{jti}).
-import { requireUser } from './firebase.js';
+import { requireUser, isSuperadmin } from './firebase.js';
 import { serviceToken, adminSet, adminUpdate, adminGet, adminQuery, adminDelete } from './admin.js';
 import { b64url, signToken, verifyToken } from './tokens.js';
 import { json, httpError } from './http.js';
@@ -21,7 +21,7 @@ async function idt(env, path, body) {
 
 export async function createLoginLink(req, env) {
   const c = await requireUser(req, env);
-  if (c.email !== 'lautarom87@gmail.com' || c.email_verified !== true) throw httpError(403, 'Solo superadmin');
+  if (!isSuperadmin(c)) throw httpError(403, 'Solo superadmin');
   const { phone, name } = await req.json().catch(() => ({}));
   const digits = String(phone || '').replace(/\D/g, '');
   if (digits.length < 12 || digits.length > 15) throw httpError(400, 'Escribí el celular con código de país y de área (ej: 54 9 342 555-1234).');
@@ -63,7 +63,7 @@ export async function useLoginLink(req, env) {
 //   POST /admin/users/reset   Bearer (superadmin)  {uid, send?}  -> { email, link, google, sent }
 export async function resetPasswordLink(req, env) {
   const c = await requireUser(req, env);
-  if (c.email !== 'lautarom87@gmail.com' || c.email_verified !== true) throw httpError(403, 'Solo superadmin');
+  if (!isSuperadmin(c)) throw httpError(403, 'Solo superadmin');
   const { uid, send, newEmail, replace } = await req.json().catch(() => ({}));
   if (!/^[A-Za-z0-9_-]{6,128}$/.test(uid || '')) throw httpError(400, 'Pedido inválido');
   if (newEmail) return changeEmail(env, uid, newEmail, replace === true); // {uid, newEmail}: cambiar el mail de la cuenta

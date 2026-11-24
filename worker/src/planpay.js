@@ -2,7 +2,7 @@
 //   GET /admin/plan-payments   Bearer (superadmin)  -> { items: [{id, uid, name, plan, amount, at, first}], error }
 // Cada cobro aprobado queda en planPayments/{pago}. A Mercado Pago solo se le pregunta por las suscripciones con un cobro
 // más nuevo que el último guardado (o que nunca se consultaron), con tope por vez. Nunca se listan movimientos de la cuenta.
-import { requireUser } from './firebase.js';
+import { requireUser, isSuperadmin } from './firebase.js';
 import { adminQuery, adminGetMany, adminCommit } from './admin.js';
 import { mpFetch } from './mp.js';
 import { json, httpError } from './http.js';
@@ -11,7 +11,7 @@ const MAX_MP = 20;
 
 export async function planPaymentsRequest(req, env) {
   const c = await requireUser(req, env);
-  if (c.email !== 'lautarom87@gmail.com' || c.email_verified !== true) throw httpError(403, 'Solo superadmin');
+  if (!isSuperadmin(c)) throw httpError(403, 'Solo superadmin');
   const [subs, saved] = await Promise.all([
     adminQuery(env, 'subscriptions', { limit: 500 }).catch(() => []),
     adminQuery(env, 'planPayments', { limit: 5000 }).catch(() => []),

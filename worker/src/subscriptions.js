@@ -2,7 +2,7 @@
 // a la cuenta de la plataforma (MP_ACCESS_TOKEN). Cada cobro aprobado extiende users.proUntil un mes.
 // Se sincroniza al volver de MP, por webhook (si está configurado en la app de MP) y todos los días por cron.
 import { adminGet, adminSet, adminUpdate, adminQuery } from './admin.js';
-import { requireUser } from './firebase.js';
+import { requireUser, isSuperadmin } from './firebase.js';
 import { mpFetch, panelUrl } from './mp.js';
 import { json, httpError } from './http.js';
 import { notifySuper } from './push.js';
@@ -174,7 +174,7 @@ export async function syncDueSubscriptions(env) {
 // POST /admin/plans/sync {uid} (superadmin): revisa en Mercado Pago la suscripción de un fotógrafo y aplica el plan.
 export async function adminSyncSubscription(req, env) {
   const claims = await requireUser(req, env);
-  if (claims.email !== 'lautarom87@gmail.com' || claims.email_verified !== true) throw httpError(403, 'Solo superadmin');
+  if (!isSuperadmin(claims)) throw httpError(403, 'Solo superadmin');
   const { uid } = await req.json().catch(() => ({}));
   if (!/^[A-Za-z0-9_-]{6,40}$/.test(uid || '')) throw httpError(400, 'Pedido inválido');
   const s = await syncSubscription(env, uid);
@@ -216,7 +216,7 @@ export async function changeSeats(req, env) {
 // (suscripciones y extensiones). No devuelve el token: solo la cuenta y si es de prueba.
 export async function platformAccount(req, env) {
   const claims = await requireUser(req, env);
-  if (claims.email !== 'lautarom87@gmail.com' || claims.email_verified !== true) throw httpError(403, 'Solo superadmin');
+  if (!isSuperadmin(claims)) throw httpError(403, 'Solo superadmin');
   if (!env.MP_ACCESS_TOKEN) return json({ configured: false });
   const me = await mpFetch(env.MP_ACCESS_TOKEN, '/users/me');
   const test = (me.tags || []).includes('test_user') || String(env.MP_ACCESS_TOKEN).startsWith('TEST-');

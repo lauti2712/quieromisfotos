@@ -1,7 +1,7 @@
 // Respaldo semanal de Firestore en R2 privado: backups/{fecha}/{colección}.json (respuesta cruda de runQuery,
 // sin procesar, para no gastar CPU). Se guardan las últimas KEEP semanas. No incluye mpTokens (se revinculan).
 // Cron semanal y a pedido: POST /admin/backup (superadmin).
-import { verifyIdToken } from './firebase.js';
+import { verifyIdToken, isSuperadmin } from './firebase.js';
 import { adminExportRaw, adminSet } from './admin.js';
 import { json, httpError } from './http.js';
 
@@ -37,7 +37,7 @@ export async function backupRequest(req, env) {
   const idToken = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
   if (!idToken) throw httpError(401, 'Falta autenticación');
   const c = await verifyIdToken(idToken, env);
-  if (c.email !== 'lautarom87@gmail.com' || c.email_verified !== true) throw httpError(403, 'Solo superadmin');
+  if (!isSuperadmin(c)) throw httpError(403, 'Solo superadmin');
   const info = await runBackup(env);
   return json({ ok: true, day: info.day, total: info.total });
 }

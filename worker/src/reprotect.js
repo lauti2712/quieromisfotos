@@ -6,7 +6,7 @@
 // pv: versión nueva (2 la primera vez; para rehacer con otros ajustes, la actual + 1, desde el original).
 // Pensado para el plan gratis de Firestore: 1 lectura y 1 escritura por foto (los bytes de cada álbum los corrige el
 // escaneo diario de almacenamiento).
-import { requireUser } from './firebase.js';
+import { requireUser, isSuperadmin } from './firebase.js';
 import { adminGet, adminCommit } from './admin.js';
 import { json, httpError } from './http.js';
 import { suffixOf, pubKeysOf, MAX_PV } from './photos.js';
@@ -16,7 +16,7 @@ const MAX = { preview: 3e6, thumb: 1e6 };
 
 async function superOnly(req, env) {
   const c = await requireUser(req, env);
-  if (c.email !== 'lautarom87@gmail.com' || c.email_verified !== true) throw httpError(403, 'Solo superadmin');
+  if (!isSuperadmin(c)) throw httpError(403, 'Solo superadmin');
 }
 const pvOf = v => { const n = Number(v ?? 2); if (!Number.isInteger(n) || n < 2 || n > MAX_PV) throw httpError(400, 'Versión inválida'); return n; };
 function baseOf(eid, uid, pid) {

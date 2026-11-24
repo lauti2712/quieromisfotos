@@ -47,7 +47,7 @@
 //   qmf-private: e/{eid}/{uid}/{pid}        (original, nunca público)
 
 import { activatePhotographer, verifyAccount } from './approval.js';
-import { verifyIdToken, getDocAsUser, requireUser } from './firebase.js';
+import { verifyIdToken, getDocAsUser, requireUser, isSuperadmin } from './firebase.js';
 import { adminGet, adminGetMany, adminQuery } from './admin.js';
 import { isFree, setActive, activeAlbumLimit } from './plans.js';
 import { albumLimitFor, fullMsg } from './quota.js';
@@ -64,6 +64,7 @@ import { closeAlbum, forceDeleteAlbum, removeAlbum } from './samples.js';
 import { incomeRequest } from './income.js';
 import { planPaymentsRequest } from './planpay.js';
 import { publishScheduled } from './scheduled-publish.js';
+import { onboardingCron, isOnboardingTick, reactivatePhotographer, bajaPage } from './onboarding.js';
 import { createLoginLink, useLoginLink, resetPasswordLink } from './loginlink.js';
 import { claimOrders, convertGuests } from './guests.js';
 import { statsHit } from './stats.js';
@@ -120,6 +121,8 @@ export default {
     if (event.cron === PUSH_CRON) {
       // Lunes 06:00 (Argentina): resumen semanal. Ese tic no manda avisos (quedan para el siguiente) para no pasar el límite de pedidos.
       if (isWeeklyTick(event.scheduledTime)) { ctx.waitUntil(weeklyCron(env).catch(e => console.error('resumen semanal', e))); return; }
+      // Todos los días a las 10 (Argentina): recordatorios a fotógrafos sin álbum y pausa de cuentas que no se usan.
+      if (isOnboardingTick(event.scheduledTime)) { ctx.waitUntil(onboardingCron(env).catch(e => console.error('onboarding', e))); return; }
       ctx.waitUntil(matchPendingTransfers(env).catch(e => console.error('transferencias', e)));
       ctx.waitUntil(publishScheduled(env).catch(e => console.error('publicación programada', e)));
       ctx.waitUntil(convertGuests(env).catch(e => console.error('invitados', e)));
@@ -195,6 +198,8 @@ async function route(req, env, ctx) {
   if (m === 'POST' && url.pathname === '/stats') return statsHit(req, env, ctx);
   if (m === 'POST' && url.pathname === '/team/invite') return teamInvite(req, env);
   if (m === 'POST' && url.pathname === '/photographers/activate') return activatePhotographer(req, env);
+  if (m === 'POST' && url.pathname === '/photographers/reactivate') return reactivatePhotographer(req, env);
+  if ((m === 'GET' || m === 'POST') && url.pathname === '/photographers/baja') return bajaPage(req, env);
   if (m === 'POST' && url.pathname === '/admin/users/verify') return verifyAccount(req, env);
   if (m === 'POST' && url.pathname === '/admin/users/reset') return resetPasswordLink(req, env);
   if (m === 'POST' && url.pathname === '/team/join') return teamJoin(req, env);
@@ -221,14 +226,14 @@ async function route(req, env, ctx) {
   if ((m === 'GET' && url.pathname === '/admin/weekly') || (m === 'POST' && url.pathname === '/admin/weekly/send')) return weeklyRequest(req, env);
   if (m === 'POST' && url.pathname === '/admin/mail/test') {
     const c = await requireUser(req, env);
-    if (c.email !== 'lautarom87@gmail.com' || c.email_verified !== true) throw httpError(403, 'Solo superadmin');
+    if (!isSuperadmin(c)) throw httpError(403, 'Solo superadmin');
     if (!env.RESEND_API_KEY) throw httpError(503, 'Falta la clave de Resend (RESEND_API_KEY)');
     if (!await mailTest(req, env, c)) throw httpError(502, 'Resend rechazó el envío: revisá que el dominio esté verificado');
     return json({ ok: true, to: c.email });
   }
   if (m === 'POST' && url.pathname === '/admin/mail/news') {
     const c = await requireUser(req, env);
-    if (c.email !== 'lautarom87@gmail.com' || c.email_verified !== true) throw httpError(403, 'Solo superadmin');
+    if (!isSuperadmin(c)) throw httpError(403, 'Solo superadmin');
     if (!env.RESEND_API_KEY) throw httpError(503, 'Falta la clave de Resend (RESEND_API_KEY)');
     return json(await mailNews(req, env, c));
   }
@@ -266,7 +271,7 @@ async function uploadSession(req, env) {
 
   const user = await getDocAsUser(env, idToken, `users/${uid}`);
   if (!user) throw httpError(403, 'Perfil inexistente');
-  const isSuper = claims.email === 'lautarom87@gmail.com' && claims.email_verified === true;
+  const isSuper = isSuperadmin(claims);
   // Pendientes pueden subir avatar, logo y portfolio; para eventos hay que estar aprobado
   // (salvo como colaborador de una empresa: la empresa responde por su equipo).
   const team = typeof body.team === 'string' && body.team !== uid ? body.team : '';

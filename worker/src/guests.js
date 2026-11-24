@@ -8,10 +8,10 @@ import { verifyToken } from './tokens.js';
 import { adminQuery, adminCommit, adminGetMany, serviceToken } from './admin.js';
 import { sendMail, mailLayout } from './mail.js';
 import { json, httpError } from './http.js';
+import { esc } from '../../js/text-core.js';
 
 export const isGuest = claims => claims?.firebase?.sign_in_provider === 'anonymous';
 const IDT = env => `https://identitytoolkit.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}`;
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 async function idt(env, path, body) {
   const token = await serviceToken(env, 'https://www.googleapis.com/auth/cloud-platform');

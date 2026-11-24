@@ -4,10 +4,10 @@
 //
 // Retención: los originales de un álbum se borran GRACE_DAYS después de que deja de venderse
 // (vencimiento + extensiones pagas). Solo borra si RETENTION_DELETE="1"; si no, lo informa como simulación.
-import { verifyIdToken } from './firebase.js';
+import { verifyIdToken, isSuperadmin } from './firebase.js';
 import { adminGet, adminGetMany, adminSet, adminUpdateMany, adminCommit } from './admin.js';
 import { json, httpError } from './http.js';
-import { setAvailableUntil } from './orders.js';
+import { setAvailableUntil } from './order-core.js';
 import { notifyUser, notifyFollowersOnce } from './push.js';
 import { cleanOrphans } from './cleanup.js';
 import { keepSamples, SAMPLE_COUNT } from './samples.js';
@@ -161,7 +161,7 @@ export async function scanRequest(req, env) {
   const idToken = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
   if (!idToken) throw httpError(401, 'Falta autenticación');
   const c = await verifyIdToken(idToken, env);
-  if (c.email !== 'lautarom87@gmail.com' || c.email_verified !== true) throw httpError(403, 'Solo superadmin');
+  if (!isSuperadmin(c)) throw httpError(403, 'Solo superadmin');
   const s = await scanStorage(env);
   return json({ ok: true, total: s.total, objects: s.objects });
 }

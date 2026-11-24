@@ -10,15 +10,14 @@
 // Habilitado por plan (settings/platform.transfer.plans), por el fotógrafo (users.transferOn + transferAlias)
 // y bloqueable por el superadmin (users.transferBlocked).
 import { adminGet, adminGetMany, adminSet, adminQuery, adminCommit } from './admin.js';
-import { requireUser } from './firebase.js';
+import { requireUser, isSuperadmin } from './firebase.js';
 import { sellerToken, mpFetch } from './mp.js';
 import { transferPlanOk } from './plans.js';
 import { notifyUser, notifySuper } from './push.js';
 import { json, httpError } from './http.js';
-import { commitOrderUpdate, downloadUntil } from './orders.js';
+import { commitOrderUpdate, downloadUntil } from './order-core.js';
 
 const PAY_HOURS = 48;
-const isSuper = c => c.email === 'lautarom87@gmail.com' && c.email_verified === true;
 const cents = n => Math.round(n * 100);
 const panel = env => env.PANEL_URL || 'https://quieromisfotos.com.ar/panel.html';
 const money = n => `$${Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
@@ -162,11 +161,11 @@ export async function syncTransferOrder(env, order) {
 export async function markPaid(req, env, orderId) {
   const claims = await requireUser(req, env);
   const order = await adminGet(env, `orders/${orderId}`);
-  if (!order || (order.photographerUid !== claims.sub && !isSuper(claims))) throw httpError(404, 'Pedido no encontrado');
+  if (!order || (order.photographerUid !== claims.sub && !isSuperadmin(claims))) throw httpError(404, 'Pedido no encontrado');
   if (order.payMethod !== 'transfer') throw httpError(409, 'Solo los pedidos por transferencia se marcan a mano');
   if (order.status === 'approved') return json({ status: 'approved' });
   if (!['pending', 'expired'].includes(order.status)) throw httpError(409, 'Este pedido no se puede marcar como pagado');
-  const done = await approve(env, { ...order, id: orderId }, { paidAt: new Date(), manual: isSuper(claims) && order.photographerUid !== claims.sub ? 'superadmin' : 'fotografo' });
+  const done = await approve(env, { ...order, id: orderId }, { paidAt: new Date(), manual: isSuperadmin(claims) && order.photographerUid !== claims.sub ? 'superadmin' : 'fotografo' });
   return json({ status: done.status });
 }
 
@@ -186,7 +185,7 @@ export async function reportFeePayment(req, env) {
 
 export async function confirmFeePayment(req, env) {
   const claims = await requireUser(req, env);
-  if (!isSuper(claims)) throw httpError(403, 'Solo superadmin');
+  if (!isSuperadmin(claims)) throw httpError(403, 'Solo superadmin');
   const { id, uid, amount, reject } = await req.json().catch(() => ({}));
   let fp;
   if (id) {

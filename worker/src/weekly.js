@@ -6,10 +6,11 @@
 // Cada envío queda en adminStats/weekly-{lunes}: no se manda dos veces y sirve de historial.
 // Lee solo los campos que usa (select) para no gastar CPU del plan gratis.
 import { accessToken, serviceToken, adminGet, adminSet } from './admin.js';
-import { decodeFields, requireUser } from './firebase.js';
+import { decodeFields, requireUser, SUPER_EMAIL, isSuperadmin } from './firebase.js';
 import { sendMail } from './mail.js';
 import { mpFetch } from './mp.js';
 import { json, httpError } from './http.js';
+import { esc } from '../../js/text-core.js';
 
 const DAY = 86400000;
 const AR = 3 * 3600000; // Argentina: UTC-3, sin horario de verano
@@ -18,8 +19,7 @@ const STUCK_DAYS = 7;   // fotógrafos aprobados hace más de esto y sin ningún
 const MAX_LIST = 15;    // nombres por lista en el mail
 const MAX_MP = 20;      // consultas a Mercado Pago por resumen (límite de pedidos por ejecución del plan gratis)
 const DEAD = ['suspended', 'rejected', 'deleted'];
-const isSuper = c => c.email === 'lautarom87@gmail.com' && c.email_verified === true;
-const reportTo = env => env.REPORT_EMAIL || 'lautarom87@gmail.com';
+const reportTo = env => env.REPORT_EMAIL || SUPER_EMAIL;
 const panel = env => env.PANEL_URL || 'https://quieromisfotos.com.ar/panel.html';
 
 // ------------------------------------------------------------------ semana
@@ -258,7 +258,6 @@ export async function buildReport(env, week, now = Date.now()) {
 }
 
 // ------------------------------------------------------------------ mail
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const int = n => Math.round(n || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 const $$ = n => `$ ${int(n)}`;
 const gb = n => n.toFixed(1).replace('.', ',');
@@ -358,7 +357,7 @@ export async function weeklyCron(env, now = Date.now()) {
 
 export async function weeklyRequest(req, env) {
   const c = await requireUser(req, env);
-  if (!isSuper(c)) throw httpError(403, 'Solo superadmin');
+  if (!isSuperadmin(c)) throw httpError(403, 'Solo superadmin');
   const url = new URL(req.url);
   if (req.method === 'POST') {
     if (!env.RESEND_API_KEY) throw httpError(503, 'Falta la clave de Resend (RESEND_API_KEY)');
@@ -376,7 +375,7 @@ export async function weeklyRequest(req, env) {
 //   POST /admin/users/activity {uids: [...]}  -> { activity: {uid: ms} }
 export async function activityRequest(req, env) {
   const c = await requireUser(req, env);
-  if (!isSuper(c)) throw httpError(403, 'Solo superadmin');
+  if (!isSuperadmin(c)) throw httpError(403, 'Solo superadmin');
   const { uids } = await req.json().catch(() => ({}));
   const list = [...new Set((Array.isArray(uids) ? uids : []).map(String).filter(u => /^[A-Za-z0-9]{10,40}$/.test(u)))].slice(0, 500);
   return json({ activity: await authActivity(env, list) });

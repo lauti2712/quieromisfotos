@@ -4,10 +4,10 @@
 // Plan gratis de Resend: 100 mails por día y 3.000 por mes; si falla o no hay clave, no corta nada (best-effort).
 import { serviceToken, adminQuery, adminSet } from './admin.js';
 import { httpError } from './http.js';
+import { esc } from '../../js/text-core.js';
 
 const FROM = 'Quiero Mis Fotos <fotos@quieromisfotos.com.ar>';
 const REPLY_TO = 'desarrollo@solucionescotidianas.com.ar';
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 export function mailLayout({ title, intro, cta, rows = [], foot = '' }) {
   return `<!doctype html><html lang="es"><body style="margin:0;background:#f6f7f9;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#15181e">
