@@ -5,7 +5,7 @@
 //   POST /admin/domains/status {uid}          (superadmin)        -> estado de la delegación (NIC.ar → Cloudflare)
 // El registro en NIC.ar lo hace el superadmin a mano (con su clave fiscal), cargando los servidores de nombres que devuelve activate.
 import { adminGet, adminCommit, adminQuery } from './admin.js';
-import { requireUser } from './firebase.js';
+import { requireUser, isSuperadmin } from './firebase.js';
 import { rulesFor } from './plans.js';
 import { addAlert } from './alerts.js';
 import { notifyUser } from './push.js';
@@ -17,7 +17,6 @@ const TLDS = ['com.ar', 'com'];
 // así que se mira el DNS: si el dominio no existe ahí, casi seguro está libre ('probable'); se confirma al registrarlo.
 const RDAP_COM = d => `https://rdap.verisign.com/com/v1/domain/${d}`;
 const CF = 'https://api.cloudflare.com/client/v4';
-const isSuper = c => c.email === 'lautarom87@gmail.com' && c.email_verified === true;
 
 export const tldOf = d => TLDS.find(t => d.endsWith(`.${t}`)) || '';
 const labelOf = d => d.slice(0, -(tldOf(d).length + 1));
@@ -94,7 +93,7 @@ async function ensureRecords(env, zoneId, domain) {
 
 async function requireSuper(req, env) {
   const c = await requireUser(req, env);
-  if (!isSuper(c)) throw httpError(403, 'Solo superadmin');
+  if (!isSuperadmin(c)) throw httpError(403, 'Solo superadmin');
   return c;
 }
 

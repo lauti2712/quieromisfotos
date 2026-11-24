@@ -2,6 +2,10 @@
 import { b64urlDecode } from './tokens.js';
 import { httpError } from './http.js';
 
+// Superadmin de la plataforma: la única regla, la usan todos los endpoints de administración.
+export const SUPER_EMAIL = 'lautarom87@gmail.com';
+export const isSuperadmin = c => c?.email === SUPER_EMAIL && c?.email_verified === true;
+
 const JWKS_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
 let jwks = null; // { keys: Map(kid -> CryptoKey), exp }
 

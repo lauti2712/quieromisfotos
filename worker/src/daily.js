@@ -1,11 +1,11 @@
 // Resumen del día para el superadmin, todas las noches a las 23 (Argentina): fotógrafos nuevos, álbumes nuevos,
 // ventas (cantidad y $) y la comisión de la plataforma. Llega como aviso al celular (o por mail si no tiene avisos activados).
 import { adminGet, adminSet, serviceToken } from './admin.js';
-import { decodeFields } from './firebase.js';
+import { decodeFields, SUPER_EMAIL } from './firebase.js';
 import { accessToken } from './admin.js';
 import { subscriptionCharges } from './weekly.js';
 
-const ADMIN_EMAIL = 'lautarom87@gmail.com';
+const ADMIN_EMAIL = SUPER_EMAIL;
 const root = env => `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents`;
 const tsv = ms => ({ timestampValue: new Date(ms).toISOString() });
 const range = (field, from, to) => ({ compositeFilter: { op: 'AND', filters: [

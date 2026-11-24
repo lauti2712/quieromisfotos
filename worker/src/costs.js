@@ -7,7 +7,7 @@
 // Cada fuente falla por separado: si falta un permiso, esa parte vuelve con `error` y el resto se muestra igual.
 // Precios de lista (USD), del lado caro cuando dependen de la región: es una estimación, la factura manda.
 import { adminGet, serviceToken } from './admin.js';
-import { requireUser } from './firebase.js';
+import { requireUser, isSuperadmin } from './firebase.js';
 import { notifySuper } from './push.js';
 import { json, httpError } from './http.js';
 
@@ -18,7 +18,6 @@ export const PRICES = {
   r2: { freeGB: 10, perGB: 0.015, classA: { free: 1e6, perM: 4.5 }, classB: { free: 1e7, perM: 0.36 } },
   ai: { freePerDay: 10000, per1k: 0.011 },                           // neuronas de Workers AI (lectura de dorsales)
 };
-const isSuper = c => c.email === 'lautarom87@gmail.com' && c.email_verified === true;
 const iso = d => d.toISOString().slice(0, 10);
 const round = (n, d = 2) => Math.round(n * 10 ** d) / 10 ** d;
 
@@ -140,7 +139,7 @@ export async function computeCosts(env) {
 
 export async function costsRequest(req, env, ctx) {
   const c = await requireUser(req, env);
-  if (!isSuper(c)) throw httpError(403, 'Solo superadmin');
+  if (!isSuperadmin(c)) throw httpError(403, 'Solo superadmin');
   const key = new Request('https://qmf-costs.internal/v1');
   if (!new URL(req.url).searchParams.has('fresh')) {
     const hit = await caches.default.match(key);

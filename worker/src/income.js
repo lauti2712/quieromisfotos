@@ -8,7 +8,7 @@
 //   incomeCache/{pago} para no volver a pedirlos.
 // - Comisiones de ventas: entran como marketplace_fee de cada pago del fotógrafo y se liberan con ese pago. La fecha sale de
 //   orders.mpReleaseAt (se guarda desde 11/2026; los pedidos anteriores no la tienen).
-import { requireUser } from './firebase.js';
+import { requireUser, isSuperadmin } from './firebase.js';
 import { adminQuery, adminGetMany, adminCommit } from './admin.js';
 import { mpFetch } from './mp.js';
 import { json, httpError } from './http.js';
@@ -17,7 +17,7 @@ const DAYS = 90, MAX_MP = 25; // tope de consultas a Mercado Pago por vez (lími
 
 export async function incomeRequest(req, env) {
   const c = await requireUser(req, env);
-  if (c.email !== 'lautarom87@gmail.com' || c.email_verified !== true) throw httpError(403, 'Solo superadmin');
+  if (!isSuperadmin(c)) throw httpError(403, 'Solo superadmin');
   const now = Date.now(), since = now - DAYS * 86400_000;
   let error = '', calls = 0;
   const mp = path => { calls++; return mpFetch(env.MP_ACCESS_TOKEN, path); };

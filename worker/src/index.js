@@ -47,7 +47,7 @@
 //   qmf-private: e/{eid}/{uid}/{pid}        (original, nunca público)
 
 import { activatePhotographer, verifyAccount } from './approval.js';
-import { verifyIdToken, getDocAsUser, requireUser } from './firebase.js';
+import { verifyIdToken, getDocAsUser, requireUser, isSuperadmin } from './firebase.js';
 import { adminGet, adminGetMany, adminQuery } from './admin.js';
 import { isFree, setActive, activeAlbumLimit } from './plans.js';
 import { albumLimitFor, fullMsg } from './quota.js';
@@ -221,14 +221,14 @@ async function route(req, env, ctx) {
   if ((m === 'GET' && url.pathname === '/admin/weekly') || (m === 'POST' && url.pathname === '/admin/weekly/send')) return weeklyRequest(req, env);
   if (m === 'POST' && url.pathname === '/admin/mail/test') {
     const c = await requireUser(req, env);
-    if (c.email !== 'lautarom87@gmail.com' || c.email_verified !== true) throw httpError(403, 'Solo superadmin');
+    if (!isSuperadmin(c)) throw httpError(403, 'Solo superadmin');
     if (!env.RESEND_API_KEY) throw httpError(503, 'Falta la clave de Resend (RESEND_API_KEY)');
     if (!await mailTest(req, env, c)) throw httpError(502, 'Resend rechazó el envío: revisá que el dominio esté verificado');
     return json({ ok: true, to: c.email });
   }
   if (m === 'POST' && url.pathname === '/admin/mail/news') {
     const c = await requireUser(req, env);
-    if (c.email !== 'lautarom87@gmail.com' || c.email_verified !== true) throw httpError(403, 'Solo superadmin');
+    if (!isSuperadmin(c)) throw httpError(403, 'Solo superadmin');
     if (!env.RESEND_API_KEY) throw httpError(503, 'Falta la clave de Resend (RESEND_API_KEY)');
     return json(await mailNews(req, env, c));
   }
@@ -266,7 +266,7 @@ async function uploadSession(req, env) {
 
   const user = await getDocAsUser(env, idToken, `users/${uid}`);
   if (!user) throw httpError(403, 'Perfil inexistente');
-  const isSuper = claims.email === 'lautarom87@gmail.com' && claims.email_verified === true;
+  const isSuper = isSuperadmin(claims);
   // Pendientes pueden subir avatar, logo y portfolio; para eventos hay que estar aprobado
   // (salvo como colaborador de una empresa: la empresa responde por su equipo).
   const team = typeof body.team === 'string' && body.team !== uid ? body.team : '';

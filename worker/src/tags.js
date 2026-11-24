@@ -1,7 +1,7 @@
 // Alta de etiquetas por fotógrafos (actividad, club, lugar). Evita duplicados ignorando
 // mayúsculas, acentos y espacios, y actualiza el snapshot settings/tags que lee el sitio.
 import { adminGet, adminSet } from './admin.js';
-import { requireUser } from './firebase.js';
+import { requireUser, isSuperadmin } from './firebase.js';
 import { json, httpError } from './http.js';
 
 const ALLOWED_TYPES = ['deporte', 'club', 'lugar']; // ids de tagTypes ('deporte' se muestra como "Actividad")
@@ -12,7 +12,7 @@ const slugify = s => norm(s).replace(/ /g, '-').slice(0, 40);
 // POST /tags  (Bearer fotógrafo aprobado o superadmin)  { type: 'deporte', name } -> { tag, created }
 export async function createTag(req, env) {
   const claims = await requireUser(req, env);
-  const isSuper = claims.email === 'lautarom87@gmail.com' && claims.email_verified === true;
+  const isSuper = isSuperadmin(claims);
   if (!isSuper) {
     const u = await adminGet(env, `users/${claims.sub}`);
     if (!u || u.status !== 'approved') throw httpError(403, 'Tu cuenta no está aprobada');

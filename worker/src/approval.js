@@ -4,7 +4,7 @@
 // El panel lo llama al terminar el alta y cada vez que entra un pendiente: la primera vez avisa al superadmin del registro.
 // Igual que al aprobar a mano: la primera vez se le da la prueba gratis de Profesional.
 import { adminGetMany, adminUpdate, adminCommit, serviceToken } from './admin.js';
-import { requireUser } from './firebase.js';
+import { requireUser, isSuperadmin } from './firebase.js';
 import { planOf } from './plans.js';
 import { addAlert } from './alerts.js';
 import { notifySuper, notifyUser } from './push.js';
@@ -35,7 +35,7 @@ export async function activatePhotographer(req, env) {
 //   POST /admin/users/verify {uid}
 export async function verifyAccount(req, env) {
   const c = await requireUser(req, env);
-  if (c.email !== 'lautarom87@gmail.com' || c.email_verified !== true) throw httpError(403, 'Solo superadmin');
+  if (!isSuperadmin(c)) throw httpError(403, 'Solo superadmin');
   const { uid } = await req.json().catch(() => ({}));
   if (!/^[A-Za-z0-9_-]{6,128}$/.test(uid || '')) throw httpError(400, 'Pedido inválido');
   const token = await serviceToken(env, 'https://www.googleapis.com/auth/cloud-platform');

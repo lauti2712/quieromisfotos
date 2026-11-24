@@ -3,7 +3,7 @@
 // borra (documento + archivos públicos). Las vendidas que no quedan se ocultan y conservan la miniatura (se ve en Mis compras).
 // Ya no se pueden comprar: el set queda con originalsDeleted (setForSale = false en el sitio y checkout lo rechaza).
 import { adminQuery, adminCommit, adminGet } from './admin.js';
-import { requireUser } from './firebase.js';
+import { requireUser, isSuperadmin } from './firebase.js';
 import { json, httpError } from './http.js';
 import { PREVIEW_SUFFIXES, THUMB_SUFFIXES } from './photos.js';
 
@@ -47,7 +47,7 @@ export async function keepSamples(env, eid, uid) {
 //   POST /events/{eid}/close   Bearer (fotógrafo del set o superadmin)  {uid?}
 export async function closeAlbum(req, env, eid) {
   const c = await requireUser(req, env);
-  const isSuper = c.email === 'lautarom87@gmail.com' && c.email_verified === true;
+  const isSuper = isSuperadmin(c);
   const body = await req.json().catch(() => ({}));
   const uid = isSuper && body.uid ? String(body.uid) : c.sub;
   const set = await adminGet(env, `events/${eid}/sets/${uid}`);
@@ -76,7 +76,7 @@ export async function closeAlbum(req, env, eid) {
 //   POST /admin/events/{eid}/delete-album   Bearer (superadmin)  {uid}
 export async function forceDeleteAlbum(req, env, eid) {
   const c = await requireUser(req, env);
-  if (c.email !== 'lautarom87@gmail.com' || c.email_verified !== true) throw httpError(403, 'Solo superadmin');
+  if (!isSuperadmin(c)) throw httpError(403, 'Solo superadmin');
   const { uid } = await req.json().catch(() => ({}));
   if (!uid) throw httpError(400, 'Falta el fotógrafo');
   const [ev, set] = await Promise.all([adminGet(env, `events/${eid}`), adminGet(env, `events/${eid}/sets/${uid}`)]);
@@ -109,7 +109,7 @@ export async function forceDeleteAlbum(req, env, eid) {
 //   POST /events/{eid}/remove   Bearer (fotógrafo del set o superadmin)  {uid?}
 export async function removeAlbum(req, env, eid) {
   const c = await requireUser(req, env);
-  const isSuper = c.email === 'lautarom87@gmail.com' && c.email_verified === true;
+  const isSuper = isSuperadmin(c);
   const body = await req.json().catch(() => ({}));
   const uid = isSuper && body.uid ? String(body.uid) : c.sub;
   const [ev, set] = await Promise.all([adminGet(env, `events/${eid}`), adminGet(env, `events/${eid}/sets/${uid}`)]);
