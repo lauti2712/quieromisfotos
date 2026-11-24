@@ -4,9 +4,9 @@
 //   /e/{eventId}?f={uid}&foto={photoId}&dorsal={n}
 import { adminGet } from './admin.js';
 import { siteUrl } from './mp.js';
+import { esc } from '../../js/text-core.js';
 
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtDate = iso => {
   if (!iso) return '';
   const [y, m, d] = String(iso).split('-').map(Number);

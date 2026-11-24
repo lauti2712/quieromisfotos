@@ -13,6 +13,7 @@ import { addAlert } from './alerts.js';
 import { createTransferOrder, syncTransferOrder } from './transfers.js';
 import { sendMail, mailLayout } from './mail.js';
 import { setAvailableUntil, downloadUntil, commitOrderUpdate, orderKey, orderLinkUrl } from './order-core.js';
+import { esc } from '../../js/text-core.js';
 
 const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
 const MAX_ITEMS = 300;
@@ -294,7 +295,6 @@ export async function recoverOrders(req, env) {
     .filter(o => o && ['approved', 'pending'].includes(o.status))
     .sort((x, y) => (y.createdAt?.getTime?.() || 0) - (x.createdAt?.getTime?.() || 0)).slice(0, 10);
   if (!orders.length) return json({ ok: true });
-  const esc = x => String(x ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const rows = await Promise.all(orders.map(async o => [
     `${esc(o.eventName || 'Fotos')} · ${o.count || 0} foto${o.count === 1 ? '' : 's'}${o.status === 'pending' ? ' (pago pendiente)' : ''}`,
     `<a href="${await orderLinkUrl(env, o.id)}">Abrir mi compra</a>`]));

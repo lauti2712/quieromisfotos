@@ -2,8 +2,8 @@
 import { sendPendingFaceHits } from './faces.js';
 import { adminGet, adminUpdate, accessToken, adminQuery, adminDelete, adminGetMany, adminSet } from './admin.js';
 import { sendMany, mailLayout, authEmails } from './mail.js';
+import { esc } from '../../js/text-core.js';
 
-const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 export async function notifyUser(env, uid, { title, body, link }) {
   if (env.FIREBASE_EMULATOR) return;

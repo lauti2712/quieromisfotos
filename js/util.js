@@ -19,9 +19,8 @@ if (typeof document !== 'undefined') {
   }, true);
 }
 
-export function esc(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
+import { esc } from './text-core.js';
+export { esc };
 
 export function normalize(s) {
   return String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();

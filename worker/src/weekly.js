@@ -10,6 +10,7 @@ import { decodeFields, requireUser, SUPER_EMAIL, isSuperadmin } from './firebase
 import { sendMail } from './mail.js';
 import { mpFetch } from './mp.js';
 import { json, httpError } from './http.js';
+import { esc } from '../../js/text-core.js';
 
 const DAY = 86400000;
 const AR = 3 * 3600000; // Argentina: UTC-3, sin horario de verano
@@ -257,7 +258,6 @@ export async function buildReport(env, week, now = Date.now()) {
 }
 
 // ------------------------------------------------------------------ mail
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const int = n => Math.round(n || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 const $$ = n => `$ ${int(n)}`;
 const gb = n => n.toFixed(1).replace('.', ',');

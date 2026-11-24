@@ -3,12 +3,12 @@
 import { adminGet, adminQuery } from './admin.js';
 import { siteUrl } from './mp.js';
 import { portfolioLimitFor } from './plans.js';
+import { esc } from '../../js/text-core.js';
 
 const PAID_WEB = ['web', 'webdomain', 'empresa'];
 const TEMPLATES = ['clasica', 'oscura', 'minimal'];
 const CACHE_SECONDS = 300;
 
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 function waNumber(v) {
   let d = String(v || '').replace(/\D/g, '');
