@@ -3,9 +3,7 @@
 import { db, collection, getDocs, query, where, orderBy, limit } from './fb.js';
 import { $, esc, toast, fmtMoney, fmtDate } from './util.js';
 import { eventUrl } from './share.js';
-import { API_BASE } from './api.js';
-
-const ORANGE = '#ff5a1f', INK = '#0f1115';
+import { loadImg, viaApi, logoImg, cover, wrap, download, toBlob, slug, FONT, ORANGE, INK, assertCanRecord, recordCanvas } from './canvas-kit.js';
 
 export function mountShareCard(el, { ev, set, uid, displayName, multi = false, highlight = false }) {
   const url = eventUrl(ev.id, multi ? uid : '');
@@ -76,44 +74,6 @@ export function mountShareCard(el, { ev, set, uid, displayName, multi = false, h
   };
 }
 
-// ------------------------------------------------------------------ utilidades
-const slug = s => String(s || 'evento').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'evento';
-const toBlob = (c, type, q) => new Promise(r => c.toBlob(r, type, q));
-function download(blob, name) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob); a.download = name;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
-}
-// Las fotos se piden por el Worker (agrega CORS) para poder dibujarlas en el canvas.
-function loadImg(src, cors = true) {
-  return new Promise((res, rej) => {
-    const im = new Image();
-    if (cors) im.crossOrigin = 'anonymous';
-    im.onload = () => res(im);
-    im.onerror = () => rej(new Error('No se pudo cargar una foto'));
-    im.src = src;
-  });
-}
-const viaApi = u => { try { return `${API_BASE}/public/${new URL(u).pathname.replace(/^\//, '')}`; } catch { return u; } };
-const logoImg = () => loadImg('assets/logo.svg', false);
-
-function wrap(ctx, text, maxW) {
-  const words = String(text).split(/\s+/), lines = [];
-  let line = '';
-  for (const w of words) {
-    const t = line ? `${line} ${w}` : w;
-    if (ctx.measureText(t).width > maxW && line) { lines.push(line); line = w; } else line = t;
-  }
-  if (line) lines.push(line);
-  return lines;
-}
-function cover(ctx, im, x, y, w, h, zoom = 1, dx = 0) {
-  const s = Math.max(w / im.width, h / im.height) * zoom;
-  const iw = im.width * s, ih = im.height * s;
-  ctx.drawImage(im, x + (w - iw) / 2 + dx, y + (h - ih) / 2, iw, ih);
-}
-const FONT = '-apple-system, "Segoe UI", Roboto, Arial, sans-serif';
 
 // ------------------------------------------------------------------ QR y cartel
 export async function qrCanvas(url, size) {
@@ -160,7 +120,7 @@ export async function posterCanvas({ ev, url, displayName }) {
 // ------------------------------------------------------------------ video para historias (9 s, 1080×1920)
 // Misma idea que la plantilla de Remotion: intro con el evento, 6 fotos con zoom lento y cierre "Buscate".
 export async function storyVideo({ ev, photos, displayName, link, onProgress }) {
-  if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) throw new Error('Este navegador no puede armar videos. Probá desde Chrome o Safari actualizados.');
+  assertCanRecord();
   const W = 1080, H = 1920, FPS = 30;
   const INTRO = 50, SLIDE = 22, OUTRO = 90, N = photos.length, TOTAL = INTRO + N * SLIDE + OUTRO;
   const [imgs, logo] = await Promise.all([Promise.all(photos.map(u => loadImg(viaApi(u)))), logoImg().catch(() => null)]);
@@ -209,32 +169,7 @@ export async function storyVideo({ ev, photos, displayName, link, onProgress }) 
     ctx.font = `800 40px ${FONT}`; ctx.textAlign = 'left'; ctx.fillText('quieromisfotos.com.ar', W / 2 - 145, 1238);
     ctx.globalAlpha = 1;
   };
-  const type = ['video/mp4;codecs=avc1.42E01E', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'].find(t => MediaRecorder.isTypeSupported(t));
-  if (!type) throw new Error('Este navegador no puede armar videos.');
-  draw(0);
-  const stream = c.captureStream(FPS);
-  const rec = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 8_000_000 });
-  const chunks = [];
-  rec.ondataavailable = e => e.data.size && chunks.push(e.data);
-  const done = new Promise(r => { rec.onstop = r; });
-  rec.start(250);
-  // Se graba en tiempo real: cada cuadro se dibuja en su momento (9 s).
-  await new Promise(resolve => {
-    const t0 = performance.now();
-    const tick = () => {
-      const f = Math.floor(((performance.now() - t0) / 1000) * FPS);
-      if (f >= TOTAL) return resolve();
-      draw(f); onProgress?.(f / TOTAL);
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  });
-  rec.stop();
-  await done;
-  stream.getTracks().forEach(t => t.stop());
-  const blob = new Blob(chunks, { type: type.split(';')[0] });
-  return { blob, ext: type.startsWith('video/mp4') ? 'mp4' : 'webm' };
+  // Se graba en tiempo real: cada cuadro se dibuja en su momento.
+  return recordCanvas(c, { total: TOTAL, fps: FPS, draw, onProgress });
 }
 
-// Para otras pantallas (superadmin → Instagram).
-export { loadImg, viaApi, cover, wrap, download, toBlob, slug, FONT, ORANGE, INK };
