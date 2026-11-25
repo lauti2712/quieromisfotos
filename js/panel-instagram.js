@@ -116,6 +116,9 @@ async function openBuilder(row, out, btn, { posts, onTitle }) {
       </div>
       <div class="field" style="margin:0"><span>Colores</span>
         <div class="row" style="gap:6px;flex-wrap:wrap" data-pals>${PALETTES.map(p => `<button type="button" class="chip ${p.id === pal ? 'on' : ''}" data-pal="${p.id}"><span style="display:inline-block;width:14px;height:14px;border-radius:50%;vertical-align:-2px;background:linear-gradient(135deg,${p.bg} 50%,${p.accent} 50%);border:1px solid var(--border)"></span> ${esc(p.name)}</button>`).join('')}</div></div>
+      ${u.igSharp !== false
+        ? `<label class="check" style="margin:0"><input type="checkbox" data-sharp ${saved?.sharp === false ? '' : 'checked'}> <span>Fotos nítidas desde los originales, con un sello liviano <span class="muted small">(el fotógrafo lo permite)</span></span></label>`
+        : '<div class="notice small" style="margin:0">🛡️ Este fotógrafo prefiere que no usemos sus fotos nítidas: van las muestras protegidas del álbum.</div>'}
       <p class="small" style="margin:0">Tocá las fotos para elegir cuáles van (hasta ${MAX_PICK}). Las 3 primeras elegidas arman la portada.</p>
       <div class="ig-pick">${all.map(p => `<button type="button" data-pid="${p.id}" class="${sel.has(p.id) ? 'on' : ''}"><img src="${esc(p.thumbUrl || p.previewUrl)}" alt="" loading="lazy"></button>`).join('')}</div>
       <div><button class="btn primary" data-make>🎨 ${saved ? 'Generar de nuevo' : 'Generar imágenes'}</button></div>
@@ -148,9 +151,10 @@ async function openBuilder(row, out, btn, { posts, onTitle }) {
       if (photos.length < 1) return toast('Elegí al menos una foto.', 'error');
       const b = $('[data-make]', out); b.disabled = true; b.textContent = 'Generando…';
       try {
-        await render({ ev, uid, u, photos, pal: palOf(pal), modes, posts, row }, $('[data-res]', out));
+        const sharp = u.igSharp !== false && !!$('[data-sharp]', out)?.checked;
+        await render({ ev, uid, u, photos, pal: palOf(pal), modes, posts, row, sharp }, $('[data-res]', out));
         if (store) {
-          const data = { eventId: ev.id, uid, palette: pal, photoIds: photos.map(p => p.id), updatedAt: serverTimestamp() };
+          const data = { eventId: ev.id, uid, palette: pal, photoIds: photos.map(p => p.id), sharp, updatedAt: serverTimestamp() };
           if (!saved?.createdAt && !posts.get(postId(ev.id, uid))?.createdAt) data.createdAt = serverTimestamp();
           await setDoc(doc(db, 'igPosts', postId(ev.id, uid)), data, { merge: true });
           posts.set(postId(ev.id, uid), { ...(posts.get(postId(ev.id, uid)) || {}), ...data, createdAt: posts.get(postId(ev.id, uid))?.createdAt || { toMillis: () => Date.now() } });
@@ -165,14 +169,26 @@ async function openBuilder(row, out, btn, { posts, onTitle }) {
   btn.disabled = false;
 }
 
-export async function render({ ev, uid, u, photos, pal, modes, posts, row }, box) {
-  box.innerHTML = '<p class="muted small">Dibujando…</p>';
-  const [imgs, logo] = await Promise.all([Promise.all(photos.map(p => loadImg(viaApi(p.previewUrl)))), loadImg('assets/logo.svg', false).catch(() => null)]);
+export async function render({ ev, uid, u, photos, pal, modes, posts, row, sharp = false }, box) {
+  box.innerHTML = `<p class="muted small" data-load>${sharp ? 'Bajando los originales…' : 'Dibujando…'}</p>`;
+  let done = 0, fallback = 0;
+  const one = async p => {
+    if (sharp) {
+      try { const im = await sharpImg(p.id); return { im, sharp: true }; } catch { fallback++; }
+      finally { done++; const el = $('[data-load]', box); if (el) el.textContent = `Bajando los originales… ${done}/${photos.length}`; }
+    }
+    return { im: await loadImg(viaApi(p.previewUrl)), sharp: false };
+  };
+  const [loaded, logo] = await Promise.all([Promise.all(photos.map(one)), loadImg('assets/logo.svg', false).catch(() => null)]);
+  SEAL_LOGO = logo;
+  const imgs = loaded.map(x => x.im);
+  imgs.forEach((im, k) => { im.sealed = loaded[k].sharp; }); // las nítidas llevan sello
+  if (fallback) toast(`${fallback} foto${fallback === 1 ? '' : 's'} sin original disponible: van con la muestra protegida.`);
   const name = u.displayName || 'el fotógrafo', ig = igOf(u);
   const tags = (ev.igTags || []).filter(t => t !== ig);
   const date = fmtDate(ev.date, { day: 'numeric', month: 'long' });
   const city = String(ev.city || u.zone || '').split(',')[0].trim(); // ciudad (sin la provincia, para que entre)
-  const info = { ev, name, ig, date, logo, city, pal, modes };
+  const info = { ev, name, ig, date, logo, city, pal, modes, sharp };
   const feed = [coverPost(info, imgs.slice(0, 3)), ...imgs.map((im, i) => photoPost(info, im, i + 2, imgs.length + 2)), closingPost(info, imgs.length + 2)];
   const story = storyPost(info, imgs.slice(0, 3));
   const base = slug(ev.name);
@@ -303,6 +319,32 @@ function pill(ctx, text, x, y, { bg = ORANGE, fg = '#fff', size = 34 } = {}) {
 }
 function rounded(ctx, im, x, y, w, h, r, zoom = 1) {
   ctx.save(); ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.clip(); cover(ctx, im, x, y, w, h, zoom); ctx.restore();
+  if (im.sealed) seal(ctx, x + w / 2, y + h / 2, Math.min(w, h) * 0.34, false);
+}
+// Sello liviano para las fotos nítidas (originales): logo + dirección, semitransparente, en el centro.
+let SEAL_LOGO = null;
+function seal(ctx, cx, cy, size, withText = true) {
+  ctx.save();
+  ctx.globalAlpha = 0.38;
+  ctx.shadowColor = 'rgba(0,0,0,.45)'; ctx.shadowBlur = size * 0.08;
+  if (SEAL_LOGO) ctx.drawImage(SEAL_LOGO, cx - size / 2, cy - size / 2 - (withText ? size * 0.18 : 0), size, size);
+  if (withText) {
+    ctx.globalAlpha = 0.5; ctx.font = `800 ${Math.round(size * 0.2)}px ${FONT}`; ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('quieromisfotos.com.ar', cx, cy + size * 0.55);
+  }
+  ctx.restore();
+}
+// Original de la foto (solo superadmin), achicado a 1600 px: alcanza para Instagram y pesa poco en memoria.
+async function sharpImg(pid) {
+  const r = await apiPost(`/review/original/${pid}`);
+  const res = await fetch(r.url);
+  if (!res.ok) throw new Error('sin original');
+  const bmp = await createImageBitmap(await res.blob());
+  const k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+  const ctx = c.getContext('2d'); ctx.imageSmoothingQuality = 'high'; ctx.drawImage(bmp, 0, 0, c.width, c.height);
+  bmp.close?.();
+  return c;
 }
 function mosaic(ctx, imgs, x, y, w, h, zoom = 1) {
   const g = 14;
@@ -351,6 +393,7 @@ function photoPost(i, im, n, total) {
   const g = ctx.createLinearGradient(0, 0, 0, 1350);
   g.addColorStop(0, 'rgba(15,17,21,.6)'); g.addColorStop(0.18, 'rgba(15,17,21,0)'); g.addColorStop(0.72, 'rgba(15,17,21,0)'); g.addColorStop(1, 'rgba(15,17,21,.85)');
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, 1350);
+  if (im.sealed) seal(ctx, W / 2, 1350 / 2, 260);
   ctx.fillStyle = 'rgba(15,17,21,.72)'; ctx.beginPath(); ctx.roundRect(54, 58, 410, 88, 44); ctx.fill();
   brand(ctx, i.logo, 70, 70, pal, true);
   ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 10;
@@ -430,6 +473,7 @@ async function reelVideo(i, imgs, onProgress) {
       const g = ctx.createLinearGradient(0, 0, 0, H);
       g.addColorStop(0, 'rgba(0,0,0,.5)'); g.addColorStop(0.25, 'rgba(0,0,0,0)'); g.addColorStop(0.7, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.7)');
       ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      if (imgs[k].sealed) seal(ctx, W / 2, H / 2, 280);
       ctx.fillStyle = 'rgba(15,17,21,.72)'; ctx.beginPath(); ctx.roundRect(54, 118, 410, 88, 44); ctx.fill();
       brand(ctx, i.logo, 70, 130, pal, true);
       ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 10;

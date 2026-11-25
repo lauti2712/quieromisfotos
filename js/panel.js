@@ -1246,6 +1246,11 @@ function viewConfig() {
             <p class="muted small">Vista previa de una muestra.</p></div>
         </div>
       </div>
+      <div class="card stack">
+        <h2>📣 Tus fotos en nuestras redes</h2>
+        <label class="check"><input type="checkbox" id="cf-igsharp" ${S.profile.igSharp !== false ? 'checked' : ''}> <span>Permitir que Quiero Mis Fotos use mis fotos <strong>nítidas</strong> en sus redes</span></label>
+        <p class="muted small" style="margin:0">Para promocionar tus álbumes en el Instagram de Quiero Mis Fotos usamos pocas fotos (6 a 9 por álbum), en tamaño Instagram, con tu @ y el sello de la marca, sin el desenfoque de las muestras: se ven mejor y atraen más compradores. Si lo desactivás, usamos las mismas muestras protegidas que se ven en tu álbum.</p>
+      </div>
       <div class="row end" style="margin-top:14px"><button class="btn primary" type="submit">Guardar</button></div>
     </form>`;
   const feeMode = () => $('input[name=cf-fee]:checked').value;
@@ -1295,6 +1300,7 @@ function viewConfig() {
       const upd = {
         defaults: { price: Math.round(Number($('#cf-price').value) || 0), packs: packs.get(), feeMode: feeMode() },
         watermark: readWm(),
+        igSharp: $('#cf-igsharp').checked,
       };
       await updateDoc(doc(db, 'users', S.user.uid), upd);
       Object.assign(S.profile, upd);
