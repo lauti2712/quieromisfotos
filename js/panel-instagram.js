@@ -10,7 +10,7 @@ import { igHandle } from './text-core.js';
 import { loadTaxonomy } from './data.js';
 import { apiPost } from './api.js';
 import { eventUrl } from './share.js';
-import { loadImg, viaApi, cover, wrap, download, toBlob, slug, FONT, ORANGE } from './panel-share.js';
+import { loadImg, viaApi, cover, wrap, download, toBlob, slug, FONT, ORANGE, assertCanRecord, recordCanvas } from './canvas-kit.js';
 
 const NEW_DAYS = 7;   // "Nuevo": álbumes de eventos de la última semana
 const PICK = 6;       // fotos elegidas por defecto para el carrusel
@@ -445,7 +445,7 @@ function storyPost(i, imgs) {
 // ------------------------------------------------------------------ reel (video vertical 1080×1920, sin audio)
 // Intro con la portada, las fotos elegidas con zoom lento y cierre "Buscá la tuya". Se graba en tiempo real.
 async function reelVideo(i, imgs, onProgress) {
-  if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) throw new Error('Este navegador no puede armar videos. Probá desde Chrome o Safari actualizados.');
+  assertCanRecord();
   const { pal } = i;
   const H = 1920, FPS = 30, INTRO = 66, SLIDE = 42, OUTRO = 84, N = imgs.length, TOTAL = INTRO + N * SLIDE + OUTRO;
   const c = document.createElement('canvas'); c.width = W; c.height = H;
@@ -496,28 +496,6 @@ async function reelVideo(i, imgs, onProgress) {
     ctx.font = `600 36px ${FONT}`; ctx.fillStyle = pal.mute; ctx.fillText(`Fotos de ${credit(i)}`, W / 2, H - 200, W - 160);
     ctx.textAlign = 'left'; ctx.globalAlpha = 1;
   };
-  const type = ['video/mp4;codecs=avc1.42E01E', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'].find(t => MediaRecorder.isTypeSupported(t));
-  if (!type) throw new Error('Este navegador no puede armar videos.');
-  draw(0);
-  const stream = c.captureStream(FPS);
-  const rec = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 8_000_000 });
-  const chunks = [];
-  rec.ondataavailable = e => e.data.size && chunks.push(e.data);
-  const done = new Promise(r => { rec.onstop = r; });
-  rec.start(250);
-  await new Promise(resolve => {
-    const t0 = performance.now();
-    const tick = () => {
-      const f = Math.floor(((performance.now() - t0) / 1000) * FPS);
-      if (f >= TOTAL) return resolve();
-      draw(f); onProgress?.(f / TOTAL);
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  });
-  rec.stop();
-  await done;
-  stream.getTracks().forEach(t => t.stop());
-  const blob = new Blob(chunks, { type: type.split(';')[0] });
-  return { blob, ext: type.startsWith('video/mp4') ? 'mp4' : 'webm' };
+  // Se graba en tiempo real: cada cuadro se dibuja en su momento.
+  return recordCanvas(c, { total: TOTAL, fps: FPS, draw, onProgress });
 }
