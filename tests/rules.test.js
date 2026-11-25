@@ -395,3 +395,11 @@ test('estadísticas: nadie las escribe desde el navegador (las cuenta el Worker)
   await assertSucceeds(setDoc(doc(user('nuevo'), 'slugs/vero-fotos'), { uid: 'nuevo' }));
   await assertFails(updateDoc(doc(user('ana'), 'users/ana'), { teamPaidSeats: 20 }));
 });
+
+test('posteos de Instagram (igPosts): solo el superadmin', async () => {
+  await assertSucceeds(setDoc(doc(as(SUPER), 'igPosts/pub_ana'), { eventId: 'pub', uid: 'ana', palette: 'azul', photoIds: ['p1'] }));
+  await assertSucceeds(getDoc(doc(as(SUPER), 'igPosts/pub_ana')));
+  await assertFails(getDoc(doc(user('ana'), 'igPosts/pub_ana')));
+  await assertFails(setDoc(doc(user('ana'), 'igPosts/pub_ana'), { postedAt: null }));
+  await assertFails(getDoc(doc(as(), 'igPosts/pub_ana')));
+});
