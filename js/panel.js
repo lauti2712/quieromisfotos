@@ -12,6 +12,7 @@ import {
   $, $$, esc, inAppNotice, bindInAppNotice, slugify, SLUG_RE, searchTokens, fmtMoney, fmtDate, fmtTs, todayIso, parseHash,
   toast, errMsg, avatarHtml, coverHtml, SOCIALS, newId, normalize, fmtBytes, setBytes, waLink, waNumber,
 } from './util.js';
+import { igHandle } from './text-core.js';
 const waOf = (u, priv) => priv?.whatsapp || u.socials?.whatsapp || '';
 import { initTheme } from './theme.js';
 import { activeAlbumLimit, albumBonusOf, photoBonusOf, bibFeeFor, photoQuota, transferPlanOk, mpWithIva } from './plans-core.js';
@@ -1625,7 +1626,7 @@ function statusPill(ev) {
   return ev.status === 'published' ? '<span class="pill ok">Publicado</span>' : '<span class="pill warn">Borrador</span>';
 }
 
-function panelEventCard(ev) {
+function panelEventCard(ev, extra = {}) {
   const mine = ev.createdBy === S.user.uid && ev.kind === 'own';
   return `
     <a class="event-card" href="#/evento/${ev.id}">
@@ -1634,9 +1635,11 @@ function panelEventCard(ev) {
       <div class="body">
         <span class="date">${esc(fmtDate(ev.date))}</span>
         <span class="name">${esc(ev.name)}</span>
+        ${extra.sub || ''}
         <div class="pills">
           ${ev.kind === 'general' ? '<span class="pill accent">Evento general</span>' : mine ? '<span class="pill">Creado por mí</span>' : '<span class="pill">Compartido</span>'}
           <span class="pill">👥 ${(ev.photographerUids || []).length}</span>
+          ${extra.pills || ''}
           ${ev.date > todayIso() ? '<span class="pill accent">📅 Próximamente</span>' : ''}
         </div>
         ${ev.mySet ? setStatsHtml(ev.mySet) : ''}
@@ -1846,13 +1849,20 @@ function eventDialog(ev, onSaved, opts = {}) {
   const tax = S.tax;
   const sel = new Set(ev.tagIds || []);
   const dlg = openDialog(isNew ? (general ? 'Nuevo evento general' : opts.upcoming ? 'Tu próximo evento' : 'Nuevo álbum') : 'Editar evento', `
-    <label class="field">Nombre<input type="text" id="ev-name" required maxlength="100" value="${esc(ev.name)}" placeholder="Ej: Torneo Apertura Sub-14 — Fecha 3"></label>
+    <label class="field">Nombre<input type="text" id="ev-name" required maxlength="100" value="${esc(ev.name)}" placeholder="Ej: Talleres vs Empalme — 5ta división">
+      <span class="hint">🔎 Escribí bien los nombres de los equipos, el torneo o la carrera: con ese nombre el álbum aparece en Google y más gente lo encuentra.</span>
+      <span class="hint hidden" id="ev-name-warn" style="color:var(--warn)">Es muy corto: sumá los equipos o el nombre de la carrera (ej: "Talleres vs Empalme — 5ta").</span></label>
     <div class="grid2">
       <label class="field">Fecha<input type="date" id="ev-date" required value="${esc(ev.date)}">
         <span class="hint">Podés crear eventos futuros: aparecen en "Próximos eventos" y en el calendario, y la gente puede activar 🔔 para que le avisemos cuando subas las fotos.</span></label>
       <label class="field">Localidad<input type="text" id="ev-city" maxlength="80" required value="${esc(ev.city || '')}" placeholder="Empezá a escribir y elegí de la lista"></label>
     </div>
     <label class="field">Lugar (opcional)<input type="text" id="ev-loc" maxlength="100" value="${esc(ev.city ? ev.venue || '' : ev.location || '')}" placeholder="Ej: Cancha de Querandí, Hipódromo, Parque Independencia"></label>
+    <div class="field"><span>Instagram de los equipos, clubes o la carrera (opcional)</span>
+      <div class="pills" id="ev-ig-pills"></div>
+      <div class="row" style="margin-top:4px"><input type="text" id="ev-ig" list="ev-ig-list" maxlength="80" autocapitalize="none" autocomplete="off" placeholder="@clubtalleres" style="max-width:260px"><button type="button" class="btn sm" id="ev-ig-add">Agregar</button></div>
+      <datalist id="ev-ig-list"></datalist>
+      <span class="hint">Los etiquetamos cuando compartimos tu álbum en el Instagram de Quiero Mis Fotos, así lo ven sus seguidores. Podés pegar el link del perfil.</span></div>
     ${tax.types.filter(t => t.id !== 'lugar').map(t => { // "Lugar" ya se pide arriba (campo Lugar); las etiquetas viejas se conservan
       const tags = tax.tags.filter(g => g.typeId === t.id);
       const canAdd = USER_TAG_TYPES.includes(t.id);
@@ -1880,6 +1890,33 @@ function eventDialog(ev, onSaved, opts = {}) {
 
   placeInput($('#ev-city', dlg));
   bindPubMode(dlg);
+  // Nombre: aviso suave si es muy corto (no bloquea).
+  const nameWarn = () => { const v = $('#ev-name', dlg).value.trim(); $('#ev-name-warn', dlg).classList.toggle('hidden', !v || v.split(/\s+/).length >= 3); };
+  $('#ev-name', dlg).addEventListener('blur', nameWarn);
+  // Instagram de equipos / clubes / carrera: chips. Sugerencias: solo los que ya usó este fotógrafo en sus álbumes.
+  const igs = new Set(ev.igTags || []);
+  const drawIgs = () => {
+    $('#ev-ig-pills', dlg).innerHTML = [...igs].map(h => `<button type="button" class="chip on" data-ig-rm="${esc(h)}" title="Quitar">@${esc(h)} ✕</button>`).join('');
+    $$('[data-ig-rm]', dlg).forEach(b => b.onclick = () => { igs.delete(b.dataset.igRm); drawIgs(); });
+  };
+  const addIg = () => {
+    const inp = $('#ev-ig', dlg), raw = inp.value.trim();
+    if (!raw) return true;
+    const hs = raw.split(/[\s,]+/).filter(Boolean).map(igHandle);
+    if (hs.some(h => !h)) { toast('Eso no parece un usuario de Instagram (ej: @clubtalleres).', 'error'); return false; }
+    hs.forEach(h => igs.size < 10 && igs.add(h));
+    inp.value = ''; drawIgs();
+    return true;
+  };
+  drawIgs();
+  $('#ev-ig-add', dlg).onclick = () => addIg();
+  $('#ev-ig', dlg).onkeydown = e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addIg(); } };
+  // Elegido de la lista de sugerencias: se agrega solo.
+  $('#ev-ig', dlg).addEventListener('input', e => { if ([...$('#ev-ig-list', dlg).options].some(o => o.value === e.target.value)) addIg(); });
+  getDocs(query(collection(db, 'events'), where('createdBy', '==', ev.createdBy || S.user.uid), limit(100))).then(snap => {
+    const used = [...new Set(snap.docs.flatMap(d => d.data().igTags || []))].sort();
+    $('#ev-ig-list', dlg).innerHTML = used.map(h => `<option value="@${esc(h)}">`).join('');
+  }).catch(() => {});
   // Portada: se encuadra (16:9) y se sube. Puede venir de un archivo o de una foto del álbum (desde el original, sin marca).
   const setCover = async blob => {
     const cropped = await cropImage(blob);
@@ -1943,6 +1980,7 @@ function eventDialog(ev, onSaved, opts = {}) {
   $('#ev-save', dlg).onclick = async () => {
     const name = $('#ev-name', dlg).value.trim(), date = $('#ev-date', dlg).value, venue = $('#ev-loc', dlg).value.trim();
     if (!name || !date) return toast('Completá nombre y fecha.', 'error');
+    if (!addIg()) return;
     const city = await canonicalPlace($('#ev-city', dlg).value);
     if (!city) return toast('Elegí la localidad del evento de la lista (empezá a escribir y tocá una opción).', 'error');
     // "location" (lo que se muestra en todos lados) = lugar + localidad, sin repetir la ciudad si ya está en el lugar.
@@ -1960,6 +1998,7 @@ function eventDialog(ev, onSaved, opts = {}) {
       publishMode: pub.status === 'published' ? null : pub.mode, publishAt: pub.at,
       openToJoin: general ? true : $('#ev-open', dlg).checked,
       searchTokens: searchTokens(name, loc, ...tagNames),
+      igTags: [...igs],
       updatedAt: serverTimestamp(),
     };
     // Sin precio no se publica: en un álbum nuevo se pide acá; al publicar uno existente, se mira el precio del álbum.
@@ -2951,8 +2990,24 @@ async function viewAdminPhotographers() {
 // ================================================================ superadmin: eventos
 let adminEvFilter = 'all';
 async function viewAdminEvents() {
-  const snap = await getDocs(query(collection(db, 'events'), orderBy('date', 'desc'), limit(300)));
+  // Vistas (stats/{eventId}), fotos vendidas (suma de los álbumes), fotógrafos y si ya se subió a Instagram.
+  const [snap, stS, setS, usS, igS] = await Promise.all([
+    getDocs(query(collection(db, 'events'), orderBy('date', 'desc'), limit(300))),
+    getDocs(collection(db, 'stats')).catch(() => null),
+    getDocs(collectionGroup(db, 'sets')).catch(() => null),
+    getDocs(query(collection(db, 'users'), where('role', 'in', ['photographer', 'superadmin']))).catch(() => null),
+    getDocs(collection(db, 'igPosts')).catch(() => null),
+  ]);
   const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const views = new Map((stS?.docs || []).map(d => [d.id, d.data().views || 0]));
+  const sold = new Map();
+  for (const d of setS?.docs || []) { const eid = d.ref.parent.parent.id; sold.set(eid, (sold.get(eid) || 0) + (d.data().soldPhotos || 0)); }
+  const names = new Map((usS?.docs || []).map(d => [d.id, d.data().displayName || 'Fotógrafo']));
+  const posted = new Set((igS?.docs || []).filter(d => d.data().postedAt).map(d => d.data().eventId));
+  const extraOf = ev => ({
+    sub: (ev.photographerUids || []).length ? `<span class="muted small">📷 ${esc((ev.photographerUids || []).map(u => names.get(u) || 'Fotógrafo').join(', '))}</span>` : '',
+    pills: `<span class="pill" title="Visitas al álbum">👁 ${views.get(ev.id) || 0}</span><span class="pill" title="Fotos vendidas">🛒 ${sold.get(ev.id) || 0}</span>${posted.has(ev.id) ? '<span class="pill ok" title="Ya se subió al Instagram de Quiero Mis Fotos">📣 IG</span>' : ''}`,
+  });
   const evs = all.filter(e => adminEvFilter === 'all' || (adminEvFilter === 'nocity' ? !e.city : e.kind === adminEvFilter));
   $('#view').innerHTML = `
     <div class="row" style="justify-content:space-between;margin-bottom:14px">
@@ -2961,7 +3016,7 @@ async function viewAdminEvents() {
     </div>
     <div class="tabs">${[['all', 'Todos'], ['general', 'Generales'], ['own', 'De fotógrafos'], ['nocity', `📍 Sin localidad (${all.filter(e => !e.city).length})`]].map(([k, l]) => `<button class="chip ${adminEvFilter === k ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div>
     ${adminEvFilter === 'nocity' ? '<p class="muted small">Eventos cargados antes de la lista de localidades. Tocá ✏️ para elegirla.</p>' : ''}
-    ${evs.length ? `<div class="events-grid">${evs.map(ev => panelEventCard(ev).replace('<button class="card-share"', `<button class="card-share" data-edit-ev="${ev.id}" title="Editar evento y localidad" aria-label="Editar" style="right:48px">✏️</button><button class="card-share"`)).join('')}</div>` : '<div class="card"><div class="empty">No hay eventos.</div></div>'}`;
+    ${evs.length ? `<div class="events-grid">${evs.map(ev => panelEventCard(ev, extraOf(ev)).replace('<button class="card-share"', `<button class="card-share" data-edit-ev="${ev.id}" title="Editar evento y localidad" aria-label="Editar" style="right:48px">✏️</button><button class="card-share"`)).join('')}</div>` : '<div class="card"><div class="empty">No hay eventos.</div></div>'}`;
   $('#new').onclick = () => eventDialog(null);
   $$('[data-edit-ev]').forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation(); eventDialog(evs.find(x => x.id === b.dataset.editEv), () => viewAdminEvents()); });
   $$('[data-f]').forEach(b => b.onclick = () => { adminEvFilter = b.dataset.f; viewAdminEvents(); });

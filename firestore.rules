@@ -286,6 +286,10 @@ service cloud.firestore {
       allow read: if isSuper();
       allow write: if false;
     }
+    // Posteos armados para el Instagram de Quiero Mis Fotos (paleta, fotos elegidas, fecha de subida): solo superadmin.
+    match /igPosts/{id} {
+      allow read, write: if isSuper();
+    }
     match /platformPrivate/{id} {
       allow read: if isSuper() || isActivePhotographer();
       allow write: if isSuper();

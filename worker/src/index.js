@@ -65,6 +65,7 @@ import { incomeRequest } from './income.js';
 import { planPaymentsRequest } from './planpay.js';
 import { publishScheduled } from './scheduled-publish.js';
 import { onboardingCron, isOnboardingTick, reactivatePhotographer, bajaPage } from './onboarding.js';
+import { igPostedRequest } from './instagram.js';
 import { createLoginLink, useLoginLink, resetPasswordLink } from './loginlink.js';
 import { claimOrders, convertGuests } from './guests.js';
 import { statsHit } from './stats.js';
@@ -201,6 +202,7 @@ async function route(req, env, ctx) {
   if (m === 'POST' && url.pathname === '/photographers/reactivate') return reactivatePhotographer(req, env);
   if ((m === 'GET' || m === 'POST') && url.pathname === '/photographers/baja') return bajaPage(req, env);
   if (m === 'POST' && url.pathname === '/admin/users/verify') return verifyAccount(req, env);
+  if (m === 'POST' && url.pathname === '/admin/ig/posted') return igPostedRequest(req, env);
   if (m === 'POST' && url.pathname === '/admin/users/reset') return resetPasswordLink(req, env);
   if (m === 'POST' && url.pathname === '/team/join') return teamJoin(req, env);
   if (m === 'POST' && url.pathname === '/team/remove') return teamRemove(req, env);
